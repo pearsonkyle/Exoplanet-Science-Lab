@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+__pycache__/
+*.cpuprofile
+# large generated tables: commit the compact src/data/ld_table.js, not the raw download cache
+ld_table.json
+.ldtk/
+.venv/

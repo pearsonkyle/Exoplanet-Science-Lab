@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exoplanet Science Lab</title>
+<link rel="stylesheet" href="./src/style.css">
+<!-- Lets the page run with no build step (any static server). Vite resolves "three" from node_modules instead. -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand" title="Open the start page" role="button" tabindex="0"><span class="brand-mark"></span><h1><span class="full">Exoplanet Science Lab</span><span class="short" aria-hidden="true">ESL</span></h1><span class="brand-sub">transit modelling and nested sampling in your browser</span></div>
+    <div class="topright">
+      <span id="flash" class="toast" aria-live="polite"></span>
+      <button id="startbtn" class="chip small" title="Start page: choose what to do, look up a system, or open an example">☰<span class="wide"> Start</span></button>
+      <button id="undo" class="chip small" title="Undo (Ctrl/⌘+Z)" aria-label="Undo" disabled>↶<span class="wide"> Undo</span></button>
+      <button id="redo" class="chip small" title="Redo (Ctrl/⌘+Shift+Z)" aria-label="Redo" disabled>↷</button>
+      <label class="preset">System
+        <select id="preset"></select>
+      </label>
+    </div>
+  </header>
+
+  <section id="stage" aria-label="3D view of the system">
+    <div id="viz"></div>
+    <div id="labels"></div>
+    <div class="hud hud-tl">
+      <div class="seg" id="viewseg" role="group" aria-label="Camera">
+        <button data-view="free" class="on">Orbit</button>
+        <button data-view="earth">From Earth</button>
+        <button data-view="top">Top down</button>
+      </div>
+      <button id="lookbtn" class="chip" aria-expanded="false">Look ▾</button>
+      <div id="lookpanel" class="pop" hidden></div>
+    </div>
+    <div class="hud hud-tr" id="readout"></div>
+    <div class="inset-frame" id="insetframe"><span>As seen from Earth · true scale</span></div>
+    <div class="hud hud-b" id="transport">
+      <button id="play" class="chip" aria-label="Play or pause">❚❚</button>
+      <div class="seg" id="loopseg" role="group" aria-label="Animation range">
+        <button data-loop="transit" class="on">Transit</button>
+        <button data-loop="orbit">Full orbit</button>
+      </div>
+      <label class="speed">Speed <input id="speed" type="range" min="-1" max="1" step="0.01" value="0"></label>
+      <span id="clock" class="mono"></span>
+      <button id="rec" class="chip" title="Record one pass of the animation (system view + light curve) as a video">● Rec</button>
+    </div>
+  </section>
+
+  <section id="lc" aria-label="Light curve">
+    <canvas id="lccanvas"></canvas>
+    <div class="lctools">
+      <span id="lcmsg" class="toast"></span>
+      <span class="lchint">scroll to zoom · drag to pan · shift+scroll for the flux axis · click to set the time</span>
+      <div class="seg small" id="viewsel" role="group" aria-label="Data shown">
+        <button data-v="lc" class="on">Light curve</button>
+        <button data-v="rv" disabled title="Radial velocities (load them on the Data tab)">RV</button>
+      </div>
+      <button id="lcreset" class="chip small" hidden>Reset view</button>
+      <button id="lcfold" class="chip small" title="Fold on the period: every transit drawn on top of the others, against time from the nearest mid-transit">Fold</button>
+      <button id="viewbtn" class="chip small" aria-haspopup="true" title="How the data and model are drawn">View ▾</button>
+      <div id="viewpop" class="pop lcmenu viewpop" hidden></div>
+      <button id="lcexport" class="chip small" aria-haspopup="true">Save figure ▾</button>
+      <div id="lcmenu" class="pop lcmenu" hidden>
+        <button data-fmt="png-light">PNG · white</button>
+        <button data-fmt="pdf-light">PDF · white</button>
+        <button data-fmt="png-dark">PNG · dark</button>
+        <button data-fmt="pdf-dark">PDF · dark</button>
+      </div>
+    </div>
+  </section>
+
+  <aside id="panel">
+    <div id="grip" role="separator" aria-orientation="vertical" aria-label="Resize side panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="system" class="on">System</button>
+      <button role="tab" data-tab="data">Data</button>
+      <button role="tab" data-tab="fit">Fit</button>
+      <button role="tab" data-tab="results">Results</button>
+      <button role="tab" data-tab="timing">Timing</button>
+    </nav>
+    <div class="tabpane on" id="tab-system"></div>
+    <div class="tabpane" id="tab-data"></div>
+    <div class="tabpane" id="tab-fit"></div>
+    <div class="tabpane" id="tab-results"></div>
+    <div class="tabpane" id="tab-timing"></div>
+  </aside>
+</div>
+<div id="intro" hidden role="dialog" aria-modal="true" aria-label="Start page"></div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
