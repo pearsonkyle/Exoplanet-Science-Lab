@@ -11,20 +11,28 @@
 // Method
 //   A ray leaves the observer along each azimuth on a great circle of a spherical Earth (radius 6371.0088 km; the
 //   ellipsoid changes distances by at most 0.3%). Elevations are read bilinearly from a pyramid of zooms (BANDS):
-//   fine tiles near the observer, coarse ones far away, so a profile needs a few tens of tiles. The step is half a
-//   pixel of the zoom in use or 0.8% of the distance, whichever is larger.
+//   fine tiles near the observer (zoom 13, 16 m pixels at 30 degrees latitude, out to 3 km), coarse ones far away,
+//   so a profile needs some tens of tiles. The step is half a pixel of the zoom in use or 0.8% of the distance,
+//   whichever is larger.
+//   How far: the distance at which a sea-level horizon lies from the eye, plus 100 km for the mountains beyond it,
+//   at least 150 km and at most 300 km (radiusFor): 150 km from the plains, 275 km from Kitt Peak (2100 m), 300 km
+//   from Mauna Kea (4200 m), where the farther ground (Haleakala, 150 km from it) still shows.
 //   The elevation angle of a point of height h at ground distance d seen from height h0 is that of a straight ray
 //   over an Earth of radius Re = R / (1 - k):  atan2((Re + h) cos(d / Re) - (Re + h0), (Re + h) sin(d / Re)).
 //   k = 0.13 is the standard coefficient of terrestrial refraction (rays curve with 1/7.7 of the Earth's curvature);
 //   it varies with the weather (0.1 to 0.2 by day, more over cold ground), which moves a ridge 100 km away by
 //   about 0.03 deg.
-//   The observer stands `eye` metres (2) above the terrain at the place. Sea floor in the tiles is raised to sea
-//   level (or to the observer's level if that is below the sea). The march stops at 150 km; from a high mountain
-//   the sea horizon is farther than that (250 km from 4200 m), so the profile is never taken lower than the dip of
-//   a sea-level horizon, -acos(Re / (Re + h0)).
+//   The observer stands `eye` metres (2 by default; the Observe page lets it be set) above the terrain at the
+//   place, or above `ground` when that is given, or above `elev` (the published elevation of an observatory) when
+//   that is higher than the tiles' ground: observatory coordinates are rounded, and a point 50 m off a summit can sit
+//   on its slope, where the summit itself makes a 20-degree horizon (Kitt Peak at the planner's 31.96333, -111.6:
+//   the tiles give 2059 m, the site 2120 m). Sea floor in the tiles is raised to sea level (or to the
+//   observer's level if that is below the sea). Beyond the end of the march the profile is never taken lower than
+//   the dip of a sea-level horizon, -acos(Re / (Re + h0)).
 // What it is not: buildings and trees are not in the data (SRTM is a radar surface, so forest partly is), and the
 // nearest few pixels (30 m each at zoom 12 on the equator) cannot show a wall or a house next to the observer.
-// Checked in test/horizon.test.mjs against peaks of known position and height.
+// Checked in test/horizon.test.mjs against peaks of known position and height, and over the whole circle against an
+// independent implementation in Python (WGS84 geodesics, its own PNG decoding and sampling; test/data/terrain/full/).
 
 const RAD = Math.PI / 180, DEG = 180 / Math.PI;
 export const EARTH_RADIUS_M = 6371008.8;
@@ -32,15 +40,27 @@ export const TILE_SIZE = 256;
 export const TILE_URL = (z, x, y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
 /** Elevation in metres of a Terrarium pixel. */
 export const terrariumElevation = (r, g, b) => r * 256 + g + b / 256 - 32768;
-/** Zoom pyramid: [zoom, used out to this ground distance in metres]. */
-export const BANDS = [[12, 6000], [10, 30000], [9, 75000], [8, 150000]];
+/** Zoom pyramid: [zoom, used out to this ground distance in metres]; a profile stops at maxDist (radiusFor). */
+export const BANDS = [[13, 3000], [12, 8000], [10, 30000], [9, 75000], [8, 150000], [7, 300000]];
+/** The pyramid before 2026-11-15 (zoom 12 to 6 km, then 10, 9, 8 to 150 km), for comparisons. */
+export const BANDS_V1 = [[12, 6000], [10, 30000], [9, 75000], [8, 150000]];
+/**
+ * How far a profile marches for an eye at height h0 metres above sea level: the distance of the sea horizon
+ * sqrt(2 Re h0) (Re with refraction) plus 100 km, within 150 to 300 km.
+ */
+export const radiusFor = (h0, k = 0.13) => Math.max(150000, Math.min(300000, Math.sqrt(2 * (EARTH_RADIUS_M / (1 - k)) * Math.max(0, h0)) + 100000));
 /**
  * The pyramid for a latitude: Mercator pixels shrink with cos(latitude), so beyond 60 degrees one zoom less (two
  * beyond 75.5) gives the same ground resolution with a quarter of the tiles.
  */
 export const bandsFor = (lat, bands = BANDS) => { const dz = Math.max(0, Math.floor(Math.log2(1 / Math.max(0.05, Math.cos(lat * RAD))))); return bands.map(([z, d]) => [Math.max(0, z - dz), d]); };
-export const DEFAULTS = { step: 0.5, bands: null, k: 0.13, eye: 2, minDist: 60, azFrom: 0, azTo: 360 };
-const options = (lat, opts) => { const o = { ...DEFAULTS, ...opts }; o.bands = o.bands || bandsFor(lat); return o; };
+export const DEFAULTS = { step: 0.5, bands: null, k: 0.13, eye: 2, minDist: 60, azFrom: 0, azTo: 360, maxDist: null, elev: null };
+// the bands cut at maxDist (when given; else they run to their last distance)
+const options = (lat, opts) => {
+  const o = { ...DEFAULTS, ...opts }; let b = o.bands || bandsFor(lat);
+  if (o.maxDist > 0) { const cut = []; for (const [z, d] of b) { cut.push([z, Math.min(d, o.maxDist)]); if (d >= o.maxDist) break; } b = cut; }
+  o.bands = b; return o;
+};
 
 export const ATTRIBUTION = {
   short: 'Terrain: Mapzen / Tilezen terrain tiles (AWS Open Data); SRTM, 3DEP and GMTED2010 courtesy of the U.S. Geological Survey, and others',
@@ -80,7 +100,7 @@ export function elevationAngle(h0, h, d, k = 0.13) {
   return Math.atan2((Re + h) * Math.cos(t) - (Re + h0), (Re + h) * Math.sin(t)) * DEG;
 }
 
-const key = (z, x, y) => z * 16777216 + x * 4096 + y;       // zooms up to 12
+const key = (z, x, y) => (z * 16384 + x) * 16384 + y;       // zooms up to 14 (16384 tiles a side); exact below 2^53
 export const tileKey = key;
 const zoomAt = (bands, d) => { for (const b of bands) if (d <= b[1]) return b[0]; return bands[bands.length - 1][0]; };
 
@@ -111,15 +131,11 @@ export function tilesNeeded(lat, lon, opts = {}) {
 export function horizonFromTiles(lat, lon, tiles, opts = {}) {
   const o = options(lat, opts), dist = distances(lat, o), azs = azimuths(o), n = azs.length;
   let missing = 0, samples = 0;
-  const sample = (z, la, lo) => {
-    const t = tileXY(la, lo, z), tx = Math.floor(t.x), ty = Math.floor(t.y), data = tiles.get(key(z, tx, ty));
-    if (!data) return NaN;
-    // pixel centres are at half-integers; clamp inside the tile (half a pixel of error at its edges)
-    const px = Math.max(0, Math.min(TILE_SIZE - 1, (t.x - tx) * TILE_SIZE - 0.5)), py = Math.max(0, Math.min(TILE_SIZE - 1, (t.y - ty) * TILE_SIZE - 0.5));
-    const x0 = Math.min(TILE_SIZE - 2, Math.floor(px)), y0 = Math.min(TILE_SIZE - 2, Math.floor(py)), fx = px - x0, fy = py - y0, i = y0 * TILE_SIZE + x0;
-    return (data[i] * (1 - fx) + data[i + 1] * fx) * (1 - fy) + (data[i + TILE_SIZE] * (1 - fx) + data[i + TILE_SIZE + 1] * fx) * fy;
-  };
-  const here = sample(o.bands[0][0], lat, lon), ground = Number.isFinite(o.ground) ? o.ground : Number.isFinite(here) ? here : 0;
+  // a tile that could not be had is replaced by a coarser zoom of the pyramid that covers the same place, if loaded
+  const zooms = [...new Set(o.bands.map((b) => b[0]))].sort((a, b) => b - a);
+  const one = (z, la, lo) => { const t = tileXY(la, lo, z); return elevationAt(la, lo, z, tiles.get(key(z, Math.floor(t.x), Math.floor(t.y)))); };
+  const sample = (z, la, lo) => { let h = one(z, la, lo); if (h === h) return h; for (const z2 of zooms) if (z2 < z && (h = one(z2, la, lo)) === h) return h; return NaN; };
+  const here = sample(o.bands[0][0], lat, lon), ground = Number.isFinite(o.ground) ? o.ground : Math.max(Number.isFinite(here) ? here : 0, Number.isFinite(o.elev) ? o.elev : -Infinity);
   const floor = Math.min(0, ground), h0 = Math.max(ground, floor) + o.eye, Re = EARTH_RADIUS_M / (1 - o.k);
   const alt = new Float32Array(n), far = new Float32Array(n), elev = new Float32Array(n);
   // the dip of a horizon at the lowest level there can be ground (sea level): nothing is ever seen below it
@@ -137,15 +153,31 @@ export function horizonFromTiles(lat, lon, tiles, opts = {}) {
     if (best < dipTan) { best = dipTan; bd = dipDist; bh = floor; }
     alt[i] = Math.atan(best) * DEG; far[i] = bd; elev[i] = bh;
   }
-  return { lat, lon, step: o.step, azFrom: o.azFrom, n, alt, dist: far, elev, ground, eye: o.eye, k: o.k, samples, missing };
+  return { lat, lon, step: o.step, azFrom: o.azFrom, n, alt, dist: far, elev, ground, eye: o.eye, k: o.k, samples, missing, maxDist: o.bands[o.bands.length - 1][1] };
+}
+
+/** Elevation (m) at a place from one tile's elevations (bilinear), or NaN. */
+export function elevationAt(lat, lon, z, data) {
+  if (!data) return NaN;
+  const t = tileXY(lat, lon, z), tx = Math.floor(t.x), ty = Math.floor(t.y);
+  const px = Math.max(0, Math.min(TILE_SIZE - 1, (t.x - tx) * TILE_SIZE - 0.5)), py = Math.max(0, Math.min(TILE_SIZE - 1, (t.y - ty) * TILE_SIZE - 0.5));
+  const x0 = Math.min(TILE_SIZE - 2, Math.floor(px)), y0 = Math.min(TILE_SIZE - 2, Math.floor(py)), fx = px - x0, fy = py - y0, i = y0 * TILE_SIZE + x0;
+  return (data[i] * (1 - fx) + data[i + 1] * fx) * (1 - fy) + (data[i + TILE_SIZE] * (1 - fx) + data[i + TILE_SIZE + 1] * fx) * fy;
 }
 
 /**
  * Fetch what is needed and compute the profile. getTile(z, x, y) resolves to the elevations of a tile (see
  * horizonFromTiles) or rejects / resolves to null when it cannot be had. onProgress(done, total) is optional.
- * Rejects only when no tile at all could be loaded.
+ * Unless opts.maxDist is given, the tile under the observer is read first and the march goes as far as
+ * radiusFor(its height + eye). Rejects only when no tile at all could be loaded.
  */
 export async function horizonProfile(lat, lon, getTile, opts = {}) {
+  if (!(opts.maxDist > 0)) {
+    const z0 = options(lat, opts).bands[0][0], t = tileXY(lat, lon, z0);
+    let d = null; try { d = await getTile(z0, Math.floor(t.x), Math.floor(t.y)); } catch { d = null; }
+    const g = Number.isFinite(opts.ground) ? opts.ground : Math.max(elevationAt(lat, lon, z0, d) || 0, Number.isFinite(opts.elev) ? opts.elev : -Infinity);
+    opts = { ...opts, maxDist: radiusFor((Number.isFinite(g) ? Math.max(0, g) : 0) + (opts.eye ?? DEFAULTS.eye), opts.k ?? DEFAULTS.k) };
+  }
   const need = tilesNeeded(lat, lon, opts), tiles = new Map(), conc = opts.concurrency || 6;
   let next = 0, done = 0, failed = 0;
   const worker = async () => {
@@ -157,7 +189,7 @@ export async function horizonProfile(lat, lon, getTile, opts = {}) {
   };
   await Promise.all(Array.from({ length: Math.min(conc, need.length) }, worker));
   if (!tiles.size) throw new Error('no terrain tiles could be loaded');
-  return { ...horizonFromTiles(lat, lon, tiles, opts), tiles: need.length, tilesFailed: failed };
+  return { ...horizonFromTiles(lat, lon, tiles, opts), tiles: need.length, tilesFailed: failed, maxDist: opts.maxDist };
 }
 
 /** Horizon altitude in degrees at an azimuth in degrees, linearly between the samples of a full-circle profile. */

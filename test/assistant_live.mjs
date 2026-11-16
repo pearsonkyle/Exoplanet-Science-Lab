@@ -1,7 +1,8 @@
 // Live check of the assistant's harness against a real OpenAI-compatible endpoint, without a browser: the
 // same tools on a session document (src/assistant/docApi.js). Not part of `npm test`.
-//   ESL_LLM=http://host:1234/v1 node test/assistant_live.mjs ["a request" ...]      (ESL_LLM_MODEL, ESL_LLM_KEY, ESL_STEPS optional)
-// Prints every tool call with its result and the final answer, then steps and seconds per request.
+//   ESL_LLM=<base URL of your server> node test/assistant_live.mjs ["a request" ...]      (ESL_LLM_MODEL, ESL_LLM_KEY, ESL_STEPS optional)
+// The address comes from the environment only: it is not written in this repository and not printed.
+// Prints every tool call with its result, the final answer and the verdict of the number check, then steps and seconds per request.
 import { readFileSync } from 'node:fs';
 import { createTools, memoryFiles } from '../src/assistant/tools.js';
 import { createDocApi } from '../src/assistant/docApi.js';
@@ -13,7 +14,7 @@ const api = createDocApi({ fetchText: async (p) => readFileSync(pub(p), 'utf8'),
 const files = memoryFiles(), tools = createTools({ api, files, fetchJson: async (n) => JSON.parse(readFileSync(pub('catalog/' + n), 'utf8')), where: 'mcp' });
 for (const a of (process.env.ESL_ATTACH || '').split(',').filter(Boolean)) files.add(a.split('/').pop(), readFileSync(a, 'utf8'));
 const models = await listModels(base, { apiKey: process.env.ESL_LLM_KEY }), model = models.find((m) => m.id === process.env.ESL_LLM_MODEL) || models[0];
-console.log(`endpoint ${base} · model ${model.id} · context ${model.context ?? 'unknown'}`);
+console.log(`model ${model.id} · context ${model.context ?? 'unknown'} (the endpoint address is not printed)`);
 const agent = createAgent({ base, model: model.id, apiKey: process.env.ESL_LLM_KEY, contextLimit: process.env.ESL_CTX ? Number(process.env.ESL_CTX) : model.context, tools, maxSteps: Number(process.env.ESL_STEPS || 12), protocol: process.env.ESL_PROTOCOL || 'auto', stream: process.env.ESL_STREAM !== '0',
   confirm: async ({ name, reason }) => { console.log(`   [confirm] ${name}: ${reason} -> yes`); return true; },
   onEvent(ev) {
@@ -26,5 +27,5 @@ const agent = createAgent({ base, model: model.id, apiKey: process.env.ESL_LLM_K
     else if (ev.type === 'done') console.log(`\n== ${ev.reason}: ${ev.steps} model steps, ${ev.seconds.toFixed(1)} s ==`);
   } });
 const asks = process.argv.slice(2).length ? process.argv.slice(2) : ['Load the single-transit example, free the eccentricity, run the fit and tell me Rp/R*.'];
-for (const q of asks) { console.log(`\nUSER ${q}`); await agent.send(q); }
+for (const q of asks) { console.log(`\nUSER ${q}`); await agent.send(q); const c = agent.turns.at(-1).check; console.log(`number check: ${!c ? 'not made (no answer)' : c.ok ? 'passed' : `FAILED (not in any tool result: ${c.unsupported.join(', ') || 'none'}; without uncertainty: ${c.bare.join('; ') || 'none'}) -> table appended`}`); }
 console.log(JSON.stringify(agent.info()));

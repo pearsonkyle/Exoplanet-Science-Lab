@@ -6,50 +6,152 @@
   --star: #ffc56b; --model: #5fd4ff; --data: #c9d3e6; --ok: #6fe3a5; --warn: #ffb454; --bad: #ff6b7a; --post: #b48cff;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --sitebar-h: 34px;
+  /* --bar-h is the site bar itself; --sitebar-h is everything above a page's own content: the bar, plus the
+     Analyze sub-navigation on the three Analyze pages (--subnav-h, set below). Pages size themselves from --sitebar-h. */
+  --bar-h: 34px; --subnav-h: 0px; --sitebar-h: calc(var(--bar-h) + var(--subnav-h));
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 var(--sans); }
 a { color: var(--model); }
 
-/* ---- navigation bar ---- */
-.sitebar { display: flex; align-items: center; gap: 14px; height: var(--sitebar-h); padding: 0 14px; background: #070a11; border-bottom: 1px solid var(--line); min-width: 0; }
-.sitebrand { display: flex; align-items: center; gap: 9px; color: var(--text); text-decoration: none; flex: none; }
+/* ---- navigation bar ----
+   One row at every width. Wide: brand, tagline, links. Narrower: the tagline goes, then the brand shortens to ESL.
+   When the links still do not fit (a phone, or more sections than the row holds) nav.js sets .compact: the links
+   move into a menu under a button and the full brand comes back. The bar is 44 px tall for fingers. */
+.sitebar { display: flex; align-items: center; gap: 14px; height: var(--bar-h); padding: 0 max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left)); background: #070a11; border-bottom: 1px solid var(--line); min-width: 0; position: relative; }
+.sitebar.open { z-index: 90; }
+.sitebrand { display: flex; align-items: center; gap: 9px; color: var(--text); text-decoration: none; flex: none; align-self: stretch; }
 .sitebrand b { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; white-space: nowrap; }
 .sitebrand .short { display: none; }
 .brand-mark { width: 14px; height: 14px; border-radius: 50%; flex: none; background: radial-gradient(circle at 50% 50%, #fff3d0 0, var(--star) 45%, #b7641d 100%); box-shadow: 0 0 10px #ffb45488; position: relative; display: inline-block; }
 .brand-mark::after { content: ""; position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #05070c; left: 3px; top: 6px; }
-.sitetag { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
-.sitebar nav { display: flex; gap: 2px; margin-left: auto; flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.sitetag { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 100000 auto; }   /* gives way entirely before the links start to */
+.sitebar nav { display: flex; gap: 2px; margin-left: auto; flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; align-self: stretch; align-items: center; }
 .sitebar nav::-webkit-scrollbar { display: none; }
-.sitelink { color: var(--dim); text-decoration: none; padding: 5px 10px; border-radius: 5px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.sitelink { color: var(--dim); text-decoration: none; padding: 5px 10px; border-radius: 5px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; display: inline-flex; align-items: center; }
 .sitelink:hover { color: #fff; background: #ffffff0d; }
 .sitelink.on { color: #e9f8ff; background: #5fd4ff22; }
+.sitebar a:focus-visible, .sitemenu:focus-visible { outline: 2px solid var(--model); outline-offset: -2px; border-radius: 5px; }
+.sitemenu { display: none; margin-left: auto; flex: none; align-items: center; justify-content: center; gap: 8px; min-width: 44px; height: calc(var(--bar-h) - 4px); padding: 0 10px; background: none; border: 1px solid transparent; border-radius: 6px; color: var(--text); cursor: pointer; font: 600 11.5px/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; }
+.sitemenu:hover, .sitebar.open .sitemenu { background: #ffffff0d; border-color: var(--line2); }
+.sitemenu i { display: block; width: 16px; height: 2px; border-radius: 1px; background: currentColor; box-shadow: 0 -5px 0 currentColor, 0 5px 0 currentColor; }
 /* the full name while it fits on one line with the tagline, ESL when it would wrap */
 @media (max-width: 1180px) { .sitetag { display: none; } }
-@media (max-width: 820px) { .sitebrand .full { display: none; } .sitebrand .short { display: inline; letter-spacing: .2em; } .sitebar { gap: 8px; padding: 0 8px; } .sitelink { padding: 5px 7px; letter-spacing: .04em; } }
+@media (max-width: 900px) { .sitebrand .full { display: none; } .sitebrand .short { display: inline; letter-spacing: .2em; } .sitebar { gap: 8px; } .sitelink { padding: 5px 7px; letter-spacing: .04em; } }
+/* fingers: a taller bar and taller links (pages that size themselves from --sitebar-h follow) */
+@media (pointer: coarse), (max-width: 640px) { :root { --bar-h: 44px; } .sitelink { min-height: 40px; padding: 0 9px; } .sitebrand { min-width: 44px; } }
+.sitebar.compact .sitemenu { display: inline-flex; }
+.sitebar.compact .sitebrand .full { display: inline; } .sitebar.compact .sitebrand .short { display: none; }
+.sitebar.compact nav { display: none; position: absolute; top: 100%; right: max(6px, env(safe-area-inset-right)); margin: 4px 0 0; flex-direction: column; align-items: stretch; gap: 2px; min-width: 220px; max-width: calc(100vw - 12px); max-height: calc(100vh - var(--bar-h) - 12px); max-height: calc(100dvh - var(--bar-h) - 12px); overflow: auto; padding: 6px; background: #0b0f18; border: 1px solid var(--line2); border-radius: 10px; box-shadow: 0 12px 32px #000a; }
+.sitebar.compact.open nav { display: flex; }
+.sitebar.compact .sitelink { min-height: 48px; padding: 6px 14px; font-size: 13px; letter-spacing: .08em; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; white-space: normal; }
+.sitelink .sl-hint { display: none; }
+.sitebar.compact .sitelink .sl-hint { display: block; font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--dim); line-height: 1.3; }
+.sitebar.compact .sitelink.on .sl-hint { color: #a9c9da; }
+.sitebar.compact .sitelink .sl-name { color: var(--text); font-weight: 600; }
+.sitebar.compact .sitelink.on .sl-name { color: #e9f8ff; }
+@media (max-width: 380px) { .sitebar.compact .sitebrand b { letter-spacing: .08em; font-size: 12px; } }
 
-/* ---- plain pages ---- */
-body.page { min-height: 100vh; display: flex; flex-direction: column; }
-.page main { width: min(1180px, 100%); margin: 0 auto; padding: 28px 20px 60px; flex: 1; }
+/* ---- Analyze sub-navigation (src/site/subnav.js) ----
+   A second row under the bar on the analyzer, Photometry and Spectroscopy. Its height joins --sitebar-h on those pages
+   (the class is set by subnav.js; :has() reserves the room before the script runs), so the analyzer's grid and the
+   overlays placed below the bar keep fitting. In the analyzer's grid the bar and this row share the first row. */
+:root:has(#subnav) { --subnav-h: 32px; }
+:root.has-subnav { --subnav-h: 32px; }
+@media (pointer: coarse), (max-width: 640px) { :root:has(#subnav) { --subnav-h: 40px; } :root.has-subnav { --subnav-h: 40px; } }
+.subnav { display: flex; align-items: stretch; gap: 2px; height: var(--subnav-h); padding: 0 max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); background: #080c15; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.subnav::-webkit-scrollbar { display: none; }
+.subnavlink { display: inline-flex; align-items: center; padding: 0 12px; color: var(--dim); text-decoration: none; font-size: 12.5px; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.subnavlink:hover { color: #fff; }
+.subnavlink.on { color: #e9f8ff; border-bottom-color: var(--model); font-weight: 600; }
+.subnavlink:focus-visible { outline: 2px solid var(--model); outline-offset: -3px; border-radius: 4px; }
+@media (max-width: 420px) { .subnavlink { padding: 0 9px; font-size: 12px; } }
+#app > #sitebar { align-self: start; }
+#app > .subnav { grid-area: site; align-self: end; }
+body.intro-open #app > #subnav.subnav { filter: none; pointer-events: auto; }
+
+/* ---- plain pages ----
+   Everything below is scoped to body.page (the landing page, Plan, Search, Photometry, Validation) so that the
+   full-screen analyzer and the sky view, which share the tokens and the bar above, keep their own controls. */
+html:has(body.page) { color-scheme: dark; }
+/* --faint is 3.0:1 on the panels: fine for rules and marks, not for text. On the reading pages it is text. */
+body.page { --faint: #7d89a5; --lab: #a3afc8; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+.page main { width: min(1180px, 100%); margin: 0 auto; padding: 28px max(20px, env(safe-area-inset-right)) calc(72px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); flex: 1; }
 .page h1 { font-size: 24px; letter-spacing: .04em; margin: 0 0 6px; font-weight: 600; }
 .page h2 { font-size: 15px; margin: 28px 0 8px; font-weight: 600; }
 .page .lead { color: var(--dim); font-size: 14px; max-width: 760px; margin: 0 0 22px; }
 .page .note { color: var(--dim); font-size: 12px; }
 .card { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; padding: 16px 18px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+/* the section cards: as many on a row as fit, and the cards of a short last row share it (a grid left a hole: 3 + 2 of 5) */
+.cards { display: flex; flex-wrap: wrap; gap: 14px; }
+.cards > * { flex: 1 1 210px; min-width: 0; }
 a.card { text-decoration: none; color: var(--text); display: flex; flex-direction: column; gap: 8px; min-height: 150px; transition: border-color .12s, transform .12s; }
 a.card:hover, a.card:focus-visible { border-color: var(--model); transform: translateY(-2px); outline: none; }
+a.card:focus-visible { box-shadow: 0 0 0 2px #5fd4ff55; }
 a.card b { font-size: 18px; letter-spacing: .03em; color: var(--model); }
 a.card span { color: var(--dim); }
 .badge-soon { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--warn); border: 1px solid #ffb45455; border-radius: 9px; padding: 1px 7px; align-self: flex-start; }
 .btn { background: var(--panel2); border: 1px solid var(--line2); border-radius: 6px; padding: 6px 12px; cursor: pointer; color: var(--text); font: inherit; }
 .btn:hover { border-color: var(--model); }
 .btn.primary { background: #5fd4ff22; border-color: #5fd4ff88; color: #e9f8ff; }
+.page a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.page .btn:disabled { opacity: .45; cursor: default; }
 button, input, select, textarea { font: inherit; color: inherit; }
 select, input[type=number], input[type=text], input[type=search], input[type=date], input[type=datetime-local], textarea { background: var(--panel2); border: 1px solid var(--line2); border-radius: 5px; padding: 4px 6px; outline: none; }
 select:focus, input:focus, textarea:focus, button:focus-visible { border-color: var(--model); outline: none; box-shadow: 0 0 0 2px #5fd4ff33; }
+.page ::placeholder { color: var(--dim); opacity: 1; }
+/* keyboard focus is always drawn: a ring on links, buttons, summaries and anything focusable that is not a text field */
+.page a:focus-visible, .page summary:focus-visible, .page [tabindex]:focus-visible, .page input[type=checkbox]:focus-visible, .page input[type=range]:focus-visible { outline: 2px solid var(--model); outline-offset: 2px; border-radius: 3px; box-shadow: none; }
+.page button:focus-visible { outline: 2px solid var(--model); outline-offset: 1px; }
 .hero { padding: 6vh 0 18px; }
 .hero h1 { font-size: clamp(26px, 4.4vw, 44px); letter-spacing: .1em; text-transform: uppercase; }
 .hero .lead { font-size: 16px; }
-footer.sitefoot { border-top: 1px solid var(--line); color: var(--faint); font-size: 11.5px; padding: 14px 20px; text-align: center; }
+footer.sitefoot { border-top: 1px solid var(--line); color: var(--faint); font-size: 11.5px; padding: 14px max(76px, env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) max(76px, env(safe-area-inset-left)); text-align: center; }
+
+/* ---- components shared by the plain pages ---- */
+/* catalogue tags, estimated values, flags */
+.page .tag { display: inline-block; font: 600 9.5px/1 var(--mono); letter-spacing: .04em; padding: 2px 4px; border-radius: 3px; border: 1px solid; vertical-align: 1px; }
+.page .tag.nea { color: var(--model); border-color: #5fd4ff66; } .page .tag.eu { color: var(--star); border-color: #ffc56b66; } .page .tag.toi { color: var(--ok); border-color: #6fe3a566; }
+.page .est { color: var(--post); font-style: italic; }
+.page .d-flag { border-left: 3px solid var(--warn); background: #ffb45411; padding: 6px 9px; font-size: 12px; margin: 8px 0; border-radius: 0 5px 5px 0; }
+.page .d-flag.bad { border-color: var(--bad); background: #ff6b7a14; }
+/* the close button of a drawer or a detail panel */
+.page .d-close { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; background: none; border: 1px solid var(--line2); border-radius: 6px; color: var(--lab); cursor: pointer; padding: 2px 8px; }
+.page .d-close:hover { border-color: var(--model); color: #fff; }
+/* tabs: a row of buttons with role=tab inside role=tablist */
+.tabset { display: inline-flex; border: 1px solid var(--line2); border-radius: 7px; overflow: hidden; max-width: 100%; }
+.tabset > button { background: var(--panel); border: 0; border-right: 1px solid var(--line2); padding: 5px 11px; cursor: pointer; color: var(--lab); font-size: 12px; min-width: 0; }
+.tabset > button:last-child { border-right: 0; }
+.tabset > button:hover { color: #fff; }
+.tabset > button.on, .tabset > button[aria-selected=true] { background: #5fd4ff22; color: #e9f8ff; font-weight: 600; }
+.tabset > button:focus-visible { outline-offset: -2px; }
+/* a table wider than its column scrolls inside this box; a shadow at an edge says there is more that way */
+.xscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; border: 1px solid var(--line2); border-radius: 8px; background-color: var(--panel);
+  background-image: linear-gradient(to right, var(--panel) 40%, transparent), linear-gradient(to left, var(--panel) 40%, transparent), linear-gradient(to right, #5fd4ff3d, transparent), linear-gradient(to left, #5fd4ff3d, transparent);
+  background-position: left center, right center, left center, right center; background-repeat: no-repeat; background-size: 36px 100%, 36px 100%, 14px 100%, 14px 100%; background-attachment: local, local, scroll, scroll; }
+.xscroll:focus-visible { outline: 2px solid var(--model); outline-offset: 2px; }
+/* a note shown by a tap where a mouse would get a title tooltip (src/site/tips.js) */
+.esl-tip { position: fixed; z-index: 95; max-width: min(320px, calc(100vw - 16px)); background: #0d1220f7; color: var(--text); border: 1px solid var(--line2); border-radius: 8px; padding: 8px 11px; font: 12.5px/1.45 var(--sans); box-shadow: 0 8px 24px #000a; pointer-events: none; overflow-wrap: anywhere; }
+/* loading, empty and error messages */
+.page .state { color: var(--lab); padding: 20px 4px; font-size: 13px; }
+.page .state.err { color: #ff9aa5; }
+.page .state .bar, .loadbar { display: block; height: 3px; border-radius: 2px; background: var(--line2); margin-top: 8px; max-width: 260px; overflow: hidden; }
+.page .state .bar i, .loadbar i { display: block; height: 100%; width: 0; background: var(--model); transition: width .15s linear; }
+
+/* ---- fingers and small screens: every control on the plain pages at least 40 px, 16 px text in fields (no zoom on focus in iOS) ---- */
+@media (pointer: coarse), (max-width: 760px) {
+  .page .btn, .page .d-close { min-height: 40px; min-width: 40px; }
+  .page select, .page input[type=number], .page input[type=text], .page input[type=search], .page input[type=date] { min-height: 40px; font-size: 16px; padding: 6px 8px; }
+  .page input[type=checkbox] { width: 18px; height: 18px; }
+  .tabset > button { min-height: 40px; padding: 7px 12px; font-size: 13px; }
+  .page .tag { font-size: 10.5px; padding: 2px 5px; }
+  .page main { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
+}
+@media (max-width: 560px) { footer.sitefoot { padding-left: 16px; padding-right: 16px; padding-bottom: calc(72px + env(safe-area-inset-bottom)); font-size: 12.5px; line-height: 1.6; } }
+/* links inside running text on a touch screen: a taller box for the finger without moving the text */
+@media (pointer: coarse) { footer.sitefoot a { display: inline-block; padding: 10px 2px; margin: -10px 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .page *, .page *::before, .page *::after, .sitebar * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  a.card:hover, a.card:focus-visible { transform: none; }
+}
+@media (max-width: 560px) { a.card { min-height: 0; padding: 14px 16px; } .hero { padding-top: 3vh; } .hero .lead { font-size: 15px; } }

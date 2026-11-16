@@ -129,6 +129,10 @@ def best_ephemeris(ps, jd_now):
         d[c + '_e'] = d[c + '_e'].fillna(d[c + 'err1'].abs()).fillna(d[c + 'err2'].abs())
     ok = (d.pl_orbper > 0) & (d.pl_orbper_e > 0) & (d.pl_tranmid > 2.4e6) & (d.pl_tranmid_e > 0)
     ok &= d.pl_orbperlim.fillna(0).eq(0) & d.pl_tranmidlim.fillna(0).eq(0)
+    # a row whose period is more than 1% from the median of that planet's rows belongs to another planet (ExoFOP rows
+    # attached to a sibling: HD 106315 c with 1221 d instead of 21.06 d); drop it
+    med = d[ok].groupby('pl_name').pl_orbper.transform('median')
+    ok &= ~((d.pl_orbper / med - 1).abs() > 0.01).reindex(d.index, fill_value=False)
     d = d[ok].copy()
     n = (jd_now - d.pl_tranmid) / d.pl_orbper
     d['sig'] = np.hypot(d.pl_tranmid_e, n * d.pl_orbper_e)

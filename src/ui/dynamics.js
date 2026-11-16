@@ -56,9 +56,90 @@ export function companionStart(obs, base, rf) {
   return { host: { per: hp, tmid: ht }, comp: { per: cp, tmid: ct, mplanet: rf.mass }, epoch, chi2 };
 }
 
-export function buildDynamics(el, app) {
-  const { S, h, pushUndo, flash } = app, tRef = S.data.tRef || 0, pls = app.planets(), st = app.star();
+/** What the companion search works on: the planet on show, its listed mid-transit times, the star, and the cache key of that set-up. */
+function searchContext(app) {
+  const { S } = app, tRef = S.data.tRef || 0, pls = app.planets(), st = app.star();
   const rowsOf = (sfx) => S.timing.rows.filter((r) => (r.planet || '') === sfx && (r.kind || 'transit') === 'transit').sort((a, b) => a.t - b.t);
+  const me = pls.find((p) => p.sfx === S.pl) || pls[0], rows = rowsOf(me.sfx);
+  const key = `${S.dataId}|${pls.length}|${me.sfx}|${rows.length}|${rows.length ? rows[0].t + rows[rows.length - 1].t : 0}|${me.mplanet}`;
+  const obs = { t: rows.map((r) => r.t - tRef), e: rows.map((r) => r.e) };
+  const base = () => {
+    const E = obs.t.map((x) => Math.round((x - me.tmid) / me.per)), ln = lineFit(E, obs.t, obs.e);
+    return { mstar: st.mstar, rstar: st.rstar, planet: { per: ln.b || me.per, tmid: ln.a, ecc: me.ecc || 0, omega: me.omega || 0, inc: me.inc, mplanet: me.mplanet }, perturber: { inc: me.inc } };
+  };
+  return { tRef, pls, st, rowsOf, me, rows, key, obs, base };
+}
+
+/** The companion a search result describes, in the form addCompanion takes: elements at the reference epoch, times relative to S.data.tRef. */
+function companionCell(c, rf) {
+  const cs = companionStart(c.obs, c.base(), rf);
+  return { mass: rf.mass, period: cs.comp.per, tmid: cs.comp.tmid, inc: c.me.inc, epoch: cs.epoch, host: cs.host, chi2: cs.chi2 };
+}
+
+/**
+ * Search the mid-transit times of the planet on show for an unseen companion: simulate one of every mass and period
+ * on a grid (at `phases` starting phases each), score each against the times, then polish the few best cells.
+ * The result is kept for the Timing tab, which draws the map. Throws with the reason when the search cannot run.
+ * opts: { phases = 8, masses: [M Jup], ratios: [companion period / planet period], refine = true, maxSim = 300, onProgress(fraction) }
+ * Returns { grid, refined, cell, chi2Linear, ndata }: `cell` is the argument of addCompanion (null when no cell could be simulated).
+ */
+export async function companionSearch(app, opts = {}) {
+  const c = searchContext(app), { me, st, rows, obs } = c;
+  if (rows.length < 8) throw new Error(`a search for an unseen companion needs at least eight mid-transit times of planet ${me.letter}; ${rows.length} ${rows.length === 1 ? 'is' : 'are'} listed on the Timing tab`);
+  if (!(me.mplanet > 0)) throw new Error(`the search needs the mass of planet ${me.letter} (System tab, “Mp”)`);
+  if (!(st.mstar > 0)) throw new Error('the search needs the stellar mass (System tab)');
+  if (cache.busy) throw new Error('a companion search is already running');
+  cache.busy = true; cache.msg = 'Simulating…';
+  try {
+    const b = c.base(), P = b.planet.per, opt = { phases: opts.phases > 0 ? Math.round(opts.phases) : 8 };
+    // outside companions from just beyond the Hill-stability limit to past 3:1, inside ones down to 1:3; masses from 5 Earth masses to 3 Jupiters
+    let ratio = opts.ratios;
+    if (!Array.isArray(ratio) || !ratio.length) { ratio = []; for (let r = 0.34; r < 0.8; r += 0.02) ratio.push(r); for (let r = 1.25; r <= 3.3; r += 0.02) ratio.push(r); }
+    const period = ratio.map((r) => r * P), mass = Array.isArray(opts.masses) && opts.masses.length ? opts.masses.map(Number) : Array.from({ length: 14 }, (_, i) => 0.015 * Math.pow(3 / 0.015, i / 13));
+    if (period.some((x) => !(x > 0)) || mass.some((x) => !(x > 0))) throw new Error('masses and period ratios of the grid must be positive numbers');
+    const nm = mass.length, np = period.length, N = nm * np, chi2 = new Float64Array(N).fill(Infinity), amp = new Float64Array(N), phase = new Float64Array(N), stable = new Uint8Array(N), hill = new Float64Array(N);
+    const cells = []; for (let im = 0; im < nm; im++) for (let ip = 0; ip < np; ip++) cells.push({ q: im * np + ip, mass: mass[im], period: period[ip] });
+    const t0 = performance.now(); let nSim = 0, done = 0;
+    const put = (list) => { for (const x of list) { chi2[x.q] = x.chi2; amp[x.q] = x.amp; phase[x.q] = x.phase; stable[x.q] = x.stable; } done += list.length; if (opts.onProgress) opts.onProgress(done / N); };
+    const nW = typeof Worker !== 'undefined' ? Math.max(1, Math.min(16, (navigator.hardwareConcurrency || 4) - 1)) : 0;
+    let pooled = false;
+    if (nW) {
+      try {
+        // small batches, handed out as workers free up, so the progress moves and slow cells do not pile up on one worker
+        const queue = []; for (let i = 0; i < cells.length; i += 24) queue.push(cells.slice(i, i + 24));
+        await Promise.all(Array.from({ length: nW }, () => new Promise((resolve, reject) => {
+          const wk = new Worker(new URL('../worker/nbody.worker.js', import.meta.url), { type: 'module' });
+          const next = () => { const part = queue.shift(); if (!part) { wk.terminate(); resolve(); return; } wk.postMessage({ id: 0, obs, base: b, opt, cells: part }); };
+          wk.onerror = (err) => { wk.terminate(); reject(new Error(err.message || 'worker failed')); };
+          wk.onmessage = (ev) => { put(ev.data.done); nSim += ev.data.nSim; next(); };
+          next();
+        })));
+        pooled = true;
+      } catch { chi2.fill(Infinity); done = 0; nSim = 0; }
+    }
+    if (!pooled) {   // no workers: the same grid on this thread, yielding to the page between rows
+      const prep = ttvGridPrepare(obs, b, opt);
+      for (let i = 0; i < cells.length; i += np) { put(cells.slice(i, i + np).map((x) => { const r = ttvGridCell(prep, x.mass, x.period); return { q: x.q, chi2: r.chi2, amp: r.amp, phase: r.phase, stable: r.stable && r.chi2 < Infinity ? 1 : 0 }; })); await new Promise((r) => setTimeout(r, 0)); }
+      nSim = prep.nSim;
+    }
+    const prep = ttvGridPrepare(obs, b, opt), g = ttvGridAssemble(prep, b, mass, period, chi2, amp, phase, stable, hill, {});
+    g.nSim = nSim; g.seconds = (performance.now() - t0) / 1000;
+    // polish the few best cells that are not neighbours: the surface is too narrow for the grid minimum to be the answer
+    let best = null;
+    if (opts.refine !== false) {
+      const order = Array.from({ length: N }, (_, q) => q).filter((q) => Number.isFinite(chi2[q])).sort((a, x) => chi2[a] - chi2[x]), starts = [];
+      for (const q of order) { const im = (q / np) | 0, ip = q % np; if (starts.every((s) => Math.abs(s.ip - ip) > 2)) starts.push({ im, ip, mass: mass[im], period: period[ip], phase: phase[q] }); if (starts.length === 4) break; }
+      for (const s of starts) { try { const rf = ttvGridRefine(obs, b, s, { maxSim: opts.maxSim > 0 ? opts.maxSim : 300 }); if (!best || rf.chi2 < best.chi2) best = rf; } catch { /* a start that fails is skipped */ } }
+    }
+    cache.key = c.key; cache.grid = g; cache.refined = best; cache.msg = '';
+    let cell = null;
+    if (best || Number.isFinite(g.best.chi2)) { try { cell = companionCell(c, best || { mass: g.best.mass, period: g.best.period, phase: g.best.phase }); } catch { cell = null; } }
+    return { grid: g, refined: best, cell, chi2Linear: g.chi2Linear, ndata: g.ndata };
+  } catch (err) { cache.msg = 'The search failed: ' + (err.message || err); throw err; } finally { cache.busy = false; }
+}
+
+export function buildDynamics(el, app) {
+  const { S, h, pushUndo, flash } = app, ctx = searchContext(app), { tRef, pls, st, rowsOf } = ctx;
   const massOk = pls.every((p) => p.mplanet > 0) && st.mstar > 0;
   el.append(h('h3', {}, 'Dynamics'));
 
@@ -74,6 +155,16 @@ export function buildDynamics(el, app) {
   if (pls.length > 1 && massOk) {
     const sys = { mstar: st.mstar, rstar: st.rstar, epoch: S.nbody ? S.nbody.epoch : dynamicsEpoch(S, pls), planets: pls.map((p) => ({ per: p.per, tmid: p.tmid, ecc: p.ecc || 0, omega: p.omega || 0, inc: p.inc, mplanet: p.mplanet })) };
     let rep = null; try { rep = stabilityReport(sys); } catch { /* reported below as no findings */ }
+    const megBox = h('div');
+    megBox.append(h('button', { class: 'btn', title: 'Integrate 1000 orbits of the outermost planet and compute MEGNO (Cincotta & Simó 2000): about 2 for a regular orbit, growing for a chaotic one. Runs in a worker; about a second.', onclick: (ev) => {
+      const b = ev.currentTarget; b.disabled = true; b.textContent = 'Integrating…';
+      const w = new Worker(new URL('../worker/nbody.worker.js', import.meta.url), { type: 'module' });
+      w.onmessage = (m) => { w.terminate(); const r = m.data && m.data.report, ig = r && r.integration; b.remove();
+        megBox.append(h('p', { class: 'note' + (r && r.stable === false ? ' callout warn' : ''), html: ig && Number.isFinite(ig.megno) ? `<b>MEGNO</b> ${ig.megno.toFixed(3)} after ${Math.round(ig.megnoOrbits || 0)} orbits${ig.megnoStopped ? ' (stopped when it passed 20)' : ''}${Number.isFinite(ig.lyapunovTime) ? `; Lyapunov time ≈ ${ig.lyapunovTime.toPrecision(2)} d (order of magnitude)` : ''}. ${ig.megno < 2.5 ? 'Regular over this span.' : 'Chaotic over this span.'}` : `The integration did not give MEGNO${m.data && m.data.error ? ': ' + m.data.error : ''}.` })); };
+      w.onerror = (e) => { w.terminate(); b.disabled = false; b.textContent = 'Chaos check (MEGNO)'; megBox.append(h('p', { class: 'note callout warn' }, 'The worker failed: ' + (e.message || 'unknown error'))); };
+      w.postMessage({ id: 1, task: 'stability', system: sys, opt: { integrate: 1000 } });
+    } }, 'Chaos check (MEGNO)'));
+    el.append(megBox);
     if (rep && rep.findings.length) el.append(h('p', { class: 'note' + (rep.stable === false ? ' callout warn' : ''), html: `<b>Stability:</b> ${rep.findings.slice(0, 2).join(' ')}` }));
     const sets = pls.map((p, i) => ({ p, i, rows: rowsOf(p.sfx) })).filter((x) => x.rows.length >= 3);
     if (sets.length) {
@@ -97,8 +188,7 @@ export function buildDynamics(el, app) {
   }
 
   // ---- search for an unseen companion of the planet on show
-  const me = pls.find((p) => p.sfx === S.pl) || pls[0], rows = rowsOf(me.sfx);
-  const key = `${S.dataId}|${pls.length}|${me.sfx}|${rows.length}|${rows.length ? rows[0].t + rows[rows.length - 1].t : 0}|${me.mplanet}`;
+  const { me, rows, key } = ctx;
   if (cache.key !== key) { cache.key = key; cache.grid = null; cache.refined = null; cache.msg = ''; }
   if (rows.length >= 8 && (pls.length === 1 || !S.nbody || cache.grid)) {
     const msg = h('span', { class: 'note', id: 'dynmsg' }, cache.msg);
@@ -115,58 +205,16 @@ export function buildDynamics(el, app) {
           + (better < 12 ? ' That improvement is too small to claim a companion: three extra parameters are expected to gain about this much on noise alone.' : ' The chi-square surface has many narrow minima (aliases in period every few thousandths of a day, and a family on each side of every resonance): treat this as one solution that fits, and confirm it with a fit and with more data.')
         : `Best grid cell: ${g.best.mass.toFixed(3)} M Jup at ${g.best.period.toFixed(4)} d, χ² ${g.best.chi2.toFixed(1)} against ${g.chi2Linear.toFixed(1)} with no companion.` }));
       if (rf && better >= 12) el.append(h('div', { class: 'btnrow' }, h('button', { class: 'btn', title: 'Add the companion as a planet, switch the N-body model on and free its mass, period and phase, ready for a fit of the times', onclick: () => {
-        const cs = companionStart({ t: rows.map((r) => r.t - tRef), e: rows.map((r) => r.e) }, base(), rf);
-        app.addCompanion({ mass: rf.mass, period: cs.comp.per, tmid: cs.comp.tmid, inc: me.inc, epoch: cs.epoch, host: cs.host, chi2: cs.chi2 });
+        app.addCompanion(companionCell(ctx, rf));
       } }, 'Add it as a planet and fit')));
     }
   } else if (pls.length === 1) el.append(h('p', { class: 'note' }, 'A search for an unseen companion needs at least eight mid-transit times of this planet.'));
 
-  function base() {
-    const t = rows.map((r) => r.t - tRef), e = rows.map((r) => r.e), E = t.map((x) => Math.round((x - me.tmid) / me.per)), ln = lineFit(E, t, e);
-    return { mstar: st.mstar, rstar: st.rstar, planet: { per: ln.b || me.per, tmid: ln.a, ecc: me.ecc || 0, omega: me.omega || 0, inc: me.inc, mplanet: me.mplanet }, perturber: { inc: me.inc } };
-  }
   async function search() {
     if (cache.busy) return;
-    cache.busy = true; cache.msg = 'Simulating…'; app.rebuild();
-    try {
-      const b = base(), obs = { t: rows.map((r) => r.t - tRef), e: rows.map((r) => r.e) }, P = b.planet.per, opt = { phases: 8 };
-      // outside companions from just beyond the Hill-stability limit to past 3:1, inside ones down to 1:3; masses from 5 Earth masses to 3 Jupiters
-      const ratio = []; for (let r = 0.34; r < 0.8; r += 0.02) ratio.push(r); for (let r = 1.25; r <= 3.3; r += 0.02) ratio.push(r);
-      const period = ratio.map((r) => r * P), mass = Array.from({ length: 14 }, (_, i) => 0.015 * Math.pow(3 / 0.015, i / 13));
-      const nm = mass.length, np = period.length, N = nm * np, chi2 = new Float64Array(N).fill(Infinity), amp = new Float64Array(N), phase = new Float64Array(N), stable = new Uint8Array(N), hill = new Float64Array(N);
-      const cells = []; for (let im = 0; im < nm; im++) for (let ip = 0; ip < np; ip++) cells.push({ q: im * np + ip, mass: mass[im], period: period[ip] });
-      const t0 = performance.now(); let nSim = 0, done = 0;
-      const put = (list) => { for (const c of list) { chi2[c.q] = c.chi2; amp[c.q] = c.amp; phase[c.q] = c.phase; stable[c.q] = c.stable; } done += list.length; const m = document.getElementById('dynmsg'); if (m) m.textContent = `Simulating… ${Math.round((100 * done) / N)}%`; };
-      const nW = typeof Worker !== 'undefined' ? Math.max(1, Math.min(16, (navigator.hardwareConcurrency || 4) - 1)) : 0;
-      let pooled = false;
-      if (nW) {
-        try {
-          // small batches, handed out as workers free up, so the progress moves and slow cells do not pile up on one worker
-          const queue = []; for (let i = 0; i < cells.length; i += 24) queue.push(cells.slice(i, i + 24));
-          await Promise.all(Array.from({ length: nW }, () => new Promise((resolve, reject) => {
-            const wk = new Worker(new URL('../worker/nbody.worker.js', import.meta.url), { type: 'module' });
-            const next = () => { const part = queue.shift(); if (!part) { wk.terminate(); resolve(); return; } wk.postMessage({ id: 0, obs, base: b, opt, cells: part }); };
-            wk.onerror = (err) => { wk.terminate(); reject(new Error(err.message || 'worker failed')); };
-            wk.onmessage = (ev) => { put(ev.data.done); nSim += ev.data.nSim; next(); };
-            next();
-          })));
-          pooled = true;
-        } catch { chi2.fill(Infinity); done = 0; nSim = 0; }
-      }
-      if (!pooled) {   // no workers: the same grid on this thread, yielding to the page between rows
-        const prep = ttvGridPrepare(obs, b, opt);
-        for (let i = 0; i < cells.length; i += np) { put(cells.slice(i, i + np).map((c) => { const r = ttvGridCell(prep, c.mass, c.period); return { q: c.q, chi2: r.chi2, amp: r.amp, phase: r.phase, stable: r.stable && r.chi2 < Infinity ? 1 : 0 }; })); await new Promise((r) => setTimeout(r, 0)); }
-        nSim = prep.nSim;
-      }
-      const prep = ttvGridPrepare(obs, b, opt), g = ttvGridAssemble(prep, b, mass, period, chi2, amp, phase, stable, hill, {});
-      g.nSim = nSim; g.seconds = (performance.now() - t0) / 1000;
-      // polish the few best cells that are not neighbours: the surface is too narrow for the grid minimum to be the answer
-      const order = Array.from({ length: N }, (_, q) => q).filter((q) => Number.isFinite(chi2[q])).sort((a, c) => chi2[a] - chi2[c]), starts = [];
-      for (const q of order) { const im = (q / np) | 0, ip = q % np; if (starts.every((s) => Math.abs(s.ip - ip) > 2)) starts.push({ im, ip, mass: mass[im], period: period[ip], phase: phase[q] }); if (starts.length === 4) break; }
-      let best = null;
-      for (const s of starts) { try { const rf = ttvGridRefine(obs, b, s, { maxSim: 300 }); if (!best || rf.chi2 < best.chi2) best = rf; } catch { /* a start that fails is skipped */ } }
-      cache.grid = g; cache.refined = best; cache.msg = '';
-    } catch (err) { cache.msg = 'The search failed: ' + (err.message || err); }
-    cache.busy = false; app.rebuild();
+    const done = companionSearch(app, { onProgress: (f) => { const m = document.getElementById('dynmsg'); if (m) m.textContent = `Simulating… ${Math.round(100 * f)}%`; } });
+    app.rebuild();   // shows "Simulating…" and disables the button while the grid runs
+    try { await done; } catch { /* the reason is in cache.msg, shown beside the button */ }
+    app.rebuild();
   }
 }

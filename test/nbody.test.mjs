@@ -348,5 +348,18 @@ console.log('--- speed (this machine, one thread)');
   void gridInfo; void defaultStep; void nearestFirstOrder;
 }
 
+// ---- a transit exactly at the epoch: the Wisdom-Holman map used to drop it about one time in ten (the sign of g at the epoch
+// is rounding, and its root landed 1e-8 d before the window); 200 systems whose first datum is at the epoch
+{
+  let rej = { wh: 0, ias15: 0 }, dmax = 0;
+  for (let s = 0; s < 200; s++) {
+    const rnd = (k) => { const x = Math.sin(s * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+    const p1 = 2 + 4 * rnd(1), p2 = p1 * (1.4 + 1.5 * rnd(2)), sy = { mstar: 1, planets: [{ per: p1, tmid: 0, mplanet: 0.001 + 0.01 * rnd(3) }, { per: p2, tmid: p2 * rnd(4), mplanet: 0.1 + rnd(5), ecc: 0.05 * rnd(6), omega: 360 * rnd(7) }] };
+    const q = {}; for (const integ of ['wh', 'ias15']) { q[integ] = dynamicalModel(sy, { timing: [{ planet: 0, t: [0, p1, 2 * p1] }], integrator: integ }); if (!q[integ].ok) rej[integ]++; }
+    if (q.wh.ok && q.ias15.ok) dmax = Math.max(dmax, Math.abs(q.wh.timing[0].model[0] - q.ias15.timing[0].model[0]) * S);
+  }
+  check('a transit at the epoch is found by both integrators', rej.wh === 0 && rej.ias15 === 0 && dmax < 1, `rejected: WH ${rej.wh}, IAS15 ${rej.ias15} of 200 (WH rejected 18 before the fix); WH and IAS15 agree to ${dmax.toFixed(3)} s at the epoch`);
+}
+
 console.log(ok ? '\nnbody: all checks passed' : '\nnbody: FAILURES');
 process.exit(ok ? 0 : 1);

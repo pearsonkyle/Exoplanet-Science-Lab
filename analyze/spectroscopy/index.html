@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spectroscopy · Exoplanet Science Lab</title>
+<meta name="description" content="Time-series spectroscopy in the browser: JWST x1dints spectra or a simulated Ariel or JWST observation to a transmission or emission spectrum. Nothing is uploaded.">
+<meta name="esl-root" content="../../">
+<link rel="stylesheet" href="../../src/site/site.css">
+<link rel="stylesheet" href="../../src/photometry/photometry.css">
+<link rel="stylesheet" href="../../src/spectra/spectra.css">
+</head>
+<body class="page photpage specpage">
+<header id="sitebar" data-active="analyze"></header>
+<nav id="subnav" class="subnav" data-active="spectroscopy"></nav>
+<main id="spec">
+  <div class="phead">
+    <div>
+      <h1>Spectroscopy</h1>
+      <p class="lead">Spectra over time in, a transmission or emission spectrum out. Open the extracted spectra of a JWST time series (<span class="mono">x1dints.fits</span>) or a table of flux against time and wavelength, or simulate an Ariel or JWST observation of a known planet. Everything is computed in this tab; your files are not uploaded.</p>
+    </div>
+  </div>
+  <div id="app"></div>
+  <noscript><p class="note">This page needs JavaScript.</p></noscript>
+</main>
+<script type="module" src="../../src/site/nav.js"></script>
+<script type="module" src="../../src/site/subnav.js"></script>
+<script type="module" src="../../src/spectra/main.js"></script>
+</body>
+</html>

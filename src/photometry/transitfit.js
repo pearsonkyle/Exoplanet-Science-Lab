@@ -12,6 +12,7 @@
 //    absolute deviation of the same Savitzky-Golay residuals, which is deterministic.
 import { buildProblem } from '../core/model.js';
 import { savgol2, medianOf } from '../core/photometry.js';
+import { detrendFromColumns } from '../core/detrend.js';
 
 function solve(A, b, n) {            // Gaussian elimination with partial pivoting; returns x or null
   const M = A.map((r, i) => [...r, b[i]]);
@@ -103,18 +104,31 @@ export function exoticBounds(planet, tmin, tmax) {
  * @param t, f, e   times (any Julian-date style, days), flux, flux uncertainty (any scale; only relative weights matter for the fit)
  * @param airmass   array or null (then a2 is not fitted and the baseline is a constant)
  * @param planet    { rprs, ars, inc, per, tmid, ecc, omega, ld: [four Claret coefficients], tmidUnc, perUnc }
- * @param opts      { keep (Uint8Array), loss: 'chi2' | 'exotic', bounds (from exoticBounds), exptime [d] and supersample for exposure averaging (EXOTIC does none) }
+ * @param opts      { keep (Uint8Array), loss: 'chi2' | 'exotic', bounds (from exoticBounds), exptime [d] and supersample for exposure averaging (EXOTIC does none),
+ *                    detrend: { columns: { name: array }, spec: { columns, poly, pld, kernel } } (src/core/detrend.js detrendFromColumns; linear regressors
+ *                    and the nearest-neighbour kernel go into buildProblem, so they are fitted with the transit) }
  * @returns { params: { rprs, tmid, inc, a1, a2 }, errors (formal, from the curvature, scaled by sqrt(chi2 / dof); NaN at a bound),
  *            model, baseline, transit, resid (all length n, NaN where not kept... see keep), keep, chi2, n, scatter, robust, atBound: [names] }
  */
 export function fitTransitLsq(t, f, e, airmass, planet, opts = {}) {
   const n = t.length, keep = opts.keep ? Uint8Array.from(opts.keep) : new Uint8Array(n).fill(1);
-  // every finite point is modelled; the ones not kept get a weight of nothing
-  const idx = []; let nk = 0; for (let i = 0; i < n; i++) { if (Number.isFinite(t[i]) && Number.isFinite(f[i]) && f[i] > 0 && Number.isFinite(e[i]) && e[i] > 0 && (!airmass || Number.isFinite(airmass[i]))) { idx.push(i); if (keep[i]) nk++; } else keep[i] = 0; }
+  // detrending (src/core/detrend.js): opts.detrend = { columns: { name: array of length n }, spec: { columns: [names], poly, pld: [names], kernel: { features, neighbors } } }
+  const dt = opts.detrend && opts.detrend.spec ? opts.detrend : null, dcol = dt ? dt.columns : {};
+  const needCols = dt ? [...(dt.spec.columns || []).flatMap((c) => (c === 'xy' || c === 'xc2' || c === 'yc2' ? ['xc', 'yc'] : [c])), ...(dt.spec.pld || []), ...((dt.spec.kernel && dt.spec.kernel.features) || [])] : [];
+  // every finite point is modelled; the ones not kept get a weight of nothing (with a kernel they are left out: they would be someone's neighbours)
+  const idx = []; let nk = 0; for (let i = 0; i < n; i++) { if (Number.isFinite(t[i]) && Number.isFinite(f[i]) && f[i] > 0 && Number.isFinite(e[i]) && e[i] > 0 && (!airmass || Number.isFinite(airmass[i])) && needCols.every((c) => !dcol[c] || Number.isFinite(dcol[c][i])) && (keep[i] || !(dt && dt.spec.kernel))) { idx.push(i); if (keep[i]) nk++; } else keep[i] = 0; }
   if (nk < 6) return null;
   let tRef = Infinity, tMax = -Infinity; for (const i of idx) { if (t[i] < tRef) tRef = t[i]; if (t[i] > tMax) tMax = t[i]; }
   const B = opts.bounds || exoticBounds(planet, tRef, tMax); tRef = Math.floor(tRef);
   const data = { t: Float64Array.from(idx, (i) => t[i] - tRef), f: Float64Array.from(idx, (i) => f[i]), e: Float64Array.from(idx, (i) => (keep[i] ? e[i] : e[i] * 1e9)), airmass: airmass ? Float64Array.from(idx, (i) => airmass[i]) : null };
+  let detrendInfo = null;
+  if (dt) {
+    const sub = Object.fromEntries(Object.entries(dcol).filter(([, a]) => a && a.length === n).map(([k, a]) => [k, Float64Array.from(idx, (i) => a[i])]));
+    const d = detrendFromColumns(sub, dt.spec, data.t, null);
+    if (d.regressors) data.regressors = d.regressors;
+    if (d.kernel) data.kernel = d.kernel;
+    detrendInfo = { names: d.names, kernel: !!d.kernel, neighbors: d.kernel ? d.kernel.k : 0, dropped: d.dropped };
+  }
   const keys = airmass ? ['rprs', 'tmid', 'inc', 'a2'] : ['rprs', 'tmid', 'inc'];
   const lo = [B.rprs[0] + 1e-6, B.tmid[0] - tRef, B.inc[0], B.a2[0]].slice(0, keys.length), hi = [B.rprs[1], B.tmid[1] - tRef, B.inc[1], B.a2[1]].slice(0, keys.length);
   const ld = planet.ld || [0, 0, 0, 0];
@@ -123,7 +137,7 @@ export function fitTransitLsq(t, f, e, airmass, planet, opts = {}) {
     free: keys.map((k, i) => ({ key: k, prior: { type: 'uniform', a: lo[i], b: hi[i] } })) });
   const m = idx.length, exotic = opts.loss === 'exotic', rv = new Float64Array(m);
   let resid, x0 = [Math.min(hi[0], Math.max(lo[0], planet.rprs)), B.tmid0 - tRef, Math.min(hi[2], Math.max(lo[2], planet.inc)), 0].slice(0, keys.length), l2 = lo, h2 = hi;
-  if (!exotic) resid = (x) => { const d = prob.detail(x); if (!d) return null; for (let k = 0; k < m; k++) rv[k] = (data.f[k] - d.a1 * d.model[k]) / data.e[k]; return Float64Array.from(rv); };
+  if (!exotic) resid = (x) => { const d = prob.detail(x); if (!d) return null; for (let k = 0; k < m; k++) rv[k] = (data.f[k] - d.base[k] * d.transit[k]) / data.e[k]; return Float64Array.from(rv); };
   else {
     // EXOTIC's objective: a1 is a fifth free parameter (start: the mean flux, bounds [0.5 min, 2 max]) and the "residuals" are squared
     let s = 0, mn = Infinity, mx = -Infinity; for (let k = 0; k < m; k++) { if (!keep[idx[k]]) continue; s += data.f[k]; mn = Math.min(mn, data.f[k]); mx = Math.max(mx, data.f[k]); }
@@ -134,7 +148,8 @@ export function fitTransitLsq(t, f, e, airmass, planet, opts = {}) {
   if (!d) return null;
   const a1 = exotic ? sol.x[keys.length] : d.a1, model = new Float64Array(n).fill(NaN), baseline = new Float64Array(n).fill(NaN), transit = new Float64Array(n).fill(NaN), res = new Float64Array(n).fill(NaN);
   let chi2 = 0; const kept = [];
-  idx.forEach((i, k) => { const ex = d.model[k] / d.transit[k]; baseline[i] = a1 * ex; transit[i] = d.transit[k]; model[i] = a1 * d.model[k]; res[i] = f[i] - model[i]; if (keep[i]) { chi2 += (res[i] / e[i]) ** 2; kept.push(res[i]); } });
+  // the model is a1 x baseline systematics x transit in EXOTIC's loss; with the chi2 loss the integrated-out a1 and regressor coefficients (d.base)
+  idx.forEach((i, k) => { const ex = d.model[k] / d.transit[k]; baseline[i] = exotic ? a1 * ex : d.base[k]; transit[i] = d.transit[k]; model[i] = exotic ? a1 * d.model[k] : d.base[k] * d.transit[k]; res[i] = f[i] - model[i]; if (keep[i]) { chi2 += (res[i] / e[i]) ** 2; kept.push(res[i]); } });
   let mean = 0; for (const v of kept) mean += v; mean /= nk; let q = 0; for (const v of kept) q += (v - mean) * (v - mean);
   const fm = medianOf(idx.filter((i) => keep[i]).map((i) => f[i])), rm = medianOf(kept), mad = 1.4826 * medianOf(kept.map((v) => Math.abs(v - rm)));
   const params = { rprs: sol.x[0], tmid: sol.x[1] + tRef, inc: sol.x[2], a1, a2: airmass ? sol.x[3] : 0 };
@@ -146,7 +161,7 @@ export function fitTransitLsq(t, f, e, airmass, planet, opts = {}) {
   }
   const atBound = keys.filter((_, i) => sol.x[i] <= lo[i] + 1e-12 * Math.abs(lo[i]) || sol.x[i] >= hi[i] - 1e-12 * Math.abs(hi[i]));
   let nIn = 0; for (const i of idx) if (keep[i] && transit[i] < 1) nIn++;
-  return { params, errors, model, baseline, transit, resid: res, keep, chi2, n: nk, scatter: Math.sqrt(q / nk) / fm, robust: mad / fm, depth: params.rprs * params.rprs, atBound, evals: sol.evals, iters: sol.iters, bounds: B, nInTransit: nIn };
+  return { params, errors, model, baseline, transit, resid: res, keep, chi2, n: nk, scatter: Math.sqrt(q / nk) / fm, robust: mad / fm, depth: params.rprs * params.rprs, atBound, evals: sol.evals, iters: sol.iters, bounds: B, nInTransit: nIn, detrend: detrendInfo, regCoeffs: d.regCoeffs || null };
 }
 
 /**

@@ -8,6 +8,7 @@ import { loadIndex, searchNames, resolveName } from '../core/catalog.js';
 import { loadSources, buildTable, FIELDS } from '../core/sources/index.js';
 import { RELATIONS, RJUP_REARTH } from '../core/relations.js';
 import { esc, display } from '../search/format.js';
+import { groupInfo } from './discovery.js';
 
 export { esc };
 
@@ -74,7 +75,17 @@ export function starLine(rows) {
   return [r.v.sptype, Number.isFinite(r.v.teff) ? `${r.v.teff.toFixed(0)} K` : '', Number.isFinite(r.v.dist) ? `${r.v.dist.toFixed(r.v.dist < 100 ? 1 : 0)} pc` : ''].filter(Boolean).map(esc).join(' · ');
 }
 
-/** The planets of a host. root: URL of the site root; focus: the planet that was asked for (shown first, marked). */
+/** A discovery method as a chip: its colour, its letter and its name (so that the colour is never the only cue). */
+export function methodChip(method) {
+  const g = groupInfo(method), name = method || g.label;
+  return `<span class="dm" style="--c:${g.color}" title="${esc(`Discovered by ${name}` + (g.id === 'o' ? ' (shown as Other on the sky)' : ''))}"><i aria-hidden="true">${g.short}</i>${esc(name)}</span>`;
+}
+
+/**
+ * The planets of a host, each a disclosure (<details>) folded to one line: name, discovery method, size class; open,
+ * its values, its next transit (an empty .nxslot that main.js fills as the clock runs) and the links to the other pages.
+ * root: URL of the site root; focus: the planet that was asked for (shown first, marked and open).
+ */
 export function planetsHtml(rows, root, focus) {
   const list = rows.slice().sort((a, b) => (a.name === focus ? -1 : b.name === focus ? 1 : 0));
   return list.map((r) => {
@@ -92,12 +103,15 @@ export function planetsHtml(rows, root, focus) {
       if (Number.isFinite(r.v.t14)) bits.push(`${shown(r, 't14', 'earth', notes, 'Transit duration')} h`);
       transit = 'yes' + (bits.length ? ' · ' + bits.join(' · ') : ' · depth and duration not given');
     } else transit = '<span class="none">not known to transit</span>';
-    const found = [r.v.method, Number.isFinite(r.v.year) ? r.v.year.toFixed(0) : ''].filter(Boolean).map(esc).join(' · ');
+    const found = methodChip(r.v.method) + (Number.isFinite(r.v.year) ? ' ' + r.v.year.toFixed(0) : '') + (r.v.facility ? `<br><small>${esc(r.v.facility)}</small>` : '');
     const q = encodeURIComponent(r.name), link = (page, text, cls2 = '') => `<a class="btn ${cls2}" href="${esc(new URL(page + '/?planet=' + q, root).href)}">${text}</a>`;
-    return `<section class="pl${r.name === focus ? ' focus' : ''}"><div class="pl-h"><b>${esc(r.name)}</b>${cls ? `<span class="cls" title="${esc(SIZE_CLASS_NOTE)}">${r.est.rp || /calculated/i.test(r.ref.rp || '') ? '~' : ''}${cls}</span>` : ''}</div>` +
-      `<div class="grid">${kv('Radius', radius)}${kv('Mass', mass)}${kv('Period', per)}${kv('Eq. temp.', teq)}${kv('Transits', transit)}${kv('Found', found)}</div>` +
+    const g = groupInfo(r.v.method);
+    return `<details class="pl${r.name === focus ? ' focus' : ''}" data-k="pl:${esc(r.name)}"${r.name === focus ? ' open' : ''}><summary class="pl-h"><b>${esc(r.name)}</b>` +
+      `<span class="pl-tags"><span class="dm" style="--c:${g.color}" title="${esc('Discovered by ' + (r.v.method || g.label))}"><i aria-hidden="true">${g.short}</i>${esc(g.label)}</span>${cls ? `<span class="cls" title="${esc(SIZE_CLASS_NOTE)}">${r.est.rp || /calculated/i.test(r.ref.rp || '') ? '~' : ''}${cls}</span>` : ''}</span></summary>` +
+      `<div class="grid">${kv('Period', per)}${kv('Radius', radius)}${kv('Mass', mass)}${kv('Eq. temp.', teq)}${kv('Transits', transit)}${kv('Found by', found)}</div>` +
+      `<div class="nxslot" data-pl="${esc(r.name)}"></div>` +
       (notes.length ? `<div class="estnote">${notes.map(([l, w]) => `<span class="est">~</span> ${esc(l)}: ${esc(w)}`).join('<br>')}</div>` : '') +
-      `<div class="links">${link('analyze', 'Analyze', 'primary')}${link('plan', 'Plan')}${link('search', 'Search')}</div></section>`;
+      `<div class="links">${link('analyze', 'Analyze', 'primary')}${link('plan', 'Plan')}${link('search', 'Search')}</div></details>`;
   }).join('');
 }
 

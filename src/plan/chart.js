@@ -4,7 +4,7 @@
 // nightFrame(noon, site) holds what every transit of one night shares (time axis, the Sun, the Moon);
 // nightData(ev, site, opts, frame) adds the target; renderAltitude / renderSkyTrack draw it with a theme, full
 // size or compact (the small multiples of the grid view, which share their axes within a night).
-import { altAz, sunAltAz, moonAltAz, twilight, noonBefore, airmass, moonIllumination } from '../core/observability.js';
+import { altAz, sunAltAz, moonAltAz, twilight, noonBefore, airmass, moonIllumination, refraction } from '../core/observability.js';
 
 // Text colours against what they are drawn on (WCAG 2.1 contrast ratio, the contrast() helper below): `text` 16.5:1
 // and `dim` 9.4:1 on the panel, where the axis labels are; captions inside the plot sit on a dark plate (at least
@@ -18,6 +18,10 @@ export const THEME = {
   font: '12px Inter, system-ui, -apple-system, "Segoe UI", sans-serif', fontSmall: '11px Inter, system-ui, -apple-system, "Segoe UI", sans-serif',
   mono: '11.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace', monoSmall: '10.5px ui-monospace, "SF Mono", Menlo, Consolas, monospace',
 };
+/** Colour of each kind of event (observability.js EVENT_KINDS): the window on the charts, the badge in the list. */
+export const KIND_COLOUR = { transit: '#6fdcff', eclipse: '#ffc56b', phase: '#f39bd6', custom: '#c9d3e6' };
+const KIND_WORD = { transit: 'transit', eclipse: 'eclipse', phase: 'phase window', custom: 'phase window' };
+const rgba = (hex, a) => `rgba(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(',')},${a})`;
 const skyBand = (sunAlt) => (sunAlt > -0.833 ? 0 : sunAlt > -6 ? 1 : sunAlt > -12 ? 2 : sunAlt > -18 ? 3 : 4);
 
 /** WCAG 2.1 contrast ratio of two '#rrggbb' colours. */
@@ -55,9 +59,13 @@ export function nightFrame(noon, site, span = null, n = 200) {
  */
 export function nightData(ev, site, opts, frame = null) {
   const tg = ev.target, F = frame || nightFrame(noonBefore(ev.mid, site.lon), site, [ev.roiStart - 0.5 / 24, ev.roiEnd + 0.5 / 24], 240);
-  const samples = F.t.map((t, i) => { const a = altAz(tg.ra, tg.dec, t, site); return { t, alt: a.alt, az: a.az, sun: F.sun[i], moonAlt: F.moonAlt[i], moonAz: F.moonAz[i] }; });
+  // with a terrain horizon (opts.horizon: azimuth -> apparent altitude, deg): the skyline under the target at each time,
+  // as a geometric altitude (the skyline is apparent; the curve is geometric: refraction is taken off)
+  const hz = opts.horizon || null;
+  const samples = F.t.map((t, i) => { const a = altAz(tg.ra, tg.dec, t, site); return { t, alt: a.alt, az: a.az, sun: F.sun[i], moonAlt: F.moonAlt[i], moonAz: F.moonAz[i], hor: hz ? hz(a.az) : NaN, clear: !hz || a.alt + refraction(a.alt) > hz(a.az) }; });
   const mm = moonAltAz(ev.mid, site);
-  return { t0: F.t0, t1: F.t1, samples, tw: F.tw, ev, moon: { illum: moonIllumination(ev.mid).fraction, alt: mm.alt, az: mm.az }, minAlt: opts.minAlt, sunLimit: opts.sunLimit, baseline: opts.baseline };
+  const skyline = hz ? Array.from({ length: 73 }, (_, k) => ({ az: k * 5, alt: hz(k * 5) })) : null;
+  return { t0: F.t0, t1: F.t1, samples, tw: F.tw, ev, moon: { illum: moonIllumination(ev.mid).fraction, alt: mm.alt, az: mm.az }, minAlt: opts.minAlt, sunLimit: opts.sunLimit, baseline: opts.baseline, skyline };
 }
 
 const lostColour = (why, theme) => (why === 'twilight' ? theme.twi : theme.warn);
@@ -76,6 +84,12 @@ export function renderAltitude(ctx, w, h, D, fmt, theme = THEME, o = {}) {
   for (let i = 0; i < S.length - 1; i++) { ctx.fillStyle = theme.sky[skyBand((S[i].sun + S[i + 1].sun) / 2)]; ctx.fillRect(x(S[i].t), T, x(S[i + 1].t) - x(S[i].t) + 0.6, ph); }
   // below the altitude limit
   ctx.fillStyle = 'rgba(3,5,9,0.55)'; ctx.fillRect(L, y(D.minAlt), pw, y(0) - y(D.minAlt));
+  // the terrain under the target (the skyline at its azimuth), filled
+  if (D.skyline) {
+    ctx.fillStyle = theme.terrain || 'rgba(120,86,52,0.55)'; ctx.beginPath(); ctx.moveTo(x(S[0].t), y(0));
+    for (const s of S) ctx.lineTo(x(s.t), y(Math.max(0, s.hor - refraction(Math.max(s.hor, -1)))));
+    ctx.lineTo(x(S[S.length - 1].t), y(0)); ctx.closePath(); ctx.fill();
+  }
   // grid and left axis
   ctx.font = c ? theme.monoSmall : theme.mono; ctx.textBaseline = 'middle'; ctx.lineWidth = 1;
   for (const a of [0, 30, 60, 90]) {
@@ -97,18 +111,18 @@ export function renderAltitude(ctx, w, h, D, fmt, theme = THEME, o = {}) {
     if (major && xx > L + 14 && xx < L + pw - 14) { ctx.fillStyle = theme.dim; ctx.fillText(fmt.local(t), xx, T + ph + (c ? 13 : 16)); if (!c) ctx.fillText(fmt.utc(t), xx, T - 7); }
   }
   if (!c) { ctx.textAlign = 'left'; ctx.fillStyle = theme.dim; ctx.fillText('UTC', 2, T - 7); ctx.fillText(fmt.tzLabel, 2, h - 5); }
-  // region of interest: the baseline wanted on each side, the transit, and the 1-sigma range of its timing
+  // region of interest: the baseline wanted on each side, the event (in the colour of its kind), and the 1-sigma range of its timing
   ctx.save(); ctx.beginPath(); ctx.rect(L, T, pw, ph); ctx.clip();
-  const xi = x(ev.ingress), xe = x(ev.egress), xb = x(ev.roiStart), xa = x(ev.roiEnd);
+  const xi = x(ev.ingress), xe = x(ev.egress), xb = x(ev.roiStart), xa = x(ev.roiEnd), kc = KIND_COLOUR[ev.kind] || theme.target;
   ctx.fillStyle = 'rgba(111,220,255,0.13)'; ctx.fillRect(xb, T, xa - xb, ph);
-  ctx.fillStyle = 'rgba(111,220,255,0.17)'; ctx.fillRect(xi, T, xe - xi, ph);
+  ctx.fillStyle = rgba(kc, ev.kind && ev.kind !== 'transit' ? 0.24 : 0.17); ctx.fillRect(xi, T, xe - xi, ph);
   if (ev.sigma > 0 && !c) {
     const s = ev.sigma * pw / (D.t1 - D.t0);
     ctx.fillStyle = 'rgba(255,180,84,0.22)'; ctx.fillRect(xi - s, T, 2 * s, ph); ctx.fillRect(xe - s, T, 2 * s, ph);
   }
   ctx.strokeStyle = theme.target; ctx.lineWidth = 1; ctx.setLineDash([2, 3]); ctx.globalAlpha = 0.8;
   ctx.beginPath(); ctx.moveTo(Math.round(xb) + 0.5, T); ctx.lineTo(Math.round(xb) + 0.5, T + ph); ctx.moveTo(Math.round(xa) + 0.5, T); ctx.lineTo(Math.round(xa) + 0.5, T + ph); ctx.stroke();
-  ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.lineWidth = c ? 1.25 : 1.5;
+  ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.lineWidth = c ? 1.25 : 1.5; ctx.strokeStyle = kc;
   ctx.beginPath(); ctx.moveTo(xi, T); ctx.lineTo(xi, T + ph); ctx.moveTo(xe, T); ctx.lineTo(xe, T + ph); ctx.stroke();
   ctx.setLineDash([5, 3]); ctx.strokeStyle = theme.targetCore; ctx.globalAlpha = 0.85; ctx.beginPath(); ctx.moveTo(x(ev.mid), T); ctx.lineTo(x(ev.mid), T + ph); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
   // altitude limit
@@ -124,7 +138,7 @@ export function renderAltitude(ctx, w, h, D, fmt, theme = THEME, o = {}) {
     for (let i = 0; i < S.length; i++) { const s = S[i]; if (s.alt > -1 && test(s)) { on ? ctx.lineTo(x(s.t), y(s.alt)) : ctx.moveTo(x(s.t), y(s.alt)); on = true; } else on = false; }
     ctx.stroke(); ctx.globalAlpha = 1;
   };
-  const obs = (s) => s.sun <= D.sunLimit && s.alt >= D.minAlt;
+  const obs = (s) => s.sun <= D.sunLimit && s.alt >= D.minAlt && s.clear !== false;
   path(() => true, c ? 1.5 : 1.75, theme.target, 0.8);
   path(obs, c ? 5 : 6.5, '#03060c', 0.9);
   path(obs, c ? 3 : 4, theme.target);
@@ -144,7 +158,7 @@ export function renderAltitude(ctx, w, h, D, fmt, theme = THEME, o = {}) {
   };
   if (lastMoon) { const right = x(lastMoon.t) > L + pw - 80; plate(`Moon ${Math.round(100 * D.moon.illum)}%`, x(lastMoon.t) + (right ? -5 : 5), Math.max(T + 14, y(lastMoon.moonAlt) - 6), theme.moon, right ? 'right' : 'left'); }
   const lx = Math.max(L + 44, Math.min(L + pw - 44, x(ev.mid)));
-  plate('transit', lx, T + 14, theme.target);
+  plate(KIND_WORD[ev.kind] || 'transit', lx, T + 14, kc);
   if (ev.sigma > 0) plate('± ' + fmt.span(ev.sigma), lx, T + 30, theme.warn);
   plate(`limit ${D.minAlt}°`, L + 5, y(D.minAlt) - 5, theme.warn, 'left');
 }
@@ -165,6 +179,11 @@ export function renderSkyTrack(ctx, size, D, theme = THEME, o = {}) {
   for (const a of [0, 30, 60]) { ctx.strokeStyle = a === 0 ? theme.dim : theme.grid; ctx.lineWidth = a === 0 ? 1.5 : 1; ctx.beginPath(); ctx.arc(c, c, R * (90 - a) / 90, 0, 2 * Math.PI); ctx.stroke(); }
   ctx.strokeStyle = theme.grid; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(c - R, c); ctx.lineTo(c + R, c); ctx.moveTo(c, c - R); ctx.lineTo(c, c + R); ctx.stroke();
   ctx.setLineDash([5, 4]); ctx.strokeStyle = theme.warn; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(c, c, R * (90 - D.minAlt) / 90, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
+  // the terrain: the skyline as a ring drawn in from the edge where it is above the horizon
+  if (D.skyline) {
+    ctx.fillStyle = theme.terrain || 'rgba(120,86,52,0.55)'; ctx.beginPath(); ctx.arc(c, c, R, 0, 2 * Math.PI, false);
+    D.skyline.forEach((p, i) => { const [px, py] = pt(Math.max(0, p.alt), p.az); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.closePath(); ctx.fill('evenodd');
+  }
   ctx.font = `600 ${k ? 10.5 : 12.5}px Inter, system-ui, sans-serif`; ctx.fillStyle = theme.text; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const cp = k ? 6 : 10;
   ctx.fillText('N', c, c - R - cp); ctx.fillText('S', c, c + R + cp); ctx.fillText('E', c - R - cp, c); ctx.fillText('W', c + R + cp, c);

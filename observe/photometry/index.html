@@ -3,26 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Photometry · Exoplanet Science Lab</title>
-<meta name="description" content="Turn your own FITS images, or TESS and Kepler target pixel files, into a light curve in the browser. Nothing is uploaded.">
-<meta name="esl-root" content="../../">
-<link rel="stylesheet" href="../../src/site/site.css">
-<link rel="stylesheet" href="../../src/photometry/photometry.css">
+<title>Photometry has moved · Exoplanet Science Lab</title>
+<meta name="robots" content="noindex">
+<!-- Photometry moved from observe/photometry/ to analyze/photometry/. This page keeps old links working: the script carries the query
+     (?demo=2 and the like) and the anchor along; without JavaScript the refresh and the link below still lead there. -->
+<meta http-equiv="refresh" content="0; url=../../analyze/photometry/">
+<script>location.replace(new URL('../../analyze/photometry/' + location.search + location.hash, location.href).href);</script>
 </head>
-<body class="page photpage">
-<header id="sitebar" data-active="observe"></header>
-<main id="phot">
-  <div class="phead">
-    <div>
-      <a class="back" href="../">&larr; Sky view</a>
-      <h1>Photometry</h1>
-      <p class="lead">Images in, light curve out. Open a folder of FITS frames from your telescope, or a TESS / Kepler target pixel file. Everything is computed in this tab; your files are not uploaded.</p>
-    </div>
-  </div>
-  <div id="app"></div>
-  <noscript><p class="note">This page needs JavaScript.</p></noscript>
-</main>
-<script type="module" src="../../src/site/nav.js"></script>
-<script type="module" src="../../src/photometry/main.js"></script>
+<body style="background:#05070c;color:#dfe6f3;font:14px/1.5 system-ui,sans-serif;padding:24px">
+<p>Photometry is now part of Analyze: <a href="../../analyze/photometry/" style="color:#5fd4ff">analyze/photometry/</a>.</p>
 </body>
 </html>

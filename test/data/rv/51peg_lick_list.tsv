@@ -1,0 +1,40 @@
+#
+#   VizieR Astronomical Server vizier.cfa.harvard.edu
+#    Date: 2026-11-16T05:38:02 [V7.6.1]
+#   In case of problem, please report to:	cds-question@unistra.fr
+#
+#
+#Coosys	J2000:	eq_FK5 J2000
+#INFO	service_protocol=ASU	  IVOID of the protocol through which the data was retrieved
+#INFO	request_date=2026-11-16T05:38:02	  Query execution date
+#INFO	request=https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=J/ApJS/210/5/table1&-c=344.36754%20%2B20.769096&-c.rs=10&-out.add=_r&-sort=_r&-out=Name	  Full request URL
+#INFO	contact=cds-question@unistra.fr	  Email or URL to contact publisher
+#INFO	server_software=VizieR/7.6.1	  Software version
+#INFO	publisher=CDS	  Data centre that produced the VOTable
+#INFO	MaxTuples=50000	
+#INFO	-c=344.367540+20.769096,rs=10.	
+#Constraint -out=Name
+
+#RESOURCE=yCat_22100005
+#Name: J/ApJS/210/5
+#Title: The twenty-five year Lick planet search (Fischer+, 2014)
+#INFO	ivoid=ivo://cds.vizier/j/apjs/210/5	    IVOID of underlying data collection
+#INFO	data_ivoid=ivo://cds.vizier/j/apjs/210/5	    IVOID of underlying data collection
+#INFO	creator=Fischer D.A.	    First author or institution
+#INFO	cites=bibcode:2014ApJS..210....5F	    Article or Data origin sources
+#INFO	journal=ApJS	    Journal name
+#INFO	original_date=2014	    Year of the article publication
+#INFO	reference_url=https://cdsarc.cds.unistra.fr/viz-bin/cat/J/ApJS/210/5	    Dataset landing page
+#INFO	citation=doi:10.26093/cds/vizier.22100005	    Dataset identifier that can be used for citation
+#INFO	publication_date=2017-11-28	    Date of first publication in the data centre
+#INFO	rights_uri=https://cds.unistra.fr/vizier-org/licences_vizier.html	    Licence URI
+#Table	J_ApJS_210_5_table1:
+#Name: J/ApJS/210/5/table1
+#Title: Star sample
+#Column	_r	(F4.1)	Distance from center (22 57 28.21+20 46 09)[FK5/J2000]	[ucd=pos.angDistance]
+#Column	Name	(A7)	Star identifier (HD or GJ)	[ucd=meta.id;meta.main]
+_r	Name
+arcsec	
+----	-------
+ 3.7	217014
+

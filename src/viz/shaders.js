@@ -28,6 +28,7 @@ void main(){
 export const starFrag = /* glsl */ `
 precision highp float;
 uniform vec4 uLD; uniform vec3 uColor; uniform float uTime; uniform float uGran; uniform float uFlat; uniform float uOrtho;
+uniform float uRot; uniform vec2 uSpin;   // Rossiter-McLaughlin view: strength (0 off) and (cos lambda, sin lambda)
 varying vec3 vN; varying vec3 vView; varying vec3 vObj;
 ${NOISE}
 void main(){
@@ -52,6 +53,14 @@ void main(){
     vec3 limbTint = mix(vec3(1.0, 0.50, 0.22), vec3(1.0), pow(I, 0.8));
     col = uColor * limbTint * b * 1.1;
     col = mix(col, vec3(1.0, 0.98, 0.94), smoothstep(0.93, 1.2, b) * 0.35);
+  }
+  // the star's rotation, as the RM model has it (src/core/rm.js, sky frame): v = v sin i (x cos lambda - y sin lambda),
+  // positive away from us. Approaching side blue, receding side red, scaled by the line-of-sight speed.
+  if (uRot > 0.0) {
+    vec3 p = normalize(vObj);
+    float v = p.x * uSpin.x - p.y * uSpin.y;
+    vec3 tint = v > 0.0 ? vec3(1.0, 0.32, 0.25) : vec3(0.3, 0.55, 1.0);
+    col = mix(col, tint * max(I, 0.25) * 1.2, uRot * min(abs(v), 1.0) * 0.75);
   }
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -92,6 +101,7 @@ export const planetFrag = /* glsl */ `
 precision highp float;
 uniform vec3 uColA; uniform vec3 uColB; uniform vec3 uColC; uniform vec3 uAtmo;
 uniform float uBands; uniform float uFlat; uniform float uSeed; uniform vec3 uViewDir; uniform float uOrtho;
+uniform sampler2D uMap; uniform float uMapOn; uniform vec3 uSub; uniform vec3 uNorth;
 varying vec3 vNw; varying vec3 vWorld; varying vec3 vObj;
 ${NOISE}
 void main(){
@@ -112,6 +122,15 @@ void main(){
     float diff = smoothstep(-0.08, 0.55, ndl);
     col = base * (0.012 + diff * 1.05);
     col += uAtmo * rim * (0.08 + 0.9 * smoothstep(-0.35, 0.3, ndl));
+  }
+  if (uMapOn > 0.5 && uFlat < 0.5) {
+    // the fitted brightness map, glowing on its own (thermal emission), fixed to the substellar point (uSub, toward the
+    // star) and the orbit's pole (uNorth): longitude east = the way the surface turns, as in the Map view's globes
+    vec3 E = normalize(cross(uNorth, uSub));
+    float lon = atan(dot(N, E), dot(N, uSub)), lat = asin(clamp(dot(N, uNorth), -1.0, 1.0));
+    vec3 m = texture2D(uMap, vec2(lon / 6.2831853 + 0.5, lat / 3.1415927 + 0.5)).rgb;
+    float mu = clamp(dot(N, V), 0.0, 1.0);
+    col = m * (0.6 + 0.5 * mu) + uAtmo * rim * 0.04;
   }
   gl_FragColor = vec4(col, 1.0);
 }`;

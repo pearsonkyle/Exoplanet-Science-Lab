@@ -282,6 +282,38 @@ export function upIntervals(ra, dec, jd0, jd1, site, minAlt) {
   return out;
 }
 
+/**
+ * upIntervals with a terrain horizon as well: the parts of [jd0, jd1] in which the target is above minAlt AND its
+ * apparent altitude (geometric + refraction()) is above horizon(az) degrees. horizon: a function of the azimuth in
+ * degrees (from north through east) giving the apparent altitude of the skyline, optionally with a `max` property
+ * (its highest value: where that is below minAlt the terrain cannot matter and the analytic intervals are returned).
+ * The crossings are found on a grid of `step` days (default 2 min) and refined by bisection to about 1 s; a skyline
+ * feature narrower than the grid step in time can be missed (a 2 min step is 0.5 deg of hour angle).
+ */
+export function upIntervalsHorizon(ra, dec, jd0, jd1, site, minAlt, horizon, step = 2 / 1440) {
+  const base = upIntervals(ra, dec, jd0, jd1, site, minAlt);
+  if (!horizon || (fin(horizon.max) && horizon.max <= minAlt)) return base;
+  const p = precess(ra, dec, (jd0 + jd1) / 2);
+  const clear = (t) => { const h = horizontal(p.ra, p.dec, lmst(t, site.lon), site.lat); return h.alt + refraction(h.alt) - horizon(h.az); };
+  const out = [];
+  for (const [s, e] of base) {
+    const n = Math.max(1, Math.ceil((e - s) / step)), dt = (e - s) / n;
+    let a = s, fa = clear(a), start = fa > 0 ? a : null;
+    for (let i = 1; i <= n; i++) {
+      const b = i === n ? e : s + i * dt, fb = clear(b);
+      if ((fa > 0) !== (fb > 0)) {
+        let lo = a, hi = b, flo = fa;
+        while (hi - lo > 1e-5) { const m = (lo + hi) / 2, fm = clear(m); if ((fm > 0) === (flo > 0)) { lo = m; flo = fm; } else hi = m; }
+        const t = (lo + hi) / 2;
+        if (fb > 0) start = t; else { if (start != null && t > start) out.push([start, t]); start = null; }
+      }
+      a = b; fa = fb;
+    }
+    if (start != null && e > start) out.push([start, e]);
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------------------------------------ transits
 
 /** 1-sigma uncertainty [days] of the mid-time n orbits after the reference epoch: sqrt(sigma_T0^2 + (n sigma_P)^2). Assumes T0 and P are uncorrelated. */
@@ -296,6 +328,110 @@ export function transitsBetween(eph, t0, t1) {
   if (!(eph.per > 0) || !fin(eph.tmid)) return out;
   for (let n = Math.ceil((t0 - eph.tmid) / eph.per); eph.tmid + n * eph.per <= t1; n++) out.push({ epoch: n, tmid: eph.tmid + n * eph.per, sigma: midTimeUncertainty(n, eph.tmidErr, eph.perErr) });
   return out;
+}
+
+// ------------------------------------------------------------------------------------------------ other events of the orbit
+//
+// Secondary eclipses (superior conjunction), phase-curve windows and windows between two orbital phases, for the
+// same planner. Convention as batman and Winn (2010): mid-transit at true anomaly f = 90 deg - omega, mid-eclipse
+// at f = 270 deg - omega, omega in degrees as catalogued. Orbital phase is measured in time (mean anomaly) from
+// mid-transit: phase 0 = transit; the eclipse is at phase 0.5 only for a circular orbit.
+
+/** Mean anomaly [rad] at true anomaly f [rad]. */
+function meanAnomalyAt(f, e) {
+  const E = 2 * Math.atan2(Math.sqrt(1 - e) * Math.sin(f / 2), Math.sqrt(1 + e) * Math.cos(f / 2));
+  return E - e * Math.sin(E);
+}
+/** Time from mid-transit to the next mid-eclipse as a fraction of the period, in (0, 1). 0.5 for e = 0. */
+export function eclipsePhase(ecc, omega) {
+  const e = Math.min(Math.max(ecc || 0, 0), 0.999), w = (omega || 0) * DEG;
+  if (e === 0) return 0.5;
+  const d = (meanAnomalyAt(1.5 * Math.PI - w, e) - meanAnomalyAt(0.5 * Math.PI - w, e)) / TWO_PI;
+  return mod(d, 1);
+}
+/**
+ * Extra light-travel time of the eclipse relative to the transit [days]: the planet is on the far side of the star
+ * at eclipse, so its light crosses the orbit (r at transit + r at eclipse, times sin i). aAU: semi-major axis in au.
+ * 2a/c for a circular edge-on orbit (about 40 s for a = 0.04 au).
+ */
+export function eclipseLightDelay(aAU, ecc = 0, omega = 90, inc = 90) {
+  if (!(aAU > 0)) return 0;
+  const e = Math.min(Math.max(ecc || 0, 0), 0.999), w = (omega ?? 90) * DEG, p = aAU * (1 - e * e);
+  const r = (f) => p / (1 + e * Math.cos(f));
+  return (r(0.5 * Math.PI - w) + r(1.5 * Math.PI - w)) * Math.abs(sind(fin(inc) ? inc : 90)) * AU_LIGHT_DAYS;
+}
+/**
+ * Eclipse duration (first to fourth contact) over transit duration. With the geometry (ars, inc, rprs) known: the
+ * ratio of Winn (2010) eq. 14 with eq. 16 for the eclipse (the impact parameter of the eclipse is that of the
+ * transit times (1 + e sin w) / (1 - e sin w)); 0 when the planet misses the star at eclipse. Without it: the speed
+ * ratio (1 + e sin w) / (1 - e sin w). 1 for a circular orbit.
+ */
+export function eclipseDurationRatio({ ecc = 0, omega = 90, ars, inc, rprs } = {}) {
+  const e = Math.min(Math.max(ecc || 0, 0), 0.95), es = e * sind(fin(omega) ? omega : 90);
+  if (e === 0) return 1;
+  if (!(ars > 1 && fin(inc) && rprs > 0)) return (1 + es) / (1 - es);
+  const k = rprs, si = sind(inc), ci = cosd(inc), q = Math.sqrt(1 - e * e);
+  const T = (sgn) => {                                   // sgn +1 transit, -1 eclipse; in units of P / pi
+    const fac = 1 + sgn * es, b = ars * ci * (1 - e * e) / fac, s = (1 + k) ** 2 - b * b;
+    return s > 0 ? Math.asin(Math.min(1, Math.sqrt(s) / (ars * si))) * q / fac : 0;
+  };
+  const tt = T(1);
+  return tt > 0 ? T(-1) / tt : (1 + es) / (1 - es);
+}
+
+/** The event kinds the planner knows, in the order they are listed. */
+export const EVENT_KINDS = ['transit', 'eclipse', 'phase', 'custom'];
+
+/**
+ * Where one kind of event of a planet falls, relative to its linear transit ephemeris: { phase (of the centre,
+ * fraction of the orbit after mid-transit), offset (extra days, light time), before, after (days from the centre to
+ * the start and the end of the window), sigma(n) (1-sigma of the centre time n orbits after T0, days), baseline
+ * (whether the out-of-event baseline applies), assumed (text: what had to be assumed, '' when nothing) } or null
+ * when that event does not exist for this planet (no eclipse, period longer than the phase-curve limit).
+ *
+ * tg  { per, tmid, perErr, tmidErr, t14, ecc, eccErr, omega, omegaErr, ars, inc, rprs, a (au) }
+ * kind 'transit' | 'eclipse' | 'phase' | 'custom'
+ * o   phase: { span (fraction of the orbit, default 0.5), center ('eclipse' | 'transit'), maxPer (days, default 3) }
+ *     custom: { from, to } (orbital phases; to < from wraps through the transit)
+ *
+ * Eclipse timing: t = T0 + (n + phase) P + light delay. sigma^2 = sigma_T0^2 + ((n + phase) sigma_P)^2 +
+ * (P dphase/de sigma_e)^2 + (P dphase/domega sigma_omega)^2, all taken as uncorrelated (e and omega are usually
+ * correlated, so this overstates it when e is small). An eccentricity that is not catalogued is taken as 0; one
+ * catalogued without omega is placed at phase 0.5 with sigma from e cos(omega) spread over all omega.
+ */
+export function eventGeometry(tg, kind, o = {}) {
+  const P = tg.per, base = (n, ph) => midTimeUncertainty(n + ph, tg.tmidErr, tg.perErr);
+  if (kind === 'transit') return { phase: 0, offset: 0, before: tg.t14 / 2, after: tg.t14 / 2, sigma: (n) => base(n, 0), baseline: true, assumed: '' };
+  const hasE = fin(tg.ecc), hasW = fin(tg.omega), e = hasE ? Math.max(0, tg.ecc) : 0;
+  let phase = 0.5, sPh = 0, assumed = '';
+  if (!hasE) assumed = 'e not catalogued: circular orbit assumed';
+  else if (e > 0 && !hasW) { assumed = 'ω not catalogued: eclipse placed at phase 0.5'; sPh = (2 / Math.PI) * e * Math.SQRT1_2; }   // rms of (2/pi) e cos(w) over w
+  else if (e > 0) {
+    phase = eclipsePhase(e, tg.omega);
+    const h = 1e-6, de = tg.eccErr > 0 ? (eclipsePhase(Math.min(0.999, e + h), tg.omega) - eclipsePhase(Math.max(0, e - h), tg.omega)) / (Math.min(0.999, e + h) - Math.max(0, e - h)) * tg.eccErr : 0;
+    const dw = tg.omegaErr > 0 ? (mod(eclipsePhase(e, tg.omega + 1e-4) - eclipsePhase(e, tg.omega - 1e-4) + 0.5, 1) - 0.5) / 2e-4 * tg.omegaErr : 0;
+    sPh = Math.hypot(de, dw);
+  } else if (tg.eccErr > 0) sPh = (2 / Math.PI) * tg.eccErr * Math.SQRT1_2;      // e = 0 +- sigma_e, omega free
+  const offset = eclipseLightDelay(tg.a, e, hasW ? tg.omega : 90, tg.inc);
+  const eclSigma = (n) => Math.hypot(base(n, phase), P * sPh);
+  if (kind === 'eclipse') {
+    const ratio = hasE && hasW ? eclipseDurationRatio({ ecc: e, omega: tg.omega, ars: tg.ars, inc: tg.inc, rprs: tg.rprs }) : 1;
+    if (!(ratio > 0)) return null;                                               // the planet passes clear of the star
+    const d = tg.t14 * ratio;
+    return { phase, offset, before: d / 2, after: d / 2, sigma: eclSigma, baseline: true, assumed };
+  }
+  if (kind === 'phase') {
+    const span = Math.min(1, Math.max(0.05, o.span ?? 0.5)), maxPer = o.maxPer ?? 3;
+    if (!(P <= maxPer)) return null;
+    const atEcl = (o.center || 'eclipse') === 'eclipse';
+    return { phase: atEcl ? phase : 0, offset: atEcl ? offset : 0, before: span * P / 2, after: span * P / 2, sigma: atEcl ? eclSigma : (n) => base(n, 0), baseline: false, assumed: atEcl ? assumed : '' };
+  }
+  if (kind === 'custom') {
+    const a = mod(o.from ?? 0.4, 1); let b = mod(o.to ?? 0.6, 1); if (b <= a) b += 1;
+    const mid = (a + b) / 2;
+    return { phase: mid, offset: 0, before: (b - a) * P / 2, after: (b - a) * P / 2, sigma: (n) => base(n, mid), baseline: false, assumed: '' };
+  }
+  return null;
 }
 
 /**
@@ -368,6 +504,8 @@ export function assessRegion(start, end, dark, up) {
  *                                    must be observable and at least minCoverage (default 0.25) of the duration
  *                       (partial: true is accepted for 'partial')
  *          dark         intervals of darkness covering the window, to reuse between calls (else computed here)
+ *          horizon      optional terrain: azimuth (deg) -> apparent altitude of the skyline (deg), see
+ *                       upIntervalsHorizon; the target must then be above both minAlt and the skyline
  *
  * Returns events sorted by time: { target, epoch, mid, ingress, egress (JD UTC, corrected from BJD_TDB for the
  * light-travel time), bjd, sigma (1-sigma of the mid-time, days),
@@ -379,37 +517,58 @@ export function assessRegion(start, end, dark, up) {
  *   score (0-100, see scoreTransit) }.
  */
 export function findObservableTransits(targets, site, opts) {
-  const { jd0, jd1, minAlt = 30, sunLimit = -18, baseline = 1 / 24, minCoverage = 0.25 } = opts;
-  const include = opts.include || (opts.partial ? 'partial' : 'roi');
+  return findObservableEvents(targets, site, { ...opts, kinds: ['transit'] });
+}
+
+/**
+ * Transits, secondary eclipses, phase-curve windows and custom phase windows, with the rules of
+ * findObservableTransits (the same opts, plus):
+ *   kinds      which events, any of EVENT_KINDS (default ['transit'])
+ *   phase      { span, center, maxPer } and custom { from, to }: see eventGeometry
+ *   padSigma   true: the region of interest also covers 1 sigma of the predicted time on each side (default false)
+ * For a transit or an eclipse the region of interest is baseline + event + baseline; a phase window is its own region
+ * of interest (no baseline). "ingress" and "egress" are the start and end of the window for every kind.
+ * Each event also has kind, phase and assumed (see eventGeometry), baselineWanted (days) and pad (days added on each
+ * side for the timing).
+ */
+export function findObservableEvents(targets, site, opts) {
+  const { jd0, jd1, minAlt = 30, sunLimit = -18, baseline = 1 / 24, minCoverage = 0.25, padSigma = false } = opts;
+  const include = opts.include || (opts.partial ? 'partial' : 'roi'), kinds = opts.kinds || ['transit'];
   const dark = opts.dark || darkIntervals(jd0 - 1.5, jd1 + 1.5, site, sunLimit), out = [];
   for (const tg of targets) {
     if (!(tg.per > 0) || !fin(tg.tmid) || !(tg.t14 > 0) || !fin(tg.ra) || !fin(tg.dec)) continue;
     if (90 - Math.abs(site.lat - tg.dec) < minAlt) continue;                      // never gets that high from here
-    const half = tg.t14 / 2;
-    for (const tr of transitsBetween(tg, jd0 - 0.01, jd1 + 0.01)) {              // +-0.01 d: the BJD to UTC shift is below 9 min
-      const mid = bjdTdbToJdUtc(tr.tmid, tg.ra, tg.dec);
-      if (mid < jd0 || mid > jd1) continue;
-      const ingress = mid - half, egress = mid + half, w0 = ingress - baseline - 0.5, w1 = egress + baseline + 0.5;
-      // cheap rejection before the interval arithmetic: some part of the transit must be in the dark
-      let anyDark = false;
-      for (const [s, e] of dark) { if (e > ingress && s < egress) { anyDark = true; break; } if (s > egress) break; }
-      if (!anyDark) continue;
-      const up = upIntervals(tg.ra, tg.dec, w0, w1, site, minAlt), obs = intersectIntervals(dark, up);
-      const a = assessTransit(ingress, egress, obs), transitFull = a.ingress && a.egress && a.coverage > 0.999;
-      const roiStart = ingress - baseline, roiEnd = egress + baseline, R = assessRegion(roiStart, roiEnd, dark, up);
-      const full = transitFull && R.fraction > 0.9995;
-      if (!full && include === 'roi') continue;
-      if (!transitFull && !(include === 'partial' && (a.ingress || a.egress) && a.coverage >= minCoverage)) continue;
-      const p = precess(tg.ra, tg.dec, mid), at = (t) => horizontal(p.ra, p.dec, lmst(t, site.lon), site.lat);
-      const hi = at(ingress), hm = at(mid), he = at(egress), moon = moonAltAz(mid, site), ill = moonIllumination(mid);
-      const ev = { target: tg, epoch: tr.epoch, bjd: tr.tmid, mid, ingress, egress, sigma: tr.sigma,
-        roiStart, roiEnd, roiCoverage: full ? 1 : R.fraction, full, lost: full ? [] : R.lost, lostTwilight: full ? 0 : R.lostTwilight, lostAltitude: full ? 0 : R.lostAltitude,
-        coverage: a.coverage, transitFull, ingressObs: a.ingress, egressObs: a.egress,
-        before: a.before, after: a.after, obsStart: a.start, obsEnd: a.end,
-        altIngress: hi.alt, azIngress: hi.az, altMid: hm.alt, azMid: hm.az, altEgress: he.alt, azEgress: he.az, airmassMid: airmass(hm.alt),
-        moon: { sep: angularSeparation(p.ra, p.dec, moon.ra, moon.dec), illum: ill.fraction, alt: moon.alt, waxing: ill.waxing } };
-      ev.score = scoreTransit(ev, { minAlt, baseline });
-      out.push(ev);
+    for (const kind of kinds) {
+      const g = eventGeometry(tg, kind, kind === 'custom' ? opts.custom : opts.phase);
+      if (!g) continue;
+      const B = g.baseline ? baseline : 0, shift = g.phase * tg.per + g.offset;
+      // centres inside the window; +-0.01 d: the BJD to UTC shift is below 9 min
+      for (let n = Math.ceil((jd0 - 0.01 - tg.tmid - shift) / tg.per); tg.tmid + shift + n * tg.per <= jd1 + 0.01; n++) {
+        const bjd = tg.tmid + shift + n * tg.per, mid = bjdTdbToJdUtc(bjd, tg.ra, tg.dec);
+        if (mid < jd0 || mid > jd1) continue;
+        const ingress = mid - g.before, egress = mid + g.after, sigma = g.sigma(n), pad = padSigma && fin(sigma) ? sigma : 0;
+        const roiStart = ingress - B - pad, roiEnd = egress + B + pad, w0 = roiStart - 0.5, w1 = roiEnd + 0.5;
+        // cheap rejection before the interval arithmetic: some part of the event must be in the dark
+        let anyDark = false;
+        for (const [s, e] of dark) { if (e > ingress && s < egress) { anyDark = true; break; } if (s > egress) break; }
+        if (!anyDark) continue;
+        const up = opts.horizon ? upIntervalsHorizon(tg.ra, tg.dec, w0, w1, site, minAlt, opts.horizon) : upIntervals(tg.ra, tg.dec, w0, w1, site, minAlt), obs = intersectIntervals(dark, up);
+        const a = assessTransit(ingress, egress, obs), transitFull = a.ingress && a.egress && a.coverage > 0.999;
+        const R = assessRegion(roiStart, roiEnd, dark, up);
+        const full = transitFull && R.fraction > 0.9995;
+        if (!full && include === 'roi') continue;
+        if (!transitFull && !(include === 'partial' && (a.ingress || a.egress) && a.coverage >= minCoverage)) continue;
+        const p = precess(tg.ra, tg.dec, mid), at = (t) => horizontal(p.ra, p.dec, lmst(t, site.lon), site.lat);
+        const hi = at(ingress), hm = at(mid), he = at(egress), moon = moonAltAz(mid, site), ill = moonIllumination(mid);
+        const ev = { target: tg, kind, phase: g.phase, epoch: n, bjd, mid, ingress, egress, sigma, pad, assumed: g.assumed, baselineWanted: B,
+          roiStart, roiEnd, roiCoverage: full ? 1 : R.fraction, full, lost: full ? [] : R.lost, lostTwilight: full ? 0 : R.lostTwilight, lostAltitude: full ? 0 : R.lostAltitude,
+          coverage: a.coverage, transitFull, ingressObs: a.ingress, egressObs: a.egress,
+          before: a.before, after: a.after, obsStart: a.start, obsEnd: a.end,
+          altIngress: hi.alt, azIngress: hi.az, altMid: hm.alt, azMid: hm.az, altEgress: he.alt, azEgress: he.az, airmassMid: airmass(hm.alt),
+          moon: { sep: angularSeparation(p.ra, p.dec, moon.ra, moon.dec), illum: ill.fraction, alt: moon.alt, waxing: ill.waxing } };
+        ev.score = scoreTransit(ev, { minAlt, baseline: B });
+        out.push(ev);
+      }
     }
   }
   return out.sort((x, y) => x.mid - y.mid);

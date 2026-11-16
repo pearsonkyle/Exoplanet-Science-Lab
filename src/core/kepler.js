@@ -162,17 +162,20 @@ export function eclipseTime(el) {
 }
 
 /**
- * Times of periastron and of superior conjunction (mid-eclipse), each chosen as
- * the one nearest to tmid, plus numerically exact transit and eclipse durations.
+ * Time of periastron (the passage preceding this transit) and of superior conjunction (the mid-eclipse nearest to
+ * this transit, except that an eclipse more than 0.4 P away is taken after it, so a near-circular orbit gives
+ * tmid + P/2 rather than flipping between tmid - P/2 and tmid + P/2), plus exact transit and eclipse durations.
+ * Either epoch repeats every period: summarise posterior draws of them with derive.js summarizeEpoch, which does
+ * not split a posterior that straddles the branch (periastron near the transit, omega near 90 deg).
  */
 export function eventTimes(p) {
   const el = orbitElements(p), k = Math.abs(p.rprs);
-  const near = (t) => t - el.per * Math.round((t - el.tmid) / el.per);
+  const pick = (t) => { const d = t - el.tmid - el.per * Math.round((t - el.tmid) / el.per); return el.tmid + (Math.abs(d) > 0.4 * el.per ? ((d % el.per) + el.per) % el.per : d); };
   let tperi = el.tmid - el.M0 / el.n;
   if (tperi > el.tmid) tperi -= el.per;                 // the periastron passage preceding this transit
   const nuE = -Math.PI / 2 - el.w;
   const Ee = 2 * Math.atan2(Math.sqrt(1 - el.e) * Math.sin(nuE / 2), Math.sqrt(1 + el.e) * Math.cos(nuE / 2));
-  const tecl = near(el.tmid + (Ee - el.e * Math.sin(Ee) - el.M0) / el.n);
+  const tecl = pick(el.tmid + (Ee - el.e * Math.sin(Ee) - el.M0) / el.n);
   return {
     tperi, tecl,
     t14: contactDuration(el, 1 + k, el.tmid), t23: contactDuration(el, 1 - k, el.tmid),

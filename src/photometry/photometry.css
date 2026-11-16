@@ -1,5 +1,5 @@
 /* Photometry page. Colours are the tokens of src/site/site.css. */
-.photpage main { width: min(1500px, 100%); padding: 18px 18px 60px; }
+.photpage main { width: min(1500px, 100%); padding: 18px max(18px, env(safe-area-inset-right)) calc(80px + env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); }
 .phead { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 10px; }
 .phead h1 { margin-top: 2px; }
 .phead .lead { margin-bottom: 8px; max-width: 900px; font-size: 13px; }
@@ -24,9 +24,9 @@
 .filelist button span:last-child { margin-left: auto; color: var(--dim); font-family: var(--mono); }
 input.wide { flex: 1 1 180px; min-width: 0; }
 
-.work { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
+.work { display: grid; grid-template-columns: minmax(0, 1fr) clamp(330px, 28vw, 400px); gap: 14px; align-items: start; }
 .view { background: var(--panel); border: 1px solid var(--line2); border-radius: 10px; overflow: hidden; }
-.view canvas.img { display: block; width: 100%; height: min(64vh, 640px); touch-action: none; cursor: crosshair; background: #05070c; }
+.view canvas.img { display: block; width: 100%; height: min(64vh, 640px); height: min(64dvh, 640px); touch-action: none; cursor: crosshair; background: #05070c; }
 .vbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--line); font-size: 12px; }
 .vbar.top { border-top: 0; border-bottom: 1px solid var(--line); }
 .vbar input[type=range] { accent-color: var(--model); }
@@ -34,7 +34,6 @@ input.wide { flex: 1 1 180px; min-width: 0; }
 .vbar label { color: var(--dim); display: inline-flex; align-items: center; gap: 5px; }
 .btn.sm { padding: 3px 9px; font-size: 12px; }
 .btn.on { border-color: var(--model); color: #e9f8ff; background: #5fd4ff22; }
-.btn:disabled { opacity: .45; cursor: default; }
 .readout { font-family: var(--mono); color: var(--dim); font-size: 11.5px; min-width: 210px; text-align: right; }
 
 .side { display: flex; flex-direction: column; gap: 12px; }
@@ -76,19 +75,60 @@ progress { width: 100%; height: 6px; accent-color: var(--model); margin-top: 8px
 .tried tr.best td { color: var(--ok); }
 .tried tr.sel td { background: #5fd4ff1c; }
 .tried tr.inel td { color: var(--faint); }
-.tried .scroll { max-height: 300px; overflow: auto; }
+.tried .scroll { max-height: 300px; overflow: auto; border: 0; border-radius: 0; }
+.tried th { position: sticky; top: 0; background: var(--panel); }
+.tried tr:focus-visible { outline: 2px solid var(--model); outline-offset: -2px; }
 .out { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
 .note2 { font-size: 12px; color: var(--dim); max-width: 900px; margin: 8px 0 0; }
 
+/* the loading cards fold to one line once something is open */
+.srcbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 12px; margin-bottom: 12px; font-size: 12.5px; }
+.srcbar[hidden] { display: none; }
+.src.loaded { display: none; }
+.srcstat { flex: 1 1 100%; color: var(--dim); font-size: 12px; } .srcstat:empty { display: none; } .srcstat.err { color: var(--bad); } .srcstat.ok { color: var(--ok); }
+
+/* image tools (src/photometry/inspect.js) */
+.vbar.tools { border-top: 0; border-bottom: 1px solid var(--line); padding: 5px 10px; gap: 6px; }
+.vbar.tools .tlab { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; max-width: 100%; }
+@media (max-width: 480px) { .vbar.tools .tlab { display: none; } .seg { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; } }
+.seg .btn { flex: none; }
+.iplot { display: block; width: 100%; margin: 4px 0 8px; border-radius: 6px; }
+table.kv { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.kv th { text-align: left; color: var(--dim); font-weight: 500; padding: 3px 8px 3px 0; vertical-align: top; white-space: nowrap; }
+table.kv td { font-family: var(--mono); padding: 3px 0; overflow-wrap: anywhere; }
+table.kv tr + tr th, table.kv tr + tr td { border-top: 1px solid var(--line); }
+table.kv tr[title] th { text-decoration: underline dotted var(--faint); text-underline-offset: 3px; cursor: help; }
+.ptab { margin-top: 8px; font-size: 12px; }
+.ptab summary, .sugg summary { cursor: pointer; color: var(--dim); padding: 4px 0; }
+.ptab table { border-collapse: collapse; font-family: var(--mono); font-size: 11px; margin-top: 4px; }
+.ptab th, .ptab td { padding: 2px 5px; text-align: right; border: 1px solid var(--line); }
+.ptab th { color: var(--dim); font-weight: 500; }
+.ptab td.mid { color: var(--ok); }
+.verdict { margin: 4px 0 6px; padding-left: 18px; font-size: 12.5px; line-height: 1.45; }
+.verdict li + li { margin-top: 3px; }
+.hdr { max-height: min(50vh, 460px); overflow: auto; margin-top: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
+.hdr td { white-space: pre-wrap; }
+.side input[type=search] { width: 100%; }
+.stars li.bad span { color: var(--faint); }
+.sugg { margin-top: 6px; font-size: 12px; }
+.sugg li button { color: var(--model); font-size: 15px; }
+@media (pointer: coarse) {
+  .vbar .btn.sm, .seg .btn { min-height: 40px; padding: 6px 12px; font-size: 13px; }
+  .stars li { min-height: 36px; }
+  .stars li button { min-width: 36px; min-height: 32px; font-size: 15px; }
+}
+
 @media (max-width: 980px) {
   .src, .work, .plots { grid-template-columns: 1fr; }
-  .view canvas.img { height: min(52vh, 420px); }
+  .view canvas.img { height: min(52vh, 420px); height: min(52dvh, 420px); }
   .work > *, .src > *, .plots > * { min-width: 0; }
   #frameLabel { flex: 1 1 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; order: 5; }
   .status, .hint { overflow-wrap: anywhere; }
   .tried .scroll { overflow-x: auto; }
   .readout { min-width: 0; text-align: left; flex: 1 1 100%; }
-  .photpage main { padding: 12px 10px 50px; }
+  .photpage main { padding: 12px max(10px, env(safe-area-inset-right)) calc(80px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  .livetbl { overflow-x: auto; }
 }
 
 /* live view of a running stack, and the report */
@@ -105,3 +145,30 @@ progress { width: 100%; height: 6px; accent-color: var(--model); margin-top: 8px
 .plots.report .card canvas + canvas { margin-top: 2px; }
 @media (max-width: 900px) { .plots.two, .plots.four, .plots.report { grid-template-columns: 1fr; } }
 .res .card > canvas, .live .card > canvas { display: block; width: 100%; }
+
+/* ---- fingers: 40 px for everything that is tapped ---- */
+@media (pointer: coarse), (max-width: 760px) {
+  .back { display: inline-flex; align-items: center; min-height: 40px; }
+  .filelist { max-height: 220px; } .filelist button { min-height: 44px; }
+  .stars li { min-height: 40px; } .stars li button { min-width: 40px; min-height: 40px; font-size: 15px; }
+  .vbar input[type=range] { height: 40px; } .vbar label { min-height: 40px; }
+  .grid2 label label { min-height: 40px; align-items: center; }
+  details.set summary { min-height: 40px; display: flex; align-items: center; gap: 6px; }
+  details.set summary::before { content: "▸"; font-size: 10px; } details.set[open] summary::before { content: "▾"; }
+  details.set summary::-webkit-details-marker { display: none; }
+  .src .row a { display: inline-flex; align-items: center; min-height: 40px; }
+  .res label.dim, .out label { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
+  .tried td { padding: 11px 8px; } .tried .scroll { max-height: 360px; }
+}
+@media (max-width: 480px) { .plots.four { grid-template-columns: 1fr; } .sum { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* decorrelation choices for the analyzer, and the AAVSO report form */
+details.detrend { margin-top: 10px; }
+details.detrend summary { cursor: pointer; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+details.detrend .row { margin: 6px 0; font-size: 12px; }
+details.detrend label { display: inline-flex; align-items: center; gap: 4px; }
+label.chk { flex-direction: row; gap: 4px; cursor: pointer; }
+label.chk input { margin: 0; }
+#aavsoBox { margin-top: 10px; }
+#aavsoBox .grid2 { margin-bottom: 8px; }
+@media (pointer: coarse) { details.detrend label.chk { min-height: 40px; } details.detrend summary { min-height: 40px; display: flex; align-items: center; } }

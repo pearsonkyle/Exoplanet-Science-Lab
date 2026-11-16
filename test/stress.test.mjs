@@ -139,8 +139,13 @@ if (main) {
       check('warning: several modes', !!w && w.includes('per') && r.modes.length === 1 && r.modes[0].peaks.length >= 3 && Math.abs(r.modes[0].peaks[0].at - 3) < 1e-3, w); }
     { const P = { ndim: 3, names: ['x', 'y', 'unused'], loglike: (x) => -0.5 * ((x[0] - 0.5) ** 2 + (x[1] - 0.5) ** 2) / 1e-4, transform: (u, x) => { x[0] = u[0]; x[1] = u[1]; x[2] = u[2]; } }, r = runProblem(P), w = r.warnings.find((x) => x.includes('not constrained'));
       check('warning: a parameter the data do not constrain', !!w && w.startsWith('unused') && r.warnings.length === 1, w); }
-    { const P = problems.find((p) => p.id === 'g-funnel-4d').make(), r = runProblem(P), w = r.warnings.find((x) => x.includes('insertion-order'));
-      check('warning: region failed its own test (funnel)', !!w && r.sampling.regionAbandoned, w); }
+    { // the funnel: with the ellipsoid check switched off (openFrac 0, the sampler as it was) the region fails its insertion-order
+      // test and says so; with the check on, the ellipsoid is enlarged during the run and the region is kept
+      const P = problems.find((p) => p.id === 'g-funnel-4d').make(), mk = (openFrac) => { const ns = new MiniNest({ ndim: P.ndim, loglike: P.loglike, transform: P.transform, nlive: NLIVE, seed: SEED, maxCalls: MAXCALLS, names: P.names, openFrac }); while (!ns.step(200)); return ns.result(); };
+      const r0 = mk(0), w = r0.warnings.find((x) => x.includes('insertion-order'));
+      check('warning: region failed its own test (funnel, ellipsoid check off)', !!w && r0.sampling.regionAbandoned, w);
+      const r = mk(undefined);
+      check('funnel with the ellipsoid check: region kept, ellipsoid enlarged', !r.sampling.regionAbandoned && r.sampling.ellipsoidGrown >= 1 && r.converged, `enlarged ${r.sampling.ellipsoidGrown} time(s) to ${r.sampling.ellipsoidScale.toFixed(2)} of its bootstrapped radius; ${r.ncalls} calls against ${r0.ncalls} (one seed says nothing about the bias: over 48 seeds ln Z is off by -0.045 ± 0.026 with the check and -0.24 ± 0.05 without, test/audit.test.mjs)`); }
     { const r = runProblem(G, { maxCalls: 300 }); check('budget below the number of live points', !r.converged && r.n === 400 && Math.abs(sumW(r) - 1) < 1e-9 && r.warnings.length >= 1, `${r.ncalls} calls, ${r.stopReason}`); }
   }
   console.log(`\n${list.length - nFail} of ${list.length} passed` + (nFail ? `, ${nFail} failed (${nSilent} without the run flagging any trouble)` : '') + ` in ${((performance.now() - tAll) / 1000).toFixed(0)} s`);

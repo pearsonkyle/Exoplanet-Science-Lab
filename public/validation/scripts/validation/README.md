@@ -1,6 +1,7 @@
 # Validation
 
-The public page is `validation/index.html`. It compares ESL's models with twelve other codes and a 30-digit
+The validation is the Validation tab of the Methods page (`methods/index.html`; `validation/index.html` only
+redirects there, mapping old anchors to `#val-…`). It compares ESL's models with twelve other codes and a 30-digit
 reference, recomputing ESL's side in the visitor's browser, and summarises the project's other numerical tests.
 It is written to be read top to bottom in under ten minutes; everything else is in collapsed blocks.
 
@@ -10,7 +11,7 @@ This file is the single place for the rebuild recipe (the page links here) and f
 
 | Piece | Where |
 | --- | --- |
-| Page skeleton: headings, table of contents, the sentences without numbers | `validation/index.html` |
+| Page skeleton: headings, table of contents, the sentences without numbers | `methods/index.html` (Validation tab) |
 | Assembly, summary table, the two honesty lists, reproduce / limits / references | `src/validation/main.js` |
 | The four live comparisons (transit, orbit, velocity, fits) | `src/validation/sections.js` |
 | ESL's side of every comparison and the tolerances (`TOL`), shared by page and test | `src/validation/compute.js` |

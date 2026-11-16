@@ -1,0 +1,88 @@
+{
+ "description": "Simulated: two transiting planets just outside the 2:1 resonance (period ratio 2.04 at the epoch), mid-transit times of both from an IAS15 integration (src/core/nbody.js) with Gaussian noise equal to the quoted errors.",
+ "generator": "public/examples/ttvpair/make_example.mjs",
+ "seed": 20261116,
+ "units": {
+  "time": "BJD_TDB days",
+  "mass": "M_Jup (planets), M_sun (star)",
+  "angles": "degrees"
+ },
+ "star": {
+  "mstar": 1,
+  "rstar": 1,
+  "teff": 5780,
+  "logg": 4.44,
+  "feh": 0
+ },
+ "epoch": 2455000,
+ "coords": "jacobi (osculating at epoch)",
+ "event": "minimum projected separation",
+ "planets": [
+  {
+   "letter": "b",
+   "per": 19.24,
+   "tmid": 2455003.1,
+   "ecc": 0,
+   "omega": 0,
+   "inc": 89.2,
+   "mplanet": 0.14,
+   "rprs": 0.08
+  },
+  {
+   "letter": "c",
+   "per": 39.2496,
+   "tmid": 2455011.7,
+   "ecc": 0,
+   "omega": 0,
+   "inc": 89.4,
+   "mplanet": 0.09,
+   "rprs": 0.077
+  }
+ ],
+ "integration": {
+  "integrator": "ias15",
+  "days": 1460,
+  "energy_error": 9.13908836441738e-15,
+  "transits_b": 76,
+  "transits_c": 37
+ },
+ "ttv": {
+  "b": {
+   "mean_period": 19.24134161535499,
+   "amplitude_min": 34.49457082897425
+  },
+  "c": {
+   "mean_period": 39.244883524711994,
+   "amplitude_min": 39.76593095809221
+  },
+  "super_period_d": 990.716241513025,
+  "resonance": "2:1",
+  "delta": 0.01980631884301043,
+  "lithwick_amplitude_min": {
+   "b": 27.677316419298744,
+   "c": 21.6312939083138
+  }
+ },
+ "linear_ephemeris": {
+  "b": {
+   "t0": 2455003.109479671,
+   "per": 19.241338377329267,
+   "chi2": 8867.870568640878,
+   "dof": 74
+  },
+  "c": {
+   "t0": 2455011.691062207,
+   "per": 39.24489663589642,
+   "chi2": 3076.9280432515125,
+   "dof": 35
+  }
+ },
+ "stability": {
+  "deltaHill": 11.164910696070653,
+  "amdBeta": 0.00006203301026726693,
+  "findings": [
+   "AMD-stable (Laskar & Petit 2017): the angular momentum deficit is under 0.1% of what a collision would need, so no pair can collide while the semi-major axes hold.",
+   "b and c are 2.0% wide of the 2:1 resonance: expect transit timing variations with a period of 981.2 d. The Hill and AMD criteria ignore resonances."
+  ]
+ }
+}

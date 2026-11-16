@@ -10,15 +10,28 @@
     "test": "node test/run.mjs",
     "test:stress": "STRESS=full node test/stress.test.mjs",
     "test:browser": "python3 test/features_check.py /tmp/esl",
-    "build:python": "node tools/build_core_bundle.mjs"
+    "build:python": "node tools/build_core_bundle.mjs",
+    "docs:gen": "node tools/docs/gen_reference.mjs && python3 tools/docs/gen_python.py",
+    "docs:dev": "npm run docs:gen && vitepress dev docs --port 5174",
+    "docs:build": "npm run docs:gen && vitepress build docs",
+    "pages:build": "vite build && npm run docs:build && node tools/docs/assemble.mjs",
+    "pages:preview": "npm run pages:build && node tools/docs/serve.mjs dist 4173"
   },
   "dependencies": {
     "satellite.js": "^6.0.2",
     "three": "^0.160.0"
   },
   "devDependencies": {
-    "vite": "^5.4.0"
+    "iwer": "^2.8.0",
+    "markdown-it-mathjax3": "^4.3.2",
+    "vite": "^5.4.0",
+    "vitepress": "^1.6.4"
   },
-  "description": "Exoplanet light curve modelling and Bayesian fitting in the browser",
-  "homepage": "https://exoplanet.science"
+  "description": "Plan, observe, reduce and fit exoplanet observations in the browser",
+  "homepage": "https://exoplanet.science",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pearsonkyle/Exoplanet-Science-Lab.git"
+  }
 }

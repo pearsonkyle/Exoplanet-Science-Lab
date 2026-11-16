@@ -1,0 +1,40 @@
+#
+#   VizieR Astronomical Server vizier.cfa.harvard.edu
+#    Date: 2026-11-16T05:35:33 [V7.6.1]
+#   In case of problem, please report to:	cds-question@unistra.fr
+#
+#
+#Coosys	J2000:	eq_FK5 J2000
+#INFO	service_protocol=ASU	  IVOID of the protocol through which the data was retrieved
+#INFO	request_date=2026-11-16T05:35:33	  Query execution date
+#INFO	request=https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=J/AJ/153/208/targets&-c=140.6566%20%2B50.6036&-c.rs=10&-out.add=_r&-sort=_r&-out=Name	  Full request URL
+#INFO	contact=cds-question@unistra.fr	  Email or URL to contact publisher
+#INFO	server_software=VizieR/7.6.1	  Software version
+#INFO	publisher=CDS	  Data centre that produced the VOTable
+#INFO	MaxTuples=50000	
+#INFO	-c=140.656600+50.603600,rs=10.	
+#Constraint -out=Name
+
+#RESOURCE=yCat_51530208
+#Name: J/AJ/153/208
+#Title: LCES HIRES/Keck radial velocity Exoplanet Survey (Butler+, 2017)
+#INFO	ivoid=ivo://cds.vizier/j/aj/153/208	    IVOID of underlying data collection
+#INFO	data_ivoid=ivo://cds.vizier/j/aj/153/208	    IVOID of underlying data collection
+#INFO	creator=Butler R.P.	    First author or institution
+#INFO	cites=bibcode:2017AJ....153..208B	    Article or Data origin sources
+#INFO	journal=AJ	    Journal name
+#INFO	original_date=2017	    Year of the article publication
+#INFO	reference_url=https://cdsarc.cds.unistra.fr/viz-bin/cat/J/AJ/153/208	    Dataset landing page
+#INFO	citation=doi:10.26093/cds/vizier.51530208	    Dataset identifier that can be used for citation
+#INFO	publication_date=2019-02-07	    Date of first publication in the data centre
+#INFO	rights_uri=https://cds.unistra.fr/vizier-org/licences_vizier.html	    Licence URI
+#Table	J_AJ_153_208_targets:
+#Name: J/AJ/153/208/targets
+#Title: Stars observed (corrected velocities in Tal-Or et al, 2019, Cat. J/MNRAS/484/L8)
+#Column	_r	(F5.2)	Distance from center (140.65660+50.60360)[FK5/J2000]	[ucd=pos.angDistance]
+#Column	Name	(a14)	Target identifier	[ucd=meta.id;meta.main]
+_r	Name
+arcsec	
+-----	--------------
+ 0.48	HD80606
+

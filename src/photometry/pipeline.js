@@ -1,9 +1,13 @@
 // The photometry pipeline between files and a light curve. No DOM: runs in the worker (and in Node for timing).
 // A frame source is anything with arrayBuffer() (a File or Blob) or { buffer } plus a name.
 import { openFits, parseHeader, isGzip, readImage, firstImageHdu, readTargetPixelFile, frameTime, frameAirmass, framePointing, utcToBjdTdb, pierSide, pixelScale, parseFits, gunzip } from '../core/fits.js';
-import { centroidIter, fitPsf, detectSources, estimateShift, trackStars, makeMeasurements, measureFrame, optimise, linspace, optimiseTpf, tpfLightCurve, smoothScatter, segmentScatter, runningMedian, medianOf, fitSimilarity, matchAsterism, placeStars, sffDetrend } from '../core/photometry.js';
+import { centroidIter, fitPsf, detectSources, estimateShift, trackStars, makeMeasurements, measureFrame, optimise, linspace, optimiseTpf, tpfLightCurve, smoothScatter, segmentScatter, runningMedian, medianOf, fitSimilarity, matchAsterism, placeStars, sffDetrend, tpfMedianImage, thresholdMask } from '../core/photometry.js';
 import { makeTransitFitter } from './transitfit.js';
 import { detrendWithCentroids } from '../core/gp.js';
+import { detrendFromColumns, pldBasis } from '../core/detrend.js';
+import { buildProblem } from '../core/model.js';
+import { qualityBitmask } from '../core/lcprep.js';
+import { pldCorrect, thrusterFlags } from '../core/k2.js';
 
 // what EXOTIC accepts: .fits .fit .fts, each optionally .gz or .fz (fpack), and a bare .fz; any letter case
 export const FITS_NAME = /(\.(fits|fit|fts)(\.(gz|fz))?|\.fz)$/i;
@@ -26,10 +30,17 @@ export async function readHeaderOnly(src) {
   else {
     const head = new Uint8Array(await src.slice(0, 2).arrayBuffer());
     if (isGzip(head)) {
-      const reader = src.stream().pipeThrough(new DecompressionStream('gzip')).getReader(), parts = []; let n = 0;
-      while (n < need) { const { value, done } = await reader.read(); if (done) break; parts.push(value); n += value.length; }
-      reader.cancel().catch(() => {});
-      u8 = new Uint8Array(n); let o = 0; for (const p of parts) { u8.set(p, o); o += p.length; }
+      // a .fits.gz deflated inside a zip is gzip twice over (src/core/zip.js): unwrap as many layers as there are
+      const headOf = async (layers) => {
+        let s = src.stream(); for (let k = 0; k < layers; k++) s = s.pipeThrough(new DecompressionStream('gzip'));
+        const reader = s.getReader(), parts = []; let n = 0;
+        while (n < need) { const { value, done } = await reader.read(); if (done) break; parts.push(value); n += value.length; }
+        reader.cancel().catch(() => {});
+        const b = new Uint8Array(n); let o = 0; for (const p of parts) { b.set(p, o); o += p.length; }
+        return b;
+      };
+      u8 = await headOf(1);
+      if (isGzip(u8)) u8 = await headOf(2);
     } else u8 = new Uint8Array(await src.slice(0, need).arrayBuffer());
   }
   const merged = (P, E) => {
@@ -111,7 +122,7 @@ export function calibrate(data, cal) {
 }
 
 /** Version of the reduction code, written into exported settings so a light curve can be traced to what made it. */
-export const PHOT_VERSION = '0.3.0';
+export const PHOT_VERSION = '0.4.0';
 
 /** The fitter a configuration asks for: EXOTIC's transit-model least squares when cfg.score === 'transit' and a planet is given, else null (the quick trapezoid fit). Functions cannot cross to a worker, so both sides build it from cfg. */
 export function makeFitter(cfg) { return cfg && cfg.score === 'transit' && cfg.planet && cfg.planet.per > 0 && cfg.planet.rprs > 0 ? makeTransitFitter(cfg.planet, { loss: cfg.loss, weights: cfg.weights }) : null; }
@@ -205,9 +216,9 @@ export async function runStack(sources, cfg, onProgress = () => {}, shouldStop =
   M.count = used;
   timing.total = performance.now() - timing.t0;
   let t = performance.now();
-  let fitter = makeFitter(cfg), scoreNote = null; const nComp = nS > 2 ? nS + 1 : nS, kinds = psf === 'none' ? 0 : (psf === 'both' ? 2 : 1) + (cfg.optimal !== false && psf !== 'moffat' ? 1 : 0);
+  let fitter = makeFitter(cfg), scoreNote = null; const nComp = nS > 2 ? nS + (cfg.weighted === false ? 1 : 2) : nS, kinds = psf === 'none' ? 0 : (psf === 'both' ? 2 : 1) + (cfg.optimal !== false && psf !== 'moffat' ? 1 : 0);
   const total = (kinds + M.nA * M.nN * (M.rawE ? 2 : 1)) * nComp; let batch = [], last = performance.now();
-  const search = (ft) => optimise(M, { fit: { ...(cfg.fit || {}), gain: cfg.gain || meta.gain || 1 }, psf: psf !== 'none', fitter: ft, onRow: (row, i, best) => { batch.push(row); const now = performance.now(); if (now - last > 120 || i + 1 === total) { onProgress({ stage: 'optimise', done: i + 1, total, rows: batch, best, restart: i === 0 }); batch = []; last = now; } } });
+  const search = (ft) => optimise(M, { fit: { ...(cfg.fit || {}), gain: cfg.gain || meta.gain || 1 }, psf: psf !== 'none', weighted: cfg.weighted !== false, fitter: ft, onRow: (row, i, best) => { batch.push(row); const now = performance.now(); if (now - last > 120 || i + 1 === total) { onProgress({ stage: 'optimise', done: i + 1, total, rows: batch, best, restart: i === 0 }); batch = []; last = now; } } });
   let opt = search(fitter);
   if (fitter && opt.best < 0) {       // the transit model could not be evaluated anywhere (limb darkening that is not a physical profile, a/R* below 1, a transit outside the night): say so and rank with the quick fit
     scoreNote = 'The transit model could not be fitted with these planet parameters (check the limb-darkening coefficients, a/R★ and the mid-transit time); candidates were ranked with the quick trapezoid fit instead.';
@@ -219,11 +230,13 @@ export async function runStack(sources, cfg, onProgress = () => {}, shouldStop =
 }
 
 /**
- * Which QUALITY bits reject a cadence. TESS and Kepler: any flag (as before). K2: lightkurve's default mask 1130799
- * (attitude tweak, safe mode, coarse point, Earth point, desaturation, manual exclude, detector anomaly, no fine
- * point, thruster firing), because K2 sets informational bits on a large share of good cadences.
+ * Which QUALITY bits reject a cadence: lightkurve's presets (src/core/lcprep.js QUALITY_BITMASKS). The default is
+ * lightkurve's 'default' (TESS 17087; Kepler and K2 1130799: attitude tweak, safe mode, coarse and Earth point,
+ * desaturation, manual exclude, ...; checked to keep the same cadences as lightkurve in test/tpf_lightkurve.test.mjs).
+ * Until 2026-11-16 TESS and Kepler rejected any flag, which also dropped good cadences with informational bits
+ * (stray light, cosmic ray in a collateral pixel).
  */
-export const defaultQuality = (mission) => (mission === 'K2' ? 1130799 : 0x7fffffff);
+export const defaultQuality = (mission, preset = 'default') => qualityBitmask(mission, preset);
 
 /** Self-flat-fielding of a light curve with centroids (K2 roll systematics); lc: { time, norm, x, y, keep }. Returns sffDetrend's result with `detrended`. */
 export function sffRun(lc, opts = {}) {
@@ -234,7 +247,7 @@ export function sffRun(lc, opts = {}) {
 /** Photometry of a target pixel file (bytes of the FITS file). cfg: { x, y, customMask, quality } */
 export async function runTpf(buffer, cfg = {}) {
   const t0 = performance.now(), tpf = readTargetPixelFile(await openFits(buffer)), t1 = performance.now();
-  cfg = { ...cfg, quality: cfg.quality ?? defaultQuality(tpf.mission) };
+  cfg = { ...cfg, quality: typeof cfg.quality === 'number' ? cfg.quality : defaultQuality(tpf.mission, cfg.quality || 'default') };
   const opt = optimiseTpf(tpf, cfg);
   if (cfg.customMask && cfg.customMask.some((v) => v)) {
     const lc = tpfLightCurve(tpf, cfg.customMask, cfg), good = []; for (let i = 0; i < lc.ok.length; i++) if (lc.ok[i]) good.push(i);
@@ -272,6 +285,82 @@ export function gpDetrend(lc, { useTime = false, windowDays = 0.75, maxHyper = 3
   if (!out) return null;
   const detrended = Float64Array.from(norm, (v, i) => (Number.isFinite(out.trend[i]) ? v / (1 + out.trend[i]) : v));
   return { ...out, detrended, ms: performance.now() - t0, useTime };
+}
+
+/**
+ * Decorrelation of a light curve's residuals against detector and sky state, as a preview of what the analyzer fits
+ * together with the transit: linear regressors (centroid x, y and their squares and product, FWHM, sky, airmass,
+ * comparison flux, a polynomial in time, PLD components) and / or nearest-neighbour Gaussian kernel regression on chosen
+ * features (src/core/detrend.js). The residual 1 + r (r: the stack's residual about its fit, or a TPF's flux about a
+ * running median) is fitted with buildProblem with no transit in it (Rp/R* = 1e-6), so the coefficients are the ones
+ * the likelihood would integrate out; the trend is baseline - 1.
+ * @param lc    { time, norm, resid?, keep?, columns: { name: array } }
+ * @param spec  { columns: [names], poly, pld: [names], kernel: { features: [names], neighbors } }
+ * @returns { trend, detrended (norm / (1 + trend)), rmsBefore, rmsAfter, hourBefore, hourAfter (1-hour binned rms), names, dropped, kernel: k, coeffs, ms } or null
+ */
+export function regressDetrend(lc, spec, { windowDays = 0.75 } = {}) {
+  const t0 = performance.now(), n = lc.time.length;
+  let resid = lc.resid, keep = lc.keep ? Uint8Array.from(lc.keep) : null;
+  if (!resid) {
+    const cad = (lc.time[n - 1] - lc.time[0]) / Math.max(1, n - 1), win = Math.max(5, 2 * Math.floor(windowDays / cad / 2) + 1), sm = runningMedian(lc.norm, win);
+    resid = Float64Array.from(lc.norm, (v, i) => v / sm[i] - 1);
+    const mad = 1.4826 * medianOf(Array.from(resid, Math.abs)); keep = Uint8Array.from(resid, (v) => (Math.abs(v) < 5 * mad ? 1 : 0));
+  }
+  const need = [...(spec.columns || []).flatMap((c) => (c === 'xy' || c === 'xc2' || c === 'yc2' ? ['xc', 'yc'] : [c])), ...(spec.pld || []), ...((spec.kernel && spec.kernel.features) || [])];
+  const idx = []; for (let i = 0; i < n; i++) if ((!keep || keep[i]) && Number.isFinite(resid[i]) && Number.isFinite(lc.time[i]) && need.every((c) => !lc.columns[c] || Number.isFinite(lc.columns[c][i]))) idx.push(i);
+  if (idx.length < 12) return null;
+  const sub = Object.fromEntries(Object.entries(lc.columns).map(([k, a]) => [k, Float64Array.from(idx, (i) => a[i])])), t = Float64Array.from(idx, (i) => lc.time[i] - Math.floor(lc.time[0]));
+  const D = detrendFromColumns(sub, spec, t, null);
+  if (!D.regressors && !D.kernel) return null;
+  const y = Float64Array.from(idx, (i) => 1 + resid[i]), data = { t, f: y, e: new Float64Array(idx.length).fill(1) };
+  if (D.regressors) data.regressors = D.regressors; if (D.kernel) data.kernel = D.kernel;
+  const flat = { rprs: 1e-6, ars: 50, inc: 60, per: 1e4, tmid: -1e3, ecc: 0, omega: 0, ld0: 0, ld1: 0, ld2: 0, ld3: 0 };
+  const d = buildProblem({ data, values: flat, ldLaw: 'nonlinear', free: [{ key: 'rprs', prior: { type: 'uniform', a: 0, b: 1 } }] }).detail([1e-6]);
+  if (!d) return null;
+  const trend = new Float64Array(n).fill(NaN); idx.forEach((i, k) => { trend[i] = d.base[k] - 1; });
+  const after = Float64Array.from(idx, (i, k) => y[k] / d.base[k] - 1), before = Float64Array.from(idx, (i) => resid[i]);
+  const rms = (a) => { let m = 0; for (const v of a) m += v; m /= a.length; let s = 0; for (const v of a) s += (v - m) ** 2; return Math.sqrt(s / a.length); };
+  const hour = (a) => { const b = new Map(); idx.forEach((i, k) => { const key = Math.floor(lc.time[i] * 24); if (!b.has(key)) b.set(key, []); b.get(key).push(a[k]); }); const m = [...b.values()].filter((q) => q.length >= 3).map((q) => q.reduce((s, v) => s + v, 0) / q.length); return m.length > 2 ? rms(m) : NaN; };
+  const detrended = Float64Array.from(lc.norm, (v, i) => (Number.isFinite(trend[i]) ? v / (1 + trend[i]) : v));
+  return { trend, detrended, rmsBefore: rms(before), rmsAfter: rms(after), hourBefore: hour(before), hourAfter: hour(after), names: D.names, dropped: D.dropped, kernel: D.kernel ? D.kernel.k : 0, coeffs: d.regCoeffs ? d.regCoeffs[0] : [], n: idx.length, ms: performance.now() - t0, kind: 'regress', spec };
+}
+
+/** PLD components of a target pixel file over the cadences `good` (indices into the file) for the pixels of `mask` (src/core/detrend.js pldBasis). */
+export function tpfPld(tpf, mask, good, ncomp = 0) {
+  const np = tpf.nx * tpf.ny, pix = []; for (let p = 0; p < np; p++) if (mask[p]) pix.push(Float64Array.from(good, (c) => tpf.flux[c * np + p]));
+  if (pix.length < 2) return null;
+  return pldBasis(pix, ncomp > 0 ? { ncomp } : {});
+}
+
+/**
+ * Pixel-level decorrelation of a K2 (or TESS / Kepler) target pixel file as lightkurve's PLDCorrector sets it up for K2
+ * (src/core/k2.js pldCorrect): the flux is the aperture sum over `mask`; the PLD pixels are lightkurve's 3σ threshold
+ * mask ('center'), each over that flux; the background pixels are those below the median image, normalised by their
+ * sum; order 3 with 16 principal components, a degree-5 spline with n / 50 columns, 5σ clipping.
+ * @param good cadence indices used (e.g. tpfLightCurve's ok ones); opts as pldCorrect, plus pldMask, bkgMask
+ * @returns pldCorrect's result over `good`, with pldMask, bkgMask
+ */
+export function k2Pld(tpf, mask, good, opts = {}) {
+  const np = tpf.nx * tpf.ny, img = tpfMedianImage(tpf, 1, qualityBitmask(tpf.mission, 'default'));
+  const pldMask = opts.pldMask || thresholdMask(img, tpf.nx, tpf.ny, 3, tpf.nx / 2, tpf.ny / 2, { lightkurve: true });
+  const sorted = Float64Array.from(img, (v) => (v === v ? v : 0)).sort(), med = sorted.length & 1 ? sorted[sorted.length >> 1] : 0.5 * (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]);
+  const bkgMask = opts.bkgMask || Uint8Array.from(img, (v) => ((v === v ? v : 0) >= med ? 0 : 1));
+  const lc = tpfLightCurve(tpf, mask, { quality: 0 }), series = (m) => { const out = []; for (let p = 0; p < np; p++) if (m[p]) { const s = Float64Array.from(good, (c) => tpf.flux[c * np + p]); if (s.every(Number.isFinite)) out.push(s); } return out; };
+  const flux = Float64Array.from(good, (c) => lc.flux[c]), err = Float64Array.from(good, (c) => lc.err[c]), time = Float64Array.from(good, (c) => lc.time[c]);
+  const r = pldCorrect(series(pldMask), flux, err, time, { ...opts, bkg: opts.bkg === false ? null : series(bkgMask) });
+  return r ? { ...r, pldMask, bkgMask, flux, time } : null;
+}
+
+/**
+ * Cadences of a TPF during K2 thruster firings (src/core/k2.js thrusterFlags), found on every cadence with a centroid so
+ * that a jump is attributed to the cadence it happens at, not to the next one a quality mask kept: QUALITY bits 20 and
+ * 21 plus 5σ jumps of the centroid along the roll. Returns Uint8Array over the file's cadences (1 = firing) and counts.
+ */
+export function k2Thrusters(tpf, mask, opts = {}) {
+  const lc = tpfLightCurve(tpf, mask, { quality: 0 }), g = []; for (let c = 0; c < tpf.ncad; c++) if (lc.ok[c]) g.push(c);
+  const th = thrusterFlags(Float64Array.from(g, (c) => lc.time[c]), Float64Array.from(g, (c) => lc.x[c]), Float64Array.from(g, (c) => lc.y[c]), Int32Array.from(g, (c) => tpf.quality[c]), opts);
+  const flags = new Uint8Array(tpf.ncad); g.forEach((c, k) => { if (th.flags[k]) flags[c] = 1; });
+  return { flags, fromQuality: th.fromQuality, fromCentroid: th.fromCentroid, both: th.both };
 }
 
 export { smoothScatter };

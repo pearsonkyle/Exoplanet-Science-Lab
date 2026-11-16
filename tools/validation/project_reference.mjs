@@ -28,8 +28,8 @@ function run(file) {
     ch.on('close', (code) => {
       const checks = [], lines = out.split('\n'); let cur = null;
       for (const line of lines) {
-        const m = /^(ok|FAIL)\s+(.*?)(?:\s{3,}(.*))?$/.exec(line) || /^(PASS|FAIL):?\s+(.*?)(?:\s{3,}(.*))?$/.exec(line);
-        if (m) { cur = { ok: m[1] === 'ok' || m[1] === 'PASS', name: m[2].trim(), info: (m[3] || '').trim().slice(0, 600), more: [] }; checks.push(cur); }
+        const m = /^(ok\*?|FAIL|SILENT)\s+(.*?)(?:\s{3,}(.*))?$/.exec(line) || /^(PASS|FAIL):?\s+(.*?)(?:\s{3,}(.*))?$/.exec(line);
+        if (m) { cur = { ok: m[1] === 'ok' || m[1] === 'ok*' || m[1] === 'PASS', silent: m[1] === 'SILENT' || undefined, name: m[2].trim(), info: (m[3] || '').trim().slice(0, 600), more: [] }; checks.push(cur); }
         else if (cur && /^\s{2,}\S/.test(line) && cur.more.length < 5) cur.more.push(line.trim().slice(0, 260));
         else if (!/^\s/.test(line)) cur = null;
       }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plan · Exoplanet Science Lab</title>
-<meta name="description" content="Which exoplanet transits can be observed from your site tonight: times, altitude, twilight, Moon and the uncertainty of each prediction.">
+<meta name="description" content="Plan exoplanet transits, secondary eclipses and phase-curve windows from your site: times, altitude, darkness and coverage of each event.">
 <meta name="esl-root" content="../">
 <link rel="stylesheet" href="../src/site/site.css">
 <link rel="stylesheet" href="../src/plan/plan.css">
@@ -13,55 +13,78 @@
 <header id="sitebar" data-active="plan"></header>
 <main id="plan-app">
   <div class="p-top">
-    <h1 id="p-title">Plan</h1>
-    <p class="lead" id="p-lead">Transits you can observe from your site: when, how high, how dark, and how well the time is known. Loading the catalogues…</p>
+    <h1 id="p-title">Plan observations</h1>
+    <p class="p-sub" id="p-lead">Loading the catalogues…</p>
   </div>
   <div class="p-layout">
     <form class="p-inputs" id="p-form" autocomplete="off" onsubmit="return false">
-      <details open id="p-g-site"><summary>Site <span class="sum" id="p-site-sum"></span></summary>
-        <label class="row">Observatory (or pick one on the globe)<select id="p-obs"></select></label>
-        <div class="row3">
-          <label>Latitude °N<input type="number" id="p-lat" step="any" min="-90" max="90" inputmode="decimal"></label>
-          <label>Longitude °E<input type="number" id="p-lon" step="any" min="-180" max="360" inputmode="decimal"></label>
-          <label>Elevation m<input type="number" id="p-elev" step="any" inputmode="decimal"></label>
+      <fieldset class="p-what" id="p-g-events">
+        <legend>Plan</legend>
+        <div class="p-kinds tabset" id="p-kinds" role="group" aria-label="Events to plan (several can be on)">
+          <button type="button" data-kind="transit" aria-pressed="true" title="Primary transits: the planet in front of the star">Transits</button><button type="button" data-kind="eclipse" aria-pressed="false" title="Secondary eclipses: the planet behind the star. Timed from the orbit (e, ω); a circular orbit is assumed when the catalogue has no eccentricity">Eclipses</button><button type="button" data-kind="phase" aria-pressed="false" title="A stretch of the orbit around the eclipse or the transit, for phase curves of short-period planets">Phase curve</button><button type="button" data-kind="custom" aria-pressed="false" title="Any window between two orbital phases (0 = mid-transit, measured in time)">Custom</button>
         </div>
-        <button type="button" class="btn" id="p-geo">Use my location</button> <span class="hint" id="p-geo-msg"></span>
-        <label class="row">Times shown in<select id="p-tz"></select></label>
+        <div class="row3" id="p-phase-opts" hidden>
+          <label title="How much of the orbit the window covers">Span<select id="p-phspan"><option value="0.25">¼ orbit</option><option value="0.5">½ orbit</option><option value="0.75">¾ orbit</option><option value="1">full orbit</option></select></label>
+          <label title="The window is centred on this event">Centred on<select id="p-phcenter"><option value="eclipse">eclipse</option><option value="transit">transit</option></select></label>
+          <label title="Only planets with a period up to this">Period ≤ d<input type="number" id="p-phmax" min="0.2" max="30" step="0.1" inputmode="decimal"></label>
+        </div>
+        <div class="row2" id="p-custom-opts" hidden>
+          <label title="Orbital phase where the window starts (0 = mid-transit, 0.5 = mid-eclipse for a circular orbit)">From phase<input type="number" id="p-cfrom" min="0" max="1" step="0.01" inputmode="decimal"></label>
+          <label title="Orbital phase where the window ends; smaller than the start wraps through the transit">To phase<input type="number" id="p-cto" min="0" max="1" step="0.01" inputmode="decimal"></label>
+        </div>
+      </fieldset>
+      <details open id="p-g-site"><summary>Site <span class="sum" id="p-site-sum"></span></summary>
+        <label class="row" title="Or pick one on the globe">Observatory<select id="p-obs"></select></label>
+        <div class="row3">
+          <label>Lat °N<input type="number" id="p-lat" step="any" min="-90" max="90"></label>
+          <label>Lon °E<input type="number" id="p-lon" step="any" min="-180" max="360"></label>
+          <label>Elev m<input type="number" id="p-elev" step="any"></label>
+        </div>
+        <div class="row2">
+          <label>Time zone<select id="p-tz"></select></label>
+          <button type="button" class="btn" id="p-geo" title="Use this device's position (it stays in this browser)">My location</button>
+        </div>
+        <span class="hint" id="p-geo-msg" role="status"></span>
       </details>
       <details open id="p-g-dates"><summary>Dates <span class="sum" id="p-dates-sum"></span></summary>
-        <div class="row2">
-          <label>First night (evening of)<input type="date" id="p-date"></label>
+        <div class="row3 r-dates">
+          <label title="The evening date at the site">First night<input type="date" id="p-date"></label>
           <label>Nights<input type="number" id="p-nights" min="1" max="90" step="1" inputmode="numeric"></label>
+          <button type="button" class="btn" id="p-tonight">Tonight</button>
         </div>
-        <button type="button" class="btn" id="p-tonight">Tonight</button>
       </details>
-      <details open id="p-g-limits"><summary>Observable means <span class="sum" id="p-limits-sum"></span></summary>
-        <p class="hint crit" id="p-crit"></p>
-        <div class="row2">
-          <label>Minimum altitude °<input type="number" id="p-minalt" min="0" max="89" step="1" inputmode="numeric"></label>
-          <label>Sun below<select id="p-sun"><option value="-18">−18° astronomical night</option><option value="-12">−12° nautical</option><option value="-6">−6° civil</option><option value="-0.833">horizon (sunset)</option></select></label>
+      <details open id="p-g-limits"><summary><span id="p-crit-t">Limits</span> <span class="sum" id="p-limits-sum"></span></summary>
+        <div class="row2 r-lim">
+          <label title="Lowest useful altitude of the star">Min altitude °<input type="number" id="p-minalt" min="0" max="89" step="1" inputmode="numeric"></label>
+          <label title="How dark it must be">Sun below<select id="p-sun"><option value="-18">−18° astronomical</option><option value="-12">−12° nautical</option><option value="-6">−6° civil</option><option value="-0.833">0° sunset</option></select></label>
         </div>
-        <div class="row2">
-          <label>Baseline each side h<input type="number" id="p-base" min="0" max="6" step="0.25" inputmode="decimal"></label>
-          <label>List<select id="p-show"><option value="roi">only fully observable</option><option value="transit">+ short baseline</option><option value="partial">+ partial transits</option></select></label>
+        <div class="row2 r-lim">
+          <label title="Out-of-event time wanted before and after a transit or an eclipse (phase windows have none)">Baseline h<input type="number" id="p-base" min="0" max="6" step="0.25" inputmode="decimal"></label>
+          <label title="Which events to list">Show<select id="p-show"><option value="roi">fully observable</option><option value="transit">+ short baseline</option><option value="partial">+ partial</option></select></label>
         </div>
-        <div class="row2">
-          <label>Brightest mag<input type="number" id="p-magmin" step="0.1" placeholder="any" inputmode="decimal"></label>
-          <label>Faintest mag<input type="number" id="p-magmax" step="0.1" placeholder="any" inputmode="decimal"></label>
+        <div class="row3">
+          <label>Mag from<input type="number" id="p-magmin" step="0.1" placeholder="any"></label>
+          <label>Mag to<input type="number" id="p-magmax" step="0.1" placeholder="any"></label>
+          <label title="Transit depth, parts per thousand">Depth ≥ ppt<input type="number" id="p-depth" min="0" step="0.1" placeholder="any" inputmode="decimal"></label>
         </div>
-        <label class="row">Minimum depth ppt<input type="number" id="p-depth" min="0" step="0.1" placeholder="any" inputmode="decimal"></label>
-        <button type="button" class="btn" id="p-reset">Reset to defaults</button>
+        <label class="chk" title="Hills and mountains around the site, from open elevation tiles (Mapzen / Tilezen terrain tiles, AWS Open Data; shared with the Observe page): the star must be above them as well as above the altitude limit"><input type="checkbox" id="p-terrain"> Use the terrain horizon</label>
+        <p class="hint" id="p-terrain-note" role="status"></p>
+        <button type="button" class="btn" id="p-reset">Reset limits</button>
       </details>
       <details open id="p-g-targets"><summary>Targets <span class="sum" id="p-targets-sum"></span></summary>
-        <label class="chk"><input type="checkbox" id="p-src-nea"> <span class="tag nea">NEA</span> NASA archive planets</label>
-        <label class="chk"><input type="checkbox" id="p-src-toi"> <span class="tag toi">TOI</span> TESS candidates</label>
-        <label class="chk"><input type="checkbox" id="p-src-eu"> <span class="tag eu">EU</span> planets only in exoplanet.eu</label>
-        <label class="row">Ephemeris used for archive planets<select id="p-eph"><option value="best">best-timed pair (smallest predicted σ today)</option><option value="default">the archive's default parameter set</option></select></label>
+        <div class="chks">
+          <label class="chk"><input type="checkbox" id="p-src-nea"> <span class="tag nea">NEA</span> NASA archive</label>
+          <label class="chk" title="TESS Objects of Interest that are planet candidates (TFOPWG PC or APC): not confirmed planets. Known planets and false positives are left out."><input type="checkbox" id="p-src-toi"> <span class="tag toi">TOI</span> TESS candidates</label>
+          <label class="chk" title="Planets that are only in exoplanet.eu"><input type="checkbox" id="p-src-eu"> <span class="tag eu">EU</span> exoplanet.eu only</label>
+        </div>
+        <div class="p-disc-row"><span class="lbl">Found by</span><div class="p-disc" id="p-disc" role="group" aria-label="Plan the planets found by"></div></div>
+        <p class="hint" id="p-disc-note"></p>
+        <label class="row" title="Which period and epoch to use for NASA archive planets">Ephemeris<select id="p-eph"><option value="best">best-timed (smallest σ today)</option><option value="default">archive default</option><option value="eu">exoplanet.eu</option></select></label>
         <label class="row">Name contains<input type="search" id="p-name" placeholder="e.g. WASP, TOI-21" spellcheck="false"></label>
       </details>
-      <p class="hint">Settings are kept in this browser. Nothing is sent anywhere: the catalogue snapshots are downloaded and everything is computed here.</p>
+      <p class="hint">Saved in this browser. Everything is computed here; nothing is sent.</p>
     </form>
-    <section class="p-results" aria-live="polite">
+    <section class="p-results">
       <details class="p-sitebox" id="p-sitebox" open><summary><span class="sb-t">Site and globe</span><span class="sb-n" id="p-sbname"></span></summary>
       <div class="p-site" id="p-site">
         <div class="g-wrap">
@@ -74,13 +97,14 @@
       </div>
       </details>
       <div class="p-bar">
-        <span id="p-count"></span>
-        <div class="p-views" role="tablist" aria-label="View">
-          <button type="button" role="tab" data-view="list">List</button><button type="button" role="tab" data-view="grid">Altitude and sky charts</button><button type="button" role="tab" data-view="eph">Ephemerides</button>
+        <span id="p-count" role="status" aria-live="polite"></span>
+        <div class="p-views tabset" role="tablist" aria-label="View">
+          <button type="button" role="tab" data-view="list">List</button><button type="button" role="tab" data-view="grid">Charts</button><button type="button" role="tab" data-view="eph">Ephemerides</button>
         </div>
-        <label>Sort <select id="p-sort"><option value="time">by time</option><option value="score">best conditions first</option><option value="sigma">least certain timing first</option><option value="depth">deepest first</option><option value="mag">brightest first</option></select></label>
+        <label for="p-sort">Sort <select id="p-sort"><option value="time">time</option><option value="score">score</option><option value="sigma">least certain timing</option><option value="depth">deepest</option><option value="mag">brightest</option></select></label>
       </div>
       <div class="p-note" id="p-note"></div>
+      <details class="p-about" id="p-about"><summary>How this is computed</summary><div id="p-about-body"></div></details>
       <div class="p-list" id="p-list"></div>
     </section>
     <aside class="p-detail" id="p-detail" hidden></aside>

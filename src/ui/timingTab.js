@@ -43,6 +43,17 @@ function plotData(sol, order, label) {
   return { epochs, oc: t.map((v, i) => v - lin.model(epochs[i])), errs: e, curve, label, group: grouped ? sol.rows.map((r) => names.indexOf(r.src || 'unlabelled')) : null, groups: grouped ? names : null };
 }
 
+/**
+ * The O − C figure of a list of mid-transit times as data for renderOC (ocplot.js): what the Timing tab draws and saves,
+ * also used for figures made outside the tab. rows: [{ t, e, epoch?, src? }], per: the period that counts the epochs,
+ * order: 1 (linear) or 2 (quadratic, when there are enough times). Returns null with fewer than two times.
+ */
+export function timingFigure(rows, per, order, label) {
+  const sol = solveTiming(rows, per); if (!sol || !sol.lin) return null;
+  const o = order === 2 && sol.quad ? 2 : 1, sel = o === 2 ? sol.quad : sol.lin;
+  return { ...plotData(sol, o, label), info: [`P = ${pm(sel.per, sel.err.per)} d`, ...(o === 2 ? [`dP/dt = ${pm(sel.dPdt * MS_PER_YEAR, sel.dPdtErr * MS_PER_YEAR)} ms/yr`] : [])], order: o, n: sol.t.length };
+}
+
 // The periodogram of a timing list is kept between rebuilds of the tab (it is the slow part), keyed by the list itself.
 const pgCache = { key: '', value: null };
 function periodogramFor(sol, order, bootstrap) {

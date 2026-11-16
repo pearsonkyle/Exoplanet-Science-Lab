@@ -1,0 +1,130 @@
+#
+#   VizieR Astronomical Server vizier.cfa.harvard.edu
+#    Date: 2026-11-16T05:38:05 [V7.6.1]
+#   In case of problem, please report to:	cds-question@unistra.fr
+#
+#
+#Coosys	J2000:	eq_FK5 J2000
+#INFO	service_protocol=ASU	  IVOID of the protocol through which the data was retrieved
+#INFO	request_date=2026-11-16T05:38:05	  Query execution date
+#INFO	request=https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=J/A%2BA/636/A74/rvbank&Name=GJ882&-out=Name,BJD,DRVmlcnzp,e_DRVmlcnzp,Flag&-out.max=unlimited	  Full request URL
+#INFO	contact=cds-question@unistra.fr	  Email or URL to contact publisher
+#INFO	server_software=VizieR/7.6.1	  Software version
+#INFO	publisher=CDS	  Data centre that produced the VOTable
+
+#RESOURCE=yCat_36360074
+#Name: J/A+A/636/A74
+#Title: HARPS radial velocity database (Trifonov+, 2020)
+#INFO	ivoid=ivo://cds.vizier/j/a+a/636/a74	    IVOID of underlying data collection
+#INFO	data_ivoid=ivo://cds.vizier/j/a+a/636/a74	    IVOID of underlying data collection
+#INFO	creator=Trifonov T.	    First author or institution
+#INFO	cites=bibcode:2020A&A...636A..74T	    Article or Data origin sources
+#INFO	journal=A&A	    Journal name
+#INFO	original_date=2020	    Year of the article publication
+#INFO	reference_url=https://cdsarc.cds.unistra.fr/viz-bin/cat/J/A+A/636/A74	    Dataset landing page
+#INFO	citation=doi:10.26093/cds/vizier.36360074	    Dataset identifier that can be used for citation
+#INFO	publication_date=2023-11-20	    Date of first publication in the data centre
+#INFO	rights_uri=https://cds.unistra.fr/vizier-org/licences_vizier.html	    Licence URI
+#Table	J_A_A_636_A74_rvbank:
+#Name: J/A+A/636/A74/rvbank
+#Title: Individual radial velocity measurements and auxiliary data for all targets
+#Column	Name	(a14)	Target name	[ucd=meta.id;meta.main]
+#Column	BJD	(F13.5)	Barycentric Julian date	[ucd=time.epoch]
+#Column	DRVmlcnzp	(F12.3)	? Differential RV from SERVAL corrected for BERV, SA, drift, NZP, NZPdrift, -pre and -post calculated separately) (RV_mlc_nzp)	[ucd=phys.veloc;arith.diff]
+#Column	e_DRVmlcnzp	(F12.3)	? Differential radial velocity error (e_RV_mlc_nzp)	[ucd=stat.error]
+#Column	Flag	(I3)	[0/128] SERVAL flag bitwise flag (1)	[ucd=meta.code.error]
+Name	BJD	DRVmlcnzp	e_DRVmlcnzp	Flag
+ 	d	m/s	m/s	
+--------------	-------------	------------	------------	---
+GJ882         	2456451.83863	      16.864	       0.945	  0
+GJ882         	2456451.84401	      16.895	       0.943	  0
+GJ882         	2456451.84977	      16.128	       0.925	  0
+GJ882         	2456468.78932	      19.688	       0.696	  0
+GJ882         	2456468.79676	      19.030	       0.671	  0
+GJ882         	2456468.80457	      20.253	       0.722	  0
+GJ882         	2456468.81330	      21.191	       0.782	  0
+GJ882         	2456468.91593	      30.849	       0.678	  0
+GJ882         	2456468.92229	      31.246	       0.670	  0
+GJ882         	2456468.92886	      30.866	       0.669	  0
+GJ882         	2456468.93508	      31.031	       0.669	  0
+GJ882         	2456468.94123	      30.411	       0.668	  0
+GJ882         	2456468.94770	      30.134	       0.670	  0
+GJ882         	2456506.82589	      13.721	       0.992	  0
+GJ882         	2456506.83342	      13.948	       1.003	  0
+GJ882         	2456508.77798	      14.695	       0.942	  0
+GJ882         	2456508.78408	      14.899	       0.951	  0
+GJ882         	2456508.79023	      13.450	       0.944	  0
+GJ882         	2456508.79634	      12.624	       0.932	  0
+GJ882         	2456508.80250	      11.036	       0.926	  0
+GJ882         	2456508.80871	      10.853	       0.922	  0
+GJ882         	2456508.81499	      11.413	       0.920	  0
+GJ882         	2456508.82102	      10.045	       0.915	  0
+GJ882         	2456508.82718	      10.351	       0.918	  0
+GJ882         	2456508.83334	       8.975	       0.917	  0
+GJ882         	2456508.83950	       9.665	       0.921	  0
+GJ882         	2456508.84566	       9.649	       0.918	  0
+GJ882         	2456508.85182	       8.158	       0.915	  0
+GJ882         	2456508.85803	       7.743	       0.920	  0
+GJ882         	2456508.86407	       7.248	       0.914	  0
+GJ882         	2456508.87005	       6.871	       0.921	  0
+GJ882         	2456508.87656	       5.402	       0.931	  0
+GJ882         	2456508.88232	       5.856	       0.925	  0
+GJ882         	2456508.88894	       5.753	       0.932	  0
+GJ882         	2456508.89486	       5.427	       0.925	  0
+GJ882         	2456540.67366	      16.820	       0.935	  0
+GJ882         	2456540.68105	      17.689	       0.936	  0
+GJ882         	2456540.68838	      18.394	       0.949	  0
+GJ882         	2456540.69498	      19.043	       0.968	  0
+GJ882         	2456544.59546	      -7.636	       0.980	  0
+GJ882         	2456544.60279	      -7.582	       0.954	  0
+GJ882         	2456544.61003	      -7.511	       0.933	  0
+GJ882         	2456544.61736	      -6.655	       0.931	  0
+GJ882         	2456544.62462	      -6.928	       0.934	  0
+GJ882         	2456544.63179	      -4.890	       0.945	  0
+GJ882         	2456544.63917	      -4.682	       0.946	  0
+GJ882         	2456544.64649	      -3.384	       0.970	  0
+GJ882         	2456544.65415	      -3.049	       0.992	  0
+GJ882         	2456544.66134	      -2.827	       1.019	  0
+GJ882         	2456544.66817	      -1.237	       1.096	  0
+GJ882         	2456544.67599	      -1.589	       1.013	  0
+GJ882         	2456544.68373	      -1.363	       0.977	  0
+GJ882         	2456565.52997	     -24.552	       0.964	  0
+GJ882         	2456565.53378	     -24.616	       0.958	  0
+GJ882         	2456565.53759	     -24.565	       0.986	  0
+GJ882         	2456565.54251	     -24.311	       0.958	  0
+GJ882         	2456565.54810	     -24.336	       0.937	  0
+GJ882         	2456565.55369	     -24.448	       0.927	  0
+GJ882         	2456565.55931	     -23.174	       0.937	  0
+GJ882         	2456565.56494	     -23.152	       0.924	  0
+GJ882         	2456565.57037	     -23.533	       0.917	  0
+GJ882         	2456565.57616	     -22.769	       0.918	  0
+GJ882         	2456565.58158	     -21.911	       0.915	  0
+GJ882         	2456565.58712	     -22.066	       0.914	  0
+GJ882         	2456565.59270	     -21.209	       0.915	  0
+GJ882         	2456565.59838	     -21.173	       0.906	  0
+GJ882         	2456565.60391	     -21.018	       0.910	  0
+GJ882         	2456565.60949	     -19.927	       0.911	  0
+GJ882         	2456565.61507	     -20.535	       0.908	  0
+GJ882         	2456565.62065	     -20.890	       0.910	  0
+GJ882         	2456565.62629	     -20.867	       0.906	  0
+GJ882         	2456565.63181	     -19.823	       0.907	  0
+GJ882         	2456565.63739	     -20.322	       0.904	  0
+GJ882         	2456565.64302	     -19.033	       0.905	  0
+GJ882         	2456565.64849	     -18.546	       0.907	  0
+GJ882         	2456565.65412	     -18.550	       0.902	  0
+GJ882         	2456565.65949	     -19.065	       0.905	  0
+GJ882         	2456565.66528	     -17.299	       0.907	  0
+GJ882         	2456565.67091	     -16.865	       0.909	  0
+GJ882         	2456565.67660	     -16.394	       0.904	  0
+GJ882         	2456565.68196	     -15.740	       0.907	  0
+GJ882         	2456565.68754	     -15.444	       0.901	  0
+GJ882         	2456565.69317	     -15.627	       0.902	  0
+GJ882         	2456565.69875	     -14.874	       0.901	128
+GJ882         	2456565.70434	     -14.652	       0.901	128
+GJ882         	2456565.70992	     -14.732	       0.901	128
+GJ882         	2456565.71545	     -13.438	       0.903	  0
+GJ882         	2456565.72119	     -12.362	       0.901	  0
+GJ882         	2456565.72661	     -12.107	       0.901	128
+GJ882         	2456565.73229	     -12.322	       0.902	  0
+GJ882         	2456565.73783	     -11.259	       0.906	  0
+

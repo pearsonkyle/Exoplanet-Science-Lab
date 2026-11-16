@@ -95,9 +95,12 @@ console.log(`references: ${T.date}; batman ${T.versions.batman}, PyTransit ${T.v
   // complete, every number the page quotes (topics.js) is in it, nothing failed that the page does not say failed, the
   // bibliography is consistent, and the scripts the page links to are identical to the originals.
   const P = J('project'), done = TOPICS.filter((t) => t.status === 'done');
-  const missing = done.flatMap((t) => t.tests.filter((f) => !P.tests[f])), exits = Object.entries(P.tests).filter(([, x]) => x.exit !== 0).map(([f]) => f);
+  const missing = done.flatMap((t) => t.tests.filter((f) => !P.tests[f])), flaggedChecks = new Set(TOPICS.filter((t) => t.status === 'done').flatMap((t) => t.rows.filter((r) => r.failing).map((r) => r.check)));
+  // a file may exit non-zero only when every check it failed is one the page itself reports as failing (the stress suite on one
+  // seed); any other non-zero exit is a test that broke
+  const exits = Object.entries(P.tests).filter(([, x]) => x.exit !== 0 && !(x.checks.some((c) => !c.ok) && x.checks.every((c) => c.ok || flaggedChecks.has(c.name)))).map(([f]) => f);
   const nChecks = Object.values(P.tests).reduce((a, x) => a + x.checks.length, 0);
-  check('stored output of the project\'s other tests is complete and every file exited 0', !missing.length && !exits.length && nChecks > 300, `${nChecks} printed checks in ${Object.keys(P.tests).length} files, stored ${P.date}` + (missing.length ? `; missing: ${missing.join(', ')} (run node tools/validation/project_reference.mjs)` : '') + (exits.length ? `; non-zero exit: ${exits.join(', ')}` : ''));
+  check('stored output of the project\'s other tests is complete and every file exited 0 (or failed only checks the page reports)', !missing.length && !exits.length && nChecks > 300, `${nChecks} printed checks in ${Object.keys(P.tests).length} files, stored ${P.date}` + (missing.length ? `; missing: ${missing.join(', ')} (run node tools/validation/project_reference.mjs)` : '') + (exits.length ? `; non-zero exit: ${exits.join(', ')}` : ''));
   const stale = [];
   for (const t of done) for (const r of t.rows) { const q = findQuote(P.tests, t, r); if (!q) stale.push(`${t.id}: no check named "${r.check}"`); else if (!q.ok) stale.push(`${t.id}: "${r.quote}" is not in "${q.c.name}   ${q.c.info}"`); else if (!q.c.ok !== !!r.failing) stale.push(`${t.id}: "${r.check}" is ${q.c.ok ? 'ok' : 'FAIL'} in the stored output but the page says otherwise`); }
   check('every number quoted in section 5 is in the stored output', !stale.length, stale.length ? stale.join(' | ').slice(0, 900) : `${done.reduce((a, t) => a + t.rows.length, 0)} quotes in ${done.length} topics`);

@@ -41,6 +41,9 @@ _ser = PlainSerializer(lambda a: None if a is None else np.asarray(a).tolist(), 
 #: A one-dimensional (or, for samples, two-dimensional) array of floats: numpy in Python, a list in JSON.
 Array = Annotated[np.ndarray, BeforeValidator(_to_f64), _ser, WithJsonSchema({"type": "array", "items": {"type": "number"}})]
 IntArray = Annotated[np.ndarray, BeforeValidator(_to_i32), _ser, WithJsonSchema({"type": "array", "items": {"type": "integer"}})]
+#: A detector column (centroid, sky, ...): floats with NaN where a value is missing, written as null in JSON.
+ColumnArray = Annotated[np.ndarray, BeforeValidator(_to_f64), PlainSerializer(lambda a: None if a is None else [float(x) if np.isfinite(x) else None for x in np.asarray(a, dtype=np.float64)], when_used="json"),
+                        WithJsonSchema({"type": "array", "items": {"type": ["number", "null"]}})]
 
 
 class Model(BaseModel):
@@ -139,9 +142,24 @@ class LightCurveEpoch(Model):
     exposure_min: Optional[float] = None
 
 
+class Detrend(Model):
+    """The systematics model built from a light curve's ``columns`` (docs/FORMAT.md), rebuilt by the core exactly as
+    the web application does: ``columns`` are linear terms (column names, or ``xy``, ``xc2``, ``yc2``), each
+    standardised within each epoch and integrated out with the normalisation; ``poly`` a Legendre polynomial in time
+    per epoch (0 to 3); ``pld`` PLD columns added as they are; ``kernel`` ``{"features": [...], "neighbors": 50}`` for
+    nearest-neighbour kernel regression."""
+
+    columns: List[str] = Field(default_factory=list)
+    poly: int = 0
+    pld: List[str] = Field(default_factory=list)
+    kernel: Optional[Dict[str, Any]] = None
+
+
 class LightCurve(Model):
     """Relative flux against time. Several observations go in one light curve with ``epoch`` (an index per point)
-    and ``epochs`` (one entry per observation); each then has its own normalisation and airmass slope."""
+    and ``epochs`` (one entry per observation); each then has its own normalisation and airmass slope.
+    ``columns`` (detector columns, one value per point, NaN where missing) and ``detrend`` (a :class:`Detrend`) add a
+    systematics model to the baseline."""
 
     name: str = "light curve"
     time: Array
@@ -151,6 +169,8 @@ class LightCurve(Model):
     exposure_min: float = Field(0.0, description="Exposure time in minutes; the model is averaged over it where ingress needs it")
     epoch: Optional[IntArray] = None
     epochs: List[LightCurveEpoch] = Field(default_factory=list)
+    columns: Optional[Dict[str, ColumnArray]] = None
+    detrend: Optional[Detrend] = None
 
     @model_validator(mode="after")
     def _lengths(self) -> "LightCurve":
@@ -159,6 +179,9 @@ class LightCurve(Model):
             a = getattr(self, k)
             if a is not None and len(a) != n:
                 raise ValueError(f"light curve: time has {n} points and {k} has {len(a)}")
+        for k, a in (self.columns or {}).items():
+            if len(a) != n:
+                raise ValueError(f'light curve: time has {n} points and column "{k}" has {len(a)}')
         return self
 
     @classmethod
@@ -170,7 +193,11 @@ class LightCurve(Model):
         order = np.argsort([float(np.min(c.time)) for c in curves])
         curves = [curves[i] for i in order]
         any_air = any(c.airmass is not None for c in curves)
+        # detector columns that every curve has are kept; the first curve's detrending model applies (epoch by epoch)
+        shared = set.intersection(*[set(c.columns or {}) for c in curves])
+        columns = {k: np.concatenate([c.columns[k] for c in curves]) for k in sorted(shared)} or None
         return cls(
+            columns=columns, detrend=curves[0].detrend if columns else None,
             name=name,
             time=np.concatenate([c.time for c in curves]), flux=np.concatenate([c.flux for c in curves]), flux_err=np.concatenate([c.flux_err for c in curves]),
             airmass=np.concatenate([c.airmass if c.airmass is not None else np.zeros(len(c.time)) for c in curves]) if any_air else None,
@@ -217,8 +244,23 @@ class Prior(Model):
     """``uniform``: a = minimum, b = maximum. ``normal``: a = mean, b = standard deviation. For ``tmid`` the values are absolute times."""
 
     type: str = "uniform"
-    a: float
-    b: float
+    a: Optional[float] = None
+    b: Optional[float] = None
+    values: Optional[List[float]] = None   # ``categorical``: the allowed values (a period alias N, for example)
+    weights: Optional[List[float]] = None  # ``categorical``: their prior weights (equal when omitted)
+
+    @model_validator(mode="after")
+    def _check(self) -> "Prior":
+        if self.type == "categorical":
+            if not self.values:
+                raise ValueError("a categorical prior needs 'values'")
+        elif self.a is None or self.b is None:
+            raise ValueError(f"a {self.type} prior needs 'a' and 'b'")
+        return self
+
+    @classmethod
+    def categorical(cls, values, weights=None) -> "Prior":
+        return cls(type="categorical", values=list(values), weights=list(weights) if weights is not None else None)
 
     @classmethod
     def uniform(cls, lower: float, upper: float) -> "Prior":
@@ -229,6 +271,8 @@ class Prior(Model):
         return cls(type="normal", a=mean, b=sd)
 
     def __str__(self) -> str:
+        if self.type == "categorical":
+            return f"Categorical({', '.join(f'{v:g}' for v in self.values)})"
         return f"{'Normal' if self.type == 'normal' else self.type.capitalize()}({self.a:.10g}, {self.b:.10g})"
 
 

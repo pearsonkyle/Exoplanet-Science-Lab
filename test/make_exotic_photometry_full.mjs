@@ -10,7 +10,7 @@ export async function runFull(dir, R, score = 'transit') {
   const names = readdirSync(dir).filter((f) => /\.fits?$/i.test(f)).sort();
   const files = names.map((f) => { const b = readFileSync(dir + '/' + f); return { name: f, buffer: b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) }; });
   const P = R.planet, planet = { rprs: P.rprs, ars: P.aRs, inc: P.inc, per: P.pPer, tmid: P.midT, ecc: P.ecc, omega: P.omega, ld: R.ld, tmidUnc: P.midTUnc, perUnc: P.pPerUnc };
-  const cfg = { stars: R.stars.map(([x, y]) => ({ x, y })), timeAt: 'exotic', target: { ra: P.ra, dec: P.dec }, site: R.site, apertures: R.apers, annuli: R.annuli, score, planet };
+  const cfg = { stars: R.stars.map(([x, y]) => ({ x, y })), timeAt: 'exotic', target: { ra: P.ra, dec: P.dec }, site: R.site, apertures: R.apers, annuli: R.annuli, score, planet, weighted: false };   // as recorded: comparisons none, each, summed (the weighted ensemble is compared in detrend.test.mjs)
   const t0 = performance.now(), res = await runStack(files, cfg);
   return { res, seconds: (performance.now() - t0) / 1000, planet };
 }

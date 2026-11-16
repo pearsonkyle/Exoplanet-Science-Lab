@@ -1,0 +1,35 @@
+#
+#   VizieR Astronomical Server vizier.idia.ac.za
+#    Date: 2026-11-16T05:37:35 [V7.6.1]
+#   In case of problem, please report to:	cds-question@unistra.fr
+#
+#
+#Coosys	J2000:	eq_FK5 J2000
+#INFO	service_protocol=ASU	  IVOID of the protocol through which the data was retrieved
+#INFO	request_date=2026-11-16T05:37:35	  Query execution date
+#INFO	request=https://vizier.idia.ac.za/viz-bin/asu-tsv?-source=J/A%2BA/636/A74/list&-c=140.6566%20%2B50.6036&-c.rs=10&-out.add=_r&-sort=_r&-out=Name	  Full request URL
+#INFO	contact=cds-question@unistra.fr	  Email or URL to contact publisher
+#INFO	server_software=VizieR/7.6.1	  Software version
+#INFO	publisher=CDS	  Data centre that produced the VOTable
+#INFO	MaxTuples=50000	
+#INFO	-c=140.656600+50.603600,rs=10.	
+#Constraint -out=Name
+
+#RESOURCE=yCat_36360074
+#Name: J/A+A/636/A74
+#Title: HARPS radial velocity database (Trifonov+, 2020)
+#INFO	ivoid=ivo://cds.vizier/j/a+a/636/a74	    IVOID of underlying data collection
+#INFO	data_ivoid=ivo://cds.vizier/j/a+a/636/a74	    IVOID of underlying data collection
+#INFO	creator=Trifonov T.	    First author or institution
+#INFO	cites=bibcode:2020A&A...636A..74T	    Article or Data origin sources
+#INFO	journal=A&A	    Journal name
+#INFO	original_date=2020	    Year of the article publication
+#INFO	reference_url=https://cdsarc.cds.unistra.fr/viz-bin/cat/J/A+A/636/A74	    Dataset landing page
+#INFO	citation=doi:10.26093/cds/vizier.36360074	    Dataset identifier that can be used for citation
+#INFO	publication_date=2023-11-20	    Date of first publication in the data centre
+#INFO	rights_uri=https://cds.unistra.fr/vizier-org/licences_vizier.html	    Licence URI
+#Table	J_A_A_636_A74_list:
+#Name: J/A+A/636/A74/list
+#Title: List of target
+#Column	_r	(F6.3)	Distance from center (09 22 37.5840+50 36 12.960)[FK5/J2000]	[ucd=pos.angDistance]
+#Column	Name	(a15)	Target name	[ucd=meta.id;meta.main]

@@ -4,6 +4,7 @@
 import { orbitPosition, orbitPath, eventPosition } from '../core/kepler.js';
 import { intensity } from '../core/limbdark.js';
 import { teffToRGB } from './color.js';
+import { moonForView, moonPlacement } from './moonview.js';
 
 const EVENT_LABELS = { transit: 'mid-transit', eclipse: 'mid-eclipse', periastron: 'periastron', apastron: 'apastron', ascending: 'ascending node' };
 
@@ -27,7 +28,7 @@ export function createFallbackViz(container, labelsEl, insetFrame, reason) {
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.width = w + 'px'; cv.style.height = h + 'px'; }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
-    for (const b of bodies) orbitPosition(b.el, time, b.pos);
+    for (const b of bodies) { if (b.moon) { moonPlacement(b.el, b.moon, time, 1, b.place); b.pos = b.place.planet; } else orbitPosition(b.el, time, b.pos); }
     const [r, g, bl] = teffToRGB(sys.teff).map((v) => Math.round(v * 255));
     const many = bodies.length > 1, el = act.el;
     ctx.font = '10px ui-monospace, monospace';
@@ -40,13 +41,23 @@ export function createFallbackViz(container, labelsEl, insetFrame, reason) {
       ctx.strokeStyle = b.active ? '#5fd4ff66' : (b.color || '#aebccc') ; ctx.globalAlpha = b.active ? 1 : 0.5; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
       if (many && b.pos[2] > 0) { ctx.fillStyle = b.active ? '#fff' : (b.color || '#aebccc'); ctx.fillText(b.letter, x + rp + 3, y - rp - 2); }
     };
+    // a moon at true scale: a dark disc like its planet, with a grey rim so it can be told from it
+    const drawMoon = (b) => {
+      const x = cx + b.place.moon[0] * R, y = cy - b.place.moon[1] * R, rm = Math.max(0.9, b.place.rMoon * R);
+      ctx.fillStyle = '#05070c'; ctx.beginPath(); ctx.arc(x, y, rm, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#b9c6e0aa'; ctx.lineWidth = 1; ctx.stroke();
+    };
+    const drawBody = (b) => {   // the further of planet and moon first
+      if (!b.moon) return drawPlanet(b);
+      if (b.place.moon[2] < b.pos[2]) { drawMoon(b); drawPlanet(b); } else { drawPlanet(b); drawMoon(b); }
+    };
     const byDepth = bodies.slice().sort((a, b) => a.pos[2] - b.pos[2]);
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, w * 0.54, h); ctx.clip();
-    for (const b of byDepth) if (b.pos[2] <= 0) drawPlanet(b);
+    for (const b of byDepth) if (b.pos[2] <= 0) drawBody(b);
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
     for (let i = 0; i <= 40; i++) { const x = i / 40, I = Math.max(0, intensity(Math.sqrt(1 - x * x), sys.claret)); grad.addColorStop(x, `rgb(${Math.round(r * I)},${Math.round(g * I)},${Math.round(bl * I)})`); }
     ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
-    for (const b of byDepth) if (b.pos[2] > 0) drawPlanet(b);
+    for (const b of byDepth) if (b.pos[2] > 0) drawBody(b);
     ctx.restore();
     ctx.fillStyle = '#9fdcff'; ctx.fillText('AS SEEN FROM EARTH · TRUE SCALE', 14, h - 56);
 
@@ -65,6 +76,13 @@ export function createFallbackViz(container, labelsEl, insetFrame, reason) {
       const [px, py] = face(b.pos[0], b.pos[1], b.pos[2]);
       ctx.fillStyle = b.active ? '#fff' : (b.color || '#aebccc'); ctx.beginPath(); ctx.arc(px, py, b.active ? 3.5 : 2.4, 0, 7); ctx.fill();
       if (many) ctx.fillText(b.letter, px + 6, py - 5);
+      if (b.moon) {   // the moon's orbit and the moon, face-on, at the scale of the panel (it shows once it is a few pixels across)
+        ctx.strokeStyle = '#b9c6e088'; ctx.lineWidth = 0.8; ctx.beginPath();
+        for (let i = 0; i <= 128; i++) { const j = (i % 128) * 3, [x, y] = face(b.pos[0] + b.moon.ring[j], b.pos[1] + b.moon.ring[j + 1], b.pos[2] + b.moon.ring[j + 2]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+        ctx.stroke();
+        const [mx, my] = face(b.place.moon[0], b.place.moon[1], b.place.moon[2]);
+        ctx.fillStyle = '#d5dbe8'; ctx.beginPath(); ctx.arc(mx, my, 1.6, 0, 7); ctx.fill();
+      }
     }
     ctx.strokeStyle = '#7fd8ff77'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox, h - 60); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = '#9fdcff'; ctx.fillText('↓ TO EARTH', ox - 30, h - 46); ctx.fillText(many ? 'ORBITS, FACE-ON' : 'ORBIT, FACE-ON', ox - 42, 62);
@@ -89,8 +107,8 @@ export function createFallbackViz(container, labelsEl, insetFrame, reason) {
       sys = s;
       const list = Array.isArray(s.planets) && s.planets.length > 1 ? s.planets.filter((p) => p && p.el) : [];
       let ia = list.findIndex((p) => p.active); if (ia < 0) ia = list.findIndex((p) => p.el === s.el); if (ia < 0) ia = 0;
-      const src = list.length > 1 ? list.map((p, i) => ({ el: p.el, rprs: p.rprs, name: p.name, color: p.color, active: i === ia })) : [{ el: s.el, rprs: s.rprs, name: s.name, active: true }];
-      bodies = src.map((p) => { const name = p.name || 'planet', tail = name.trim().split(/\s+/).pop(); return { ...p, name, letter: tail.length <= 2 ? tail : name, path: orbitPath(p.el, 360), pos: [0, 0, 0] }; });
+      const src = list.length > 1 ? list.map((p, i) => ({ el: p.el, rprs: p.rprs, name: p.name, color: p.color, moon: i === ia ? p.moon ?? s.moon : p.moon, active: i === ia })) : [{ el: s.el, rprs: s.rprs, name: s.name, moon: s.moon, active: true }];
+      bodies = src.map((p) => { const name = p.name || 'planet', tail = name.trim().split(/\s+/).pop(); return { ...p, name, letter: tail.length <= 2 ? tail : name, path: orbitPath(p.el, 360), pos: [0, 0, 0], moon: moonForView(p.el, p.moon ? { ...p.moon, rprs: p.moon.rprs ?? p.rprs } : null), place: { planet: [0, 0, 0], moon: [0, 0, 0], rMoon: 0 } }; });
       act = bodies.find((b) => b.active);
       dirty = true;
     },
@@ -99,6 +117,7 @@ export function createFallbackViz(container, labelsEl, insetFrame, reason) {
     highlight(kind) { evKind = kind && EVENT_LABELS[kind] ? kind : null; dirty = true; },
     eventPosition: (kind) => (act && EVENT_LABELS[kind] ? eventPosition(act.el, kind) : null),
     getHighlight: () => evKind,
-    getInfo: () => ({ planets: bodies.length, active: act ? bodies.indexOf(act) : -1 }),
+    getInfo: () => ({ planets: bodies.length, active: act ? bodies.indexOf(act) : -1, moons: bodies.filter((b) => b.moon).length,
+      moon: act && act.moon ? { planet: [...act.place.planet], moon: [...act.place.moon], rMoon: act.place.rMoon, rPlanet: act.rprs, visible: true, separation: act.moon.sep } : null }),
   };
 }

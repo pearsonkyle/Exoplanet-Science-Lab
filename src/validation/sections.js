@@ -1,15 +1,16 @@
-// The four live comparisons of the Validation page (section 4). Each block fills `#<id> .vbody` with: the number to
+// The four live comparisons of the Validation tab (section 4). Each block fills `#val-<id> .vbody` with: the number to
 // remember, one chart, and collapsed blocks (built on first opening) holding every case, the inputs and how it was run.
 // Each also records its checks (ctx.check), a row of the summary table (ctx.glance) and the facts the two honesty
 // lists quote (ctx.found), so no number is typed twice.
 
 import * as C from './compute.js';
 import { chart, rangesHeight } from './plot.js';
-import { $, esc, e1, se1, fx, sig, int, signed, ppm, median, pill, heat, table, details, keyNumber, cite, code, L, N } from './ui.js';
+import { $, esc, e1, se1, fx, sig, int, signed, ppm, median, pill, heat, table, details, keyNumber, cite, code, L, N, vdata } from './ui.js';
+import { vid } from './anchors.js';
 import { CODES } from './refs.js';
 
 const TOL = C.TOL;
-const body = (id) => document.querySelector(`#${id} .vbody`);
+const body = (id) => document.querySelector(`#${vid(id)} .vbody`);
 const FAMILY = { batman: 0, PyTransit: 1, ellc: 2, radvel: 2, PyAstronomy: 3, pylightcurve: 4, Winn: 4, 'exoplanet-core': 5, pyaneti: 6, EXOTIC: 7, dynesty: 0, emcee: 1, UltraNest: 6, analytic: 3 };
 const family = (name) => Object.keys(FAMILY).find((k) => name.startsWith(k));
 const colors = (TH) => ({ of: (name) => (name === 'ESL' || name === 'this code' ? TH.esl : name === 'truth' ? TH.truth : TH.s[FAMILY[family(name)] ?? 7]), dash: (name) => (/\(/.test(name) && !/kernel|\(C\)|Markley|Newton/.test(name) ? [5, 4] : null) });
@@ -21,7 +22,7 @@ function howRun(ctx, parent, { script, json, codes, extra = '', mine }) {
   details(parent, 'How it was run', (b) => {
     b.append($('ul', 'vlist', [
       `Reference generator: ${ctx.path(script)} (Python ${esc(T.python)}, ${esc(T.machine)}, ${esc(T.date)}). It hands every code the same inputs through ${ctx.path('tools/validation/codes.py')} and stores each code’s output minus the reference.`,
-      `Stored inputs and outputs: <a href="${json}" download>${json}</a>${ctx.data.P.sizes?.[json] ? ` (${Math.round(ctx.data.P.sizes[json] / 1024)} kB)` : ''}.`,
+      `Stored inputs and outputs: <a href="${vdata(json)}" download>${json}</a>${ctx.data.P.sizes?.[json] ? ` (${Math.round(ctx.data.P.sizes[json] / 1024)} kB)` : ''}.`,
       `This code’s side: ${mine} in ${ctx.path('src/validation/compute.js')}, run in your browser on page load and by ${ctx.path('test/validation.test.mjs')}.`,
       `Versions: ${codes.map((k) => `${code(k)} ${esc(ctx.version(k))}`).join(', ')}.`,
       extra,
@@ -29,7 +30,7 @@ function howRun(ctx, parent, { script, json, codes, extra = '', mine }) {
     b.append($('pre', 'vcmd', `.venv-validation/bin/python ${script}     # regenerate the reference (environment: validation/README.md)\nnode test/validation.test.mjs                         # recompute this code's side and assert the tolerances`));
   });
 }
-const inputs = (parent, title, head, rows, json) => details(parent, title, (b) => { b.append(table(head, rows)); b.append($('p', 'vnote', `Exactly these numbers are handed to every code. Download: <a href="${json}" download>${json}</a>.`)); });
+const inputs = (parent, title, head, rows, json) => details(parent, title, (b) => { b.append(table(head, rows)); b.append($('p', 'vnote', `Exactly these numbers are handed to every code. Download: <a href="${vdata(json)}" download>${json}</a>.`)); });
 
 // =====================================================================================================================
 // 4.1 transit light curves
@@ -56,11 +57,11 @@ export function transitBlock(ctx) {
     pyaNL: Math.max(...T.cases.filter((c) => c.law === 'nonlinear' && c.stats.PyAstronomy).map((c) => c.stats.PyAstronomy.max)), pyaQuad: Math.max(...T.cases.filter((c) => c.law === 'quadratic' && c.stats.PyAstronomy && c.depth > 0).map((c) => c.stats.PyAstronomy.max)),
     pyaCrash: (k001.errors?.PyAstronomy || 'no failure in this run').replace(/^RuntimeError: /, ''), pytA: lab('a/R* = 2.5, quadratic').stats.PyTransit.max, pytE: lab('e = 0.93, omega = 120, quadratic').stats.PyTransit.max });
   ctx.glance.push({ href: 'transit', q: 'How accurately is the dimming of the star computed?', value: e1(worst.esl.max), small: `of the star’s light`, ok: okT && autoMax < TOL.exposureAuto,
-    practice: `${ppm(worst.esl.max)}; the best photometry reaches 10 ppm.`, others: `${e1(Math.min(...own.map((n) => st[n].max)))} to ${e1(Math.max(...own.map((n) => st[n].max)))} (each code’s worst case)` });
+    practice: `${ppm(worst.esl.max)}. For scale, an Earth-size planet crossing a Sun-like star dims it by 84 ppm.`, others: `${e1(Math.min(...own.map((n) => st[n].max)))} to ${e1(Math.max(...own.map((n) => st[n].max)))} (each code’s worst case)` });
 
   // ---- the number, and one chart
   const keys = $('div', 'vkeys'); s.append(keys);
-  keys.innerHTML = keyNumber(e1(worst.esl.max), 'of the star’s light', `Largest error in ${all.length} light curves: ${ppm(worst.esl.max)}. No telescope measures better than a few ppm.`)
+  keys.innerHTML = keyNumber(e1(worst.esl.max), 'of the star’s light', `Largest error in ${all.length} light curves: ${ppm(worst.esl.max)}. For scale, an Earth-size planet crossing a Sun-like star dims it by 84 ppm.`)
     + keyNumber(ppm(autoMax), 'for long exposures', `Largest error when each point is a 2- or 30-minute exposure, averaged automatically.`);
   const rows = [{ label: ME, lo: med, hi: worst.esl.max, color: ctx.TH.esl, strong: true }, ...names.map((n) => ({ label: n, lo: st[n].med, hi: st[n].max, color: col.of(n) })).sort((a, b) => a.hi - b.hi)];
   chart(s, 'ranges', { rows, xMin: 1e-16, xMax: 1e-3, floor: true, marks: [{ x: 1e-6, label: '1 ppm' }, { x: TOL.transit, label: 'tolerance' }], loName: 'typical case (median)', hiName: 'worst case' },
@@ -146,7 +147,7 @@ export function orbitBlock(ctx) {
     batman93: K.codes.batman.max[i93], pyaneti93: K.codes.pyaneti?.max[i93], pyanetiPeri: worstOf('pyaneti', 'tperi'), plcE14: Number(hdr.c.codes.pylightcurve.e14).toExponential(1), winnShort });
   const wT = Math.max(wP, wE, wD);
   ctx.glance.push({ href: 'orbit', q: 'Where is the planet on its orbit at a given time?', value: e1(wNu), small: 'radians', ok: okK, practice: 'Rounding error, even for extreme orbits.', others: `${e1(K.codes.batman.max[i93])} (batman, pyaneti) at e = 0.93; two fail at e = 0.999` });
-  ctx.glance.push({ href: 'orbit', q: 'When do transits and eclipses happen, and for how long?', value: e1(wT), small: 'seconds', ok: okE && okD, practice: 'Transit times are measured to a few seconds at best.', others: `closed-form durations: up to ${winnShort.toFixed(0)} s short` });
+  ctx.glance.push({ href: 'orbit', q: 'When do transits and eclipses happen, and for how long?', value: e1(wT), small: 'seconds', ok: okE && okD, practice: 'For scale, the Spitzer mid-transit time in this site’s WASP-43 b example has an uncertainty of 6 s.', others: `closed-form durations: up to ${winnShort.toFixed(0)} s short` });
 
   const keys = $('div', 'vkeys'); s.append(keys);
   keys.innerHTML = keyNumber(e1(wNu), 'radians', `Largest error of the planet’s position angle, for eccentricities up to ${K.ecc[last]}.`)
@@ -198,7 +199,7 @@ export function rvBlock(ctx) {
   ctx.check('rv', 'Velocity amplitude K from the masses', wa < TOL.amplitude, `largest relative difference ${e1(wa)}; tolerance ${e1(TOL.amplitude)}`);
   const mx = (n) => Math.max(...V.cases.map((c) => (c.codes[n] ? C.maxAbs(c.codes[n]) / c.K : 0))), mn = (n) => Math.min(...V.cases.map((c) => (c.codes[n] ? C.maxAbs(c.codes[n]) / c.K : Infinity)));
   Object.assign((ctx.found.out ||= {}), { exotic: mx('EXOTIC'), exoticFine: mx('EXOTIC (finer step)'), exoticFactor: hd.exoticFactor - 1 });
-  ctx.glance.push({ href: 'rv', q: 'How accurately is the star’s velocity computed?', value: e1(w), small: 'of the amplitude K', ok: okV, practice: `${e1(w * hd.K)} m/s for HD 80606 b; spectrographs reach 0.3 m/s.`, others: `radvel ${e1(mx('radvel'))}, pyaneti ${e1(mx('pyaneti'))}, EXOTIC ${e1(mx('EXOTIC'))}` });
+  ctx.glance.push({ href: 'rv', q: 'How accurately is the star’s velocity computed?', value: e1(w), small: 'of the amplitude K', ok: okV, practice: `${e1(w * hd.K)} m/s for HD 80606 b; the most precise instrument in its bundled velocities has a median uncertainty of 1.1 m/s.`, others: `radvel ${e1(mx('radvel'))}, pyaneti ${e1(mx('pyaneti'))}, EXOTIC ${e1(mx('EXOTIC'))}` });
 
   const keys = $('div', 'vkeys'); s.append(keys);
   keys.innerHTML = keyNumber(e1(w), 'of the amplitude K', `Largest error over ${R.length} orbits: ${e1(w * hd.K)} m/s for HD 80606 b, whose star moves by ±${hd.K} m/s.`)
@@ -338,6 +339,6 @@ export function fitsBlock(ctx, onChange) {
 
   inputs(s, 'Inputs', ['Problem', 'Data', 'Free parameters and uniform prior ranges', 'Fixed'], F.problems.map((P) => [L(`${P.id} · ${esc(P.title)}`), L(`${P.data.t.length} ${P.kind === 'lc' ? 'fluxes' : 'velocities'}`), L(P.keys.map((k, i) => `${LABEL[k] || k}: ${P.lo[i]} to ${P.hi[i]} (injected ${sig(P.truth[i], 5)})`).join('; ')), L(Object.entries(P.values).map(([k, v]) => `${k} = ${Array.isArray(v) ? v.join(', ') : v}`).join(', '))]), 'fits.json');
   howRun(ctx, s, { script: 'tools/validation/make_fits.py', json: 'fits.json', mine: '<code>lnLCheck</code>, <code>runProblem</code>, <code>compareFit</code>, <code>coverageRun</code>', codes: ['emcee', 'dynesty', 'UltraNest', 'exoplanet-core', 'radvel'],
-    extra: `This code’s stored fits, the eight-seed evidence runs and the ${2 * nT} coverage trials come from ${ctx.path('tools/validation/esl_reference.mjs')} (<a href="esl.json" download>esl.json</a>; Node ${esc(E.node)}, ${esc(E.machine)}). The sampler follows UltraNest’s MLFriends region (${cite('buchner2016', 'buchner2019', 'buchner2021')}); the comparison samplers are described in ${cite('foremanmackey2013')} and ${cite('speagle2020')}. Settings: dynesty static with 3000 live points, ${esc(F.problems[0].samplers.dynesty.settings)}.` });
+    extra: `This code’s stored fits, the eight-seed evidence runs and the ${2 * nT} coverage trials come from ${ctx.path('tools/validation/esl_reference.mjs')} (<a href="${vdata('esl.json')}" download>esl.json</a>; Node ${esc(E.node)}, ${esc(E.machine)}). The sampler follows UltraNest’s MLFriends region (${cite('buchner2016', 'buchner2019', 'buchner2021')}); the comparison samplers are described in ${cite('foremanmackey2013')} and ${cite('speagle2020')}. Settings: dynesty static with 3000 live points, ${esc(F.problems[0].samplers.dynesty.settings)}.` });
   void CODES;
 }

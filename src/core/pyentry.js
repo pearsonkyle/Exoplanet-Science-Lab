@@ -215,7 +215,7 @@ export function createApi({ modules, tables = {}, stamp = {} }) {
       if (det.ld) det.ld.forEach((c, i) => (values['ld' + i] = c));
       const out = {
         lnL: det.lnL, chi2: det.chi2, chi2_parts: { light_curve: det.chi2lc, radial_velocity: det.chi2rv, timing: det.chi2tim },
-        n_data: prob.ntotal, n_linear: prob.nlinear, bic: infoCriteria(det.chi2, nfree + prob.nlinear, prob.ntotal).bic, keys: spec.free.map((f) => f.key), values,
+        n_data: prob.ntotal, n_linear: prob.nlinear, bic: infoCriteria(det.chi2ic ?? det.chi2, nfree + prob.nlinear, prob.ntotal).bic, keys: spec.free.map((f) => f.key), values,
         light_curve: null, radial_velocity: [], timing: [],
         planets: det.planets.map((q, i) => ({ letter: s.planets[i].letter, ...q, tmid: q.tmid + tRef })),
         limb_darkening: Array.from({ length: LD_LAWS[spec.ldLaw].names.length }, (_, i) => values['ld' + i] ?? 0),

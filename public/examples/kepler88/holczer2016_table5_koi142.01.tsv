@@ -1,0 +1,50 @@
+#
+#   VizieR Astronomical Server vizier.cfa.harvard.edu
+#    Date: 2026-11-16T17:49:10 [V7.6.1]
+#   In case of problem, please report to:	cds-question@unistra.fr
+#
+#
+#Coosys	J2000:	eq_FK5 J2000
+#INFO	service_protocol=ASU	  IVOID of the protocol through which the data was retrieved
+#INFO	request_date=2026-11-16T17:49:10	  Query execution date
+#INFO	request=https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=J/ApJS/225/9/table5&KOI=142.01&-out.all&-out.max=500	  Full request URL
+#INFO	contact=cds-question@unistra.fr	  Email or URL to contact publisher
+#INFO	server_software=VizieR/7.6.1	  Software version
+#INFO	publisher=CDS	  Data centre that produced the VOTable
+
+#RESOURCE=yCat_22250009
+#Name: J/ApJS/225/9
+#Title: Kepler TTVs. IX. The full long-cadence data set (Holczer+, 2016)
+#INFO	ivoid=ivo://cds.vizier/j/apjs/225/9	    IVOID of underlying data collection
+#INFO	data_ivoid=ivo://cds.vizier/j/apjs/225/9	    IVOID of underlying data collection
+#INFO	creator=Holczer T.	    First author or institution
+#INFO	cites=bibcode:2016ApJS..225....9H	    Article or Data origin sources
+#INFO	journal=ApJS	    Journal name
+#INFO	original_date=2016	    Year of the article publication
+#INFO	reference_url=https://cdsarc.cds.unistra.fr/viz-bin/cat/J/ApJS/225/9	    Dataset landing page
+#INFO	citation=doi:10.26093/cds/vizier.22250009	    Dataset identifier that can be used for citation
+#INFO	publication_date=2017-10-18	    Date of first publication in the data centre
+#INFO	rights_uri=https://cds.unistra.fr/vizier-org/licences_vizier.html	    Licence URI
+#Table	J_ApJS_225_9_table5:
+#Name: J/ApJS/225/9/table5
+#Title: KOIs with significant long-term TTV
+#Column	recno	(I8)	Record number assigned by the VizieR team. Should Not be used for identification.	[ucd=meta.record]
+#Column	KOI	(F7.2)	[12.01/5866.01] KOI number	[ucd=meta.id;meta.main]
+#Column	Per	(F6.2)	[0.9/285]? Orbital period	[ucd=time.period]
+#Column	Model	(A3)	Model type (1)	[ucd=meta.note]
+#Column	Per2	(F7.2)	[110/2480]? Best-fit period of the O-C data using model "Cos"	[ucd=time.period;meta.modelled]
+#Column	e_Per2	(F6.2)	[0.08/370]? Period uncertainty	[ucd=stat.error]
+#Column	u_Amp	(A1)	[~] Uncertainty flag on Amp	[ucd=meta.code.error]
+#Column	Amp	(F8.3)	The amplitude of the cosine fit	[ucd=src.var.amplitude]
+#Column	e_Amp	(F8.3)	[0.04/1400]? Amp uncertainty	[ucd=stat.error]
+#Column	Res	(F6.2)	[0.05/190] Residual scatter (1.483 times their MAD)	[ucd=stat.error]
+#Column	N	(I4)	[4/1384]? Number of TT measurements	[ucd=meta.number]
+#Column	Mult	(I1)	[1/6]? Number of detected planets in the system (see B12)	[ucd=meta.number]
+#Column	Ref	(a8)	References (see refs.dat file)	[ucd=meta.ref]
+#Column	Kepler	(A5)	Kepler number	[ucd=meta.id]
+recno	KOI	Per	Model	Per2	e_Per2	u_Amp	Amp	e_Amp	Res	N	Mult	Ref	Kepler
+ 	 	d	 	d	d	 	min	min	min	 	 	 	
+--------	-------	------	---	-------	------	-	--------	--------	------	----	-	--------	-----
+      14	 142.01	 10.95	Cos	 627.52	  0.08	 	 649.770	   0.620	 59.00	 119	1	1, 2, 9 	88b
+      15	 142.01	      	Cos	 331.75	  0.12	 	 105.320	   0.450	 59.00	    	 	        	
+

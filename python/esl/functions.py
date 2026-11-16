@@ -217,12 +217,15 @@ def _text(source: Union[str, Path]) -> str:
     return str(source)
 
 
-def read_light_curve(source: Union[str, Path], name: Optional[str] = None, exposure_min: float = 0.0, **options: Any) -> LightCurve:
+def read_light_curve(source: Union[str, Path], name: Optional[str] = None, exposure_min: float = 0.0, detrend: Optional[Dict[str, Any]] = None, **options: Any) -> LightCurve:
     """Read a light curve with the web application's reader: delimited text, AAVSO exoplanet reports, EXOTIC
-    FinalLightCurve files, magnitudes, JD / MJD / BTJD / BKJD. ``source`` is a path or the text itself."""
+    FinalLightCurve files, magnitudes, JD / MJD / BTJD / BKJD. ``source`` is a path or the text itself. Further
+    numeric columns (centroids, sky, FWHM, ...) are kept in ``columns``; ``detrend`` (e.g. ``{"columns": ["xc", "yc"],
+    "poly": 1}``, see :class:`esl.models.Detrend`) puts a systematics model built on them in the baseline."""
     label = name or (Path(source).stem if isinstance(source, Path) or (isinstance(source, str) and "\n" not in source) else "light curve")
     d = _runtime.call("parseLightCurve", _text(source), label, options)
-    lc = LightCurve(name=label, time=d["time"], flux=d["f"], flux_err=d["e"], airmass=d.get("airmass"), exposure_min=exposure_min)
+    cols = d.get("columns") or None
+    lc = LightCurve(name=label, time=d["time"], flux=d["f"], flux_err=d["e"], airmass=d.get("airmass"), exposure_min=exposure_min, columns=cols, detrend=detrend if cols else None)
     lc.__pydantic_extra__ = {"notes": d.get("notes", []), "time_system": d.get("timeSystem"), "flux_units": d.get("fluxUnits")}
     return lc
 

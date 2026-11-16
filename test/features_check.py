@@ -1,13 +1,16 @@
 # Drives the newer features in headless Chrome: undo, slider ranges, stellar-tied limb darkening,
 # run restore, priors export/import, movie recording, mobile layout.
-import sys, base64, json
+import sys, base64, json, os
 from playwright.sync_api import sync_playwright
 out = sys.argv[1]
+# the site: $ESL_BASE, else the static server of CLAUDE.md ("Browser checks"); Chrome when it is installed, else Playwright's Chromium
+BASE = os.environ.get('ESL_BASE', 'http://127.0.0.1:8765').rstrip('/')
+CHROME = {'executable_path': '/usr/bin/google-chrome'} if os.path.exists('/usr/bin/google-chrome') else {}
 with sync_playwright() as p:
-    b = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox', '--autoplay-policy=no-user-gesture-required'])
+    b = p.chromium.launch(**CHROME, args=['--no-sandbox', '--autoplay-policy=no-user-gesture-required', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'])
     pg = b.new_page(viewport={'width': 1440, 'height': 900}); logs = []
     pg.on('pageerror', lambda e: logs.append('PAGEERROR ' + str(e)))
-    pg.goto('http://127.0.0.1:8765/analyze/index.html?skipintro'); pg.wait_for_timeout(1800)
+    pg.goto(BASE + '/analyze/index.html?skipintro'); pg.wait_for_timeout(1800)
     S = lambda expr: pg.evaluate('(() => { const S = window.__esl.S; return ' + expr + '; })()')
     def fit():
         pg.click('.tabs [data-tab=fit]'); pg.click('#runbtn')
@@ -24,7 +27,7 @@ with sync_playwright() as p:
     pg.evaluate("(() => { const S = window.__esl.S; S.star.rstar = null; S.star.mstar = null; })()")
     pg.click('text=Estimate R★ and M★'); pg.wait_for_timeout(300); print('Torres estimate:', S('[S.star.rstar, S.star.rstarErr, S.star.mstar, S.star.mstarErr]'))
     # --- LD estimate button replaces the slider values
-    before = S('[S.values.ld0, S.values.ld1]'); pg.click('text=Estimate from T eff'); pg.wait_for_timeout(300); after = S('[S.values.ld0, S.values.ld1]')
+    before = S('[S.values.ld0, S.values.ld1]'); pg.click('#tab-system .btn.primary'); pg.wait_for_timeout(300); after = S('[S.values.ld0, S.values.ld1]')
     shown = pg.evaluate("[...document.querySelectorAll('#tab-system .row')].filter(r => /^u[12]/.test(r.textContent)).map(r => r.querySelector('input[type=number]').value)")
     print('LD estimate:', before, '->', after, 'slider boxes show', shown)
     # --- fit 1: coefficients fixed
@@ -46,7 +49,7 @@ with sync_playwright() as p:
     pg.locator('tr.runrow').first.click(); pg.wait_for_timeout(500)
     print('runs listed', n_rows, '| restored run id', S('S.fit.id'), 'free', S('S.fit.free.map(f => f.key)'), 'ldMode', S('S.ldMode'), '| tag:', pg.inner_text('.runtag')[:60])
     # --- priors export -> YAML text -> import round trip through the real parser
-    y = pg.evaluate("""async () => { const c = await import('./src/core/config.js'), m = await import('./src/core/model.js'); const S = window.__esl.S;
+    y = pg.evaluate("""async () => { const c = await import('/src/core/config.js'), m = await import('/src/core/model.js'); const S = window.__esl.S;
         const txt = c.toYAML(c.configToObject(S, [...m.activeParams(S.ldLaw, true), ...m.STAR_PARAMS])); const back = c.parseConfig(txt);
         return { txt: txt.slice(0, 260), rprsPrior: back.params.rprs.prior, perPrior: back.params.per.prior, fit: Object.entries(back.params).filter(([k, v]) => v.fit).map(([k]) => k) }; }""")
     print(y['txt']); print('parsed back:', y['rprsPrior'], y['perPrior'], y['fit'])
@@ -59,6 +62,6 @@ with sync_playwright() as p:
     print('movie:', mv.get('sup'), mv.get('size'), 'bytes')
     print('errors:', logs[:6])
     # --- mobile
-    pg2 = b.new_page(viewport={'width': 400, 'height': 860}); pg2.goto('http://127.0.0.1:8765/analyze/index.html?skipintro'); pg2.wait_for_timeout(1800)
+    pg2 = b.new_page(viewport={'width': 400, 'height': 860}); pg2.goto(BASE + '/analyze/index.html?skipintro'); pg2.wait_for_timeout(1800)
     pg2.screenshot(path=out + '_mobile.png'); pg2.click('.tabs [data-tab=fit]'); pg2.wait_for_timeout(300); pg2.screenshot(path=out + '_mobile_fit.png', full_page=True)
     b.close()

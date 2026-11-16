@@ -1,0 +1,40 @@
+#
+#   VizieR Astronomical Server vizier.cfa.harvard.edu
+#    Date: 2026-11-16T05:37:19 [V7.6.1]
+#   In case of problem, please report to:	cds-question@unistra.fr
+#
+#
+#Coosys	J2000:	eq_FK5 J2000
+#INFO	service_protocol=ASU	  IVOID of the protocol through which the data was retrieved
+#INFO	request_date=2026-11-16T05:37:19	  Query execution date
+#INFO	request=https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=J/MNRAS/484/L8/stars&-c=140.6566%20%2B50.6036&-c.rs=10&-out.add=_r&-sort=_r&-out=Name	  Full request URL
+#INFO	contact=cds-question@unistra.fr	  Email or URL to contact publisher
+#INFO	server_software=VizieR/7.6.1	  Software version
+#INFO	publisher=CDS	  Data centre that produced the VOTable
+#INFO	MaxTuples=50000	
+#INFO	-c=140.656600+50.603600,rs=10.	
+#Constraint -out=Name
+
+#RESOURCE=yCat_74849008
+#Name: J/MNRAS/484/L8
+#Title: Correcting HIRES/Keck RVs for systematic errors (Tal-Or+, 2019)
+#INFO	ivoid=ivo://cds.vizier/j/mnras/484/l8	    IVOID of underlying data collection
+#INFO	data_ivoid=ivo://cds.vizier/j/mnras/484/l8	    IVOID of underlying data collection
+#INFO	creator=Tal-Or L.	    First author or institution
+#INFO	cites=bibcode:2019MNRAS.484L...8T	    Article or Data origin sources
+#INFO	journal=MNRA	    Journal name
+#INFO	original_date=2019	    Year of the article publication
+#INFO	reference_url=https://cdsarc.cds.unistra.fr/viz-bin/cat/J/MNRAS/484/L8	    Dataset landing page
+#INFO	citation=doi:10.26093/cds/vizier.74849008	    Dataset identifier that can be used for citation
+#INFO	publication_date=2024-08-19	    Date of first publication in the data centre
+#INFO	rights_uri=https://cds.unistra.fr/vizier-org/licences_vizier.html	    Licence URI
+#Table	J_MNRAS_484_L8_stars:
+#Name: J/MNRAS/484/L8/stars
+#Title: List of studied stars
+#Column	_r	(F5.2)	Distance from center (09 22 37.58+50 36 13.0)[FK5/J2000]	[ucd=pos.angDistance]
+#Column	Name	(a14)	Target identifier	[ucd=meta.id;meta.main]
+_r	Name
+arcsec	
+-----	--------------
+ 0.44	HD80606
+

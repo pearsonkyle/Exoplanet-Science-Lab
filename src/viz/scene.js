@@ -7,6 +7,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { orbitPosition, orbitPath, trueAnomaly, eventPosition } from '../core/kepler.js';
 import * as SH from './shaders.js';
 import { teffToRGB } from './color.js';
+import { moonForView, moonPlacement } from './moonview.js';
+import { mapFrame } from './planetmap.js';
 
 // appearance by size class (see planetClass in core/derive.js)
 export const PLANET_LOOKS = {
@@ -44,7 +46,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
   const earth = { half: 2.3, cx: 0, cy: 0 };
 
   // ---- star -----------------------------------------------------------------
-  const starUni = { uLD: { value: new THREE.Vector4(0, 0.6, 0, 0) }, uColor: { value: new THREE.Color(1, 0.9, 0.75) }, uTime: { value: 0 }, uGran: { value: 1 }, uFlat: { value: 0 }, uOrtho: { value: 0 } };
+  const starUni = { uLD: { value: new THREE.Vector4(0, 0.6, 0, 0) }, uColor: { value: new THREE.Color(1, 0.9, 0.75) }, uTime: { value: 0 }, uGran: { value: 1 }, uFlat: { value: 0 }, uOrtho: { value: 0 }, uRot: { value: 0 }, uSpin: { value: new THREE.Vector2(1, 0) } };
   const star = new THREE.Mesh(new THREE.SphereGeometry(1, 128, 96), new THREE.ShaderMaterial({ uniforms: starUni, vertexShader: SH.starVert, fragmentShader: SH.starFrag }));
   sysGroup.add(star);
 
@@ -69,10 +71,27 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
   dotsGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N_DOTS * 3), 3));
   const dots = new THREE.Points(dotsGeo, new THREE.PointsMaterial({ size: 3.5, sizeAttenuation: false, vertexColors: true }));
   dots.frustumCulled = false; dots.visible = false; sysGroup.add(dots);
+  // A planet's fitted brightness map (viz.setSystem's `map`): an RGBA texture in longitude (east of the substellar point,
+  // -180..180) and latitude (south up), drawn on the planet fixed to its substellar point, so it turns with the orbit.
+  const blankTex = new THREE.DataTexture(new Uint8Array(4), 1, 1); blankTex.needsUpdate = true;
+  const mapUni = () => ({ uMap: { value: blankTex }, uMapOn: { value: 0 }, uSub: { value: new THREE.Vector3(1, 0, 0) }, uNorth: { value: new THREE.Vector3(0, 1, 0) } });
+  function setMap(b, m) {
+    if (b.mapSrc === m) return;
+    b.mapSrc = m || null;
+    if (!m) { b.uni.uMapOn.value = 0; return; }
+    let tx = b.uni.uMap.value;
+    if (tx === blankTex || tx.image.width !== m.width || tx.image.height !== m.height) {
+      if (tx !== blankTex) tx.dispose();
+      tx = new THREE.DataTexture(new Uint8Array(m.rgba), m.width, m.height);
+      tx.wrapS = THREE.RepeatWrapping; tx.wrapT = THREE.ClampToEdgeWrapping; tx.magFilter = THREE.LinearFilter; tx.minFilter = THREE.LinearFilter;
+      b.uni.uMap.value = tx;
+    } else tx.image.data.set(m.rgba);
+    tx.needsUpdate = true; b.uni.uMapOn.value = 1;
+  }
   let bodies = [];           // the slots in use; `act` is the active one
   let act = null;
   function mkSlot(i) {
-    const uni = { uColA: { value: new THREE.Color() }, uColB: { value: new THREE.Color() }, uColC: { value: new THREE.Color() }, uAtmo: { value: new THREE.Color() }, uBands: { value: 16 }, uSeed: { value: 3.7 + 2.3 * i }, ...sharedUni };
+    const uni = { uColA: { value: new THREE.Color() }, uColB: { value: new THREE.Color() }, uColC: { value: new THREE.Color() }, uAtmo: { value: new THREE.Color() }, uBands: { value: 16 }, uSeed: { value: 3.7 + 2.3 * i }, ...mapUni(), ...sharedUni };
     const mesh = new THREE.Mesh(planetGeo, new THREE.ShaderMaterial({ uniforms: uni, vertexShader: SH.planetVert, fragmentShader: SH.planetFrag }));
     const halo = new THREE.Mesh(haloGeo, new THREE.ShaderMaterial({ uniforms: uni, vertexShader: SH.planetVert, fragmentShader: SH.haloFrag, side: THREE.BackSide, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     mesh.add(halo);
@@ -83,7 +102,20 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N_ORB * 3), 3));
     const line = new THREE.LineLoop(geo, orbitMat);
     sysGroup.add(line);
-    return { uni, mesh, halo, geo, line, label: mkLabel('planet', 'planet'), el: null, rprs: 0.1, look: 'jupiter', name: '', color: null, rgb: new THREE.Color(), active: false, pos: [0, 0, 0] };
+    return { uni, mesh, halo, geo, line, label: mkLabel('planet', 'planet'), mapSrc: null, el: null, rprs: 0.1, look: 'jupiter', name: '', color: null, rgb: new THREE.Color(), active: false, pos: [0, 0, 0], moon: null, moonObj: null, place: { planet: [0, 0, 0], moon: [0, 0, 0], rMoon: 0 } };
+  }
+  // A planet's moon: a small grey body and the ring of its orbit about the planet, made the first time a planet has one.
+  // The ring holds the orbit as offsets from the planet, so it is moved (and, when planets are enlarged, scaled) with it.
+  const moonGeo = new THREE.SphereGeometry(1, 40, 28), N_MOON = 128;
+  const moonRingMat = new THREE.LineBasicMaterial({ color: 0xb9c6e0, transparent: true, opacity: 0.6 });
+  function mkMoon(i) {
+    const uni = { uColA: { value: new THREE.Color(0x8f8b85) }, uColB: { value: new THREE.Color(0x5d5a56) }, uColC: { value: new THREE.Color(0xc4c0b8) }, uAtmo: { value: new THREE.Color(0x777777) }, uBands: { value: 0 }, uSeed: { value: 11.3 + 1.9 * i }, ...mapUni(), ...sharedUni };
+    const mesh = new THREE.Mesh(moonGeo, new THREE.ShaderMaterial({ uniforms: uni, vertexShader: SH.planetVert, fragmentShader: SH.planetFrag }));
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N_MOON * 3), 3));
+    const ring = new THREE.LineLoop(geo, moonRingMat); ring.frustumCulled = false; ring.renderOrder = 1;
+    sysGroup.add(mesh); sysGroup.add(ring);
+    const label = mkLabel('moon', 'moon'); label.style.fontSize = '9px'; label.style.opacity = '0.85'; label.style.transform = 'translate(8px, 40%)';
+    return { mesh, ring, geo, label };
   }
 
   // ---- grid, line of sight ---------------------------------------------------
@@ -256,7 +288,18 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     if (bodies.length > 1) r = Math.min(r, 0.3 * Math.hypot(b.pos[0], b.pos[1], b.pos[2]));
     return Math.max(b.rprs, r);
   }
-  const scalePlanets = (trueScale) => { for (const b of bodies) b.mesh.scale.setScalar(planetRadius(b, trueScale)); };
+  // Sizes for this pass, and each moon beside its planet: the moon's radius and its distance from the planet take the
+  // planet's enlargement, so the pair stays to scale with itself; at true scale it is the geometry of the light-curve model.
+  const scalePlanets = (trueScale) => {
+    for (const b of bodies) {
+      const r = planetRadius(b, trueScale); b.mesh.scale.setScalar(r);
+      if (!b.moon) continue;
+      const k = r / b.rprs, m = b.moonObj, pl = moonPlacement(b.el, b.moon, time, k, b.place);
+      m.mesh.position.set(pl.moon[0], pl.moon[1], pl.moon[2]); m.mesh.scale.setScalar(Math.max(pl.rMoon, 1e-6));
+      m.ring.position.set(pl.planet[0], pl.planet[1], pl.planet[2]); m.ring.scale.setScalar(k);
+    }
+  };
+  const showMoons = (rings) => { for (const b of slots) if (b.moonObj) { const on = !!b.moon && bodies.includes(b); b.moonObj.mesh.visible = on; b.moonObj.ring.visible = on && rings; } };
 
   function setView(name, instant) {
     view = name;
@@ -276,10 +319,24 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     if (view !== 'earth') return; e.preventDefault();
     earth.half = Math.min(Math.max(earth.half * Math.exp(Math.max(-1, Math.min(1, e.deltaY * 0.0015))), 0.02), Math.max(8, rAll * 1.6));
   }, { passive: false });
-  let drag = null;
-  dom.addEventListener('pointerdown', (e) => { if (view === 'earth') { drag = [e.clientX, e.clientY, earth.cx, earth.cy]; dom.setPointerCapture(e.pointerId); } });
-  dom.addEventListener('pointermove', (e) => { if (drag && view === 'earth') { const s = (2 * earth.half) / container.clientHeight; earth.cx = drag[2] - (e.clientX - drag[0]) * s; earth.cy = drag[3] + (e.clientY - drag[1]) * s; } });
-  dom.addEventListener('pointerup', () => { drag = null; });
+  // one finger (or the mouse) pans, two fingers pinch; in the Orbit and Top down views OrbitControls does the same for its camera
+  let drag = null, pinch = null;
+  const fingers = new Map();
+  const spread = () => { const [a, b] = [...fingers.values()]; return Math.max(8, Math.hypot(a[0] - b[0], a[1] - b[1])); };
+  dom.addEventListener('pointerdown', (e) => {
+    fingers.set(e.pointerId, [e.clientX, e.clientY]);
+    if (view !== 'earth') return;
+    dom.setPointerCapture(e.pointerId);
+    if (fingers.size === 2) { pinch = { d: spread(), half: earth.half }; drag = null; } else drag = [e.clientX, e.clientY, earth.cx, earth.cy];
+  });
+  dom.addEventListener('pointermove', (e) => {
+    if (fingers.has(e.pointerId)) fingers.set(e.pointerId, [e.clientX, e.clientY]);
+    if (view !== 'earth') return;
+    if (pinch && fingers.size === 2) { earth.half = Math.min(Math.max((pinch.half * pinch.d) / spread(), 0.02), Math.max(8, rAll * 1.6)); return; }
+    if (drag) { const s = (2 * earth.half) / container.clientHeight; earth.cx = drag[2] - (e.clientX - drag[0]) * s; earth.cy = drag[3] + (e.clientY - drag[1]) * s; }
+  });
+  const lift = (e) => { fingers.delete(e.pointerId); if (fingers.size < 2) pinch = null; drag = null; };
+  dom.addEventListener('pointerup', lift); dom.addEventListener('pointercancel', lift);
   dom.addEventListener('dblclick', () => { if (view === 'earth') { earth.cx = 0; earth.cy = 0; earth.half = 2.3; } });
 
   function resize() {
@@ -334,7 +391,12 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     if (!el) return;
     starUni.uTime.value += dt; glowUni.uTime.value += dt;
     const w = container.clientWidth, h = container.clientHeight, blueprint = opts.style === 'blueprint';
-    for (const b of bodies) { orbitPosition(b.el, time, b.pos); b.mesh.position.set(b.pos[0], b.pos[1], b.pos[2]); b.mesh.rotation.y += dt * 0.25; }
+    for (const b of bodies) {
+      // a planet with a massive moon circles their common centre: its drawn position includes that wobble
+      if (b.moon) { moonPlacement(b.el, b.moon, time, 1, b.place); b.pos[0] = b.place.planet[0]; b.pos[1] = b.place.planet[1]; b.pos[2] = b.place.planet[2]; } else orbitPosition(b.el, time, b.pos);
+      b.mesh.position.set(b.pos[0], b.pos[1], b.pos[2]); b.mesh.rotation.y += dt * 0.25;
+      if (b.uni.uMapOn.value) { const f = mapFrame(b.pos, b.el); b.uni.uSub.value.fromArray(f.sub); b.uni.uNorth.value.fromArray(f.north); }
+    }
     const nDots = bodies.length > 1 ? Math.min(bodies.length, N_DOTS) : 0;
     if (nDots) { const P = dotsGeo.attributes.position.array; for (let i = 0; i < nDots; i++) P.set(bodies[i].pos, i * 3); dotsGeo.attributes.position.needsUpdate = true; }
     const showOrbits = (on, activeOnly) => { for (const b of bodies) b.line.visible = on && (b.active || !activeOnly); };
@@ -359,13 +421,14 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
       sysGroup.visible = true; stars.visible = false;
       dots.visible = false;
       scalePlanets(true);   // every planet at true scale: the star's depth buffer hides the ones behind it, so simultaneous transits and overlaps show as they are
+      showMoons(opts.orbit);
       evGroup.visible = showEvent; evRing.quaternion.copy(earthCam.quaternion); evRing.scale.setScalar((EV_PX * 2 * earth.half) / h);
       showOrbits(opts.orbit, true); grid.visible = false; tube.visible = false;   // edge-on, seven orbit lines across the disc hide the transits: only the active one los.visible = false; hzMesh.visible = false;
       glow.visible = opts.glow && !blueprint; glow.scale.setScalar(7); glowUni.uScale.value = 7; glowUni.uStrength.value = 0.8;
       glow.quaternion.copy(earthCam.quaternion);
       starUni.uOrtho.value = 1; sharedUni.uOrtho.value = 1;
       renderer.render(scene, earthCam);
-      for (const b of bodies) placeLabel(b.label, b.mesh.position, opts.labels && b.pos[2] > 0, earthCam);
+      for (const b of bodies) { placeLabel(b.label, b.mesh.position, opts.labels && b.pos[2] > 0, earthCam); if (b.moonObj) placeLabel(b.moonObj.label, b.moonObj.mesh.position, !!b.moon && b.active && opts.labels && b.place.moon[2] > 0, earthCam); }
       placeEventLabel(earthCam);
       lblEarth.style.display = 'none'; lblPeri.style.display = 'none'; lblHZ.style.display = 'none';
       insetFrame.hidden = true;
@@ -387,7 +450,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     camera.near = Math.max(0.02, dist * 0.002); camera.updateProjectionMatrix();
 
     sysGroup.visible = true;
-    scalePlanets(false); dots.visible = nDots > 0;
+    scalePlanets(false); showMoons(opts.orbit); dots.visible = nDots > 0;
     evGroup.visible = showEvent; evRing.quaternion.copy(camera.quaternion);
     evRing.scale.setScalar((EV_PX * 2 * camera.position.distanceTo(evPos) * Math.tan((camera.fov * Math.PI) / 360)) / h);
     showOrbits(opts.orbit); grid.visible = opts.grid || blueprint; stars.visible = opts.stars && !blueprint;
@@ -399,7 +462,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     starUni.uOrtho.value = 0; sharedUni.uOrtho.value = 0;
     renderer.render(scene, camera);
 
-    for (const b of bodies) placeLabel(b.label, b.mesh.position, opts.labels, camera);
+    for (const b of bodies) { placeLabel(b.label, b.mesh.position, opts.labels, camera); if (b.moonObj) placeLabel(b.moonObj.label, b.moonObj.mesh.position, !!b.moon && b.active && opts.labels, camera); }
     placeEventLabel(camera);
     placeLabel(lblEarth, earthPos, opts.labels && opts.corridor, camera);
     placeLabel(lblPeri, periPos, opts.labels && opts.orbit && el.e > 0.02 && evKind !== 'periastron', camera);
@@ -410,7 +473,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     if (opts.inset) {
       const r = insetFrame.getBoundingClientRect(), c = container.getBoundingClientRect();
       const x = r.left - c.left, y = c.bottom - r.bottom, s = r.width;
-      scalePlanets(true); dots.visible = false;
+      scalePlanets(true); showMoons(false); dots.visible = false;
       evGroup.visible = false;
       showOrbits(false); grid.visible = false; stars.visible = false; tube.visible = false; los.visible = false; hzMesh.visible = false;
       glow.scale.setScalar(7); glowUni.uScale.value = 7; glowUni.uStrength.value = 0.7;
@@ -428,23 +491,27 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
 
   return {
     kind: 'three',
-    // sys: { el, rprs, claret, teff, name, look, hz } for the planet on show, and optionally
-    //      planets: [{ el, rprs, name, look, active, color }] to draw the whole system. With `planets` absent or of
+    // sys: { el, rprs, claret, teff, name, look, hz, moon } for the planet on show, and optionally
+    //      planets: [{ el, rprs, name, look, active, color, moon }] to draw the whole system. `moon` is a planet's moon
+    //      ({ rmoon, permoon, phmoon, mmoon, imoon, mplanet, mstar } as core/exomoon.js takes them): drawn orbiting it.
+    //      `map` ({ width, height, rgba: Uint8Array, row 0 = south, column 0 = 180° west of the substellar point }): the planet's
+    //      brightness map, drawn on it fixed to the substellar point (pass the same object again to keep the texture). With `planets` absent or of
     //      length one the view is the single-planet view. The active entry is the one flagged `active`, else the one
     //      whose `el` is sys.el, else the first; fields it lacks fall back to the top-level ones.
     setSystem(sys) {
       const first = !el, prev = viewRadius();
       const list = Array.isArray(sys.planets) && sys.planets.length > 1 ? sys.planets.filter((p) => p && p.el) : [];
       let ia = list.findIndex((p) => p.active); if (ia < 0) ia = list.findIndex((p) => p.el === sys.el); if (ia < 0) ia = 0;
-      const src = list.length > 1 ? list.map((p, i) => (i === ia ? { el: p.el || sys.el, rprs: p.rprs ?? sys.rprs, name: p.name ?? sys.name, look: p.look || sys.look, color: p.color, active: true } : { ...p, active: false }))
-        : [{ el: sys.el, rprs: sys.rprs, name: sys.name, look: sys.look, active: true }];
+      const src = list.length > 1 ? list.map((p, i) => (i === ia ? { el: p.el || sys.el, rprs: p.rprs ?? sys.rprs, name: p.name ?? sys.name, look: p.look || sys.look, color: p.color, moon: p.moon ?? sys.moon, map: p.map ?? sys.map, active: true } : { ...p, active: false }))
+        : [{ el: sys.el, rprs: sys.rprs, name: sys.name, look: sys.look, moon: sys.moon, map: sys.map, active: true }];
       while (slots.length < src.length) slots.push(mkSlot(slots.length));
-      slots.forEach((b, i) => { const on = i < src.length; b.mesh.visible = on; b.line.visible = on; if (!on) b.label.style.display = 'none'; });
+      slots.forEach((b, i) => { const on = i < src.length; b.mesh.visible = on; b.line.visible = on; if (!on) { b.label.style.display = 'none'; b.moon = null; setMap(b, null); } });
       bodies = slots.slice(0, src.length);
       bodies.forEach((b, i) => {
         const p = src[i];
         b.el = p.el; b.rprs = p.rprs; b.active = p.active; b.color = p.color || null; b.name = p.name || 'planet';
         if (p.look) b.look = p.look;
+        setMap(b, p.map || null);
         b.rgb.setRGB(0.6, 0.66, 0.74); if (b.color) { try { b.rgb.set(b.color); } catch { /* keep the grey */ } }
         // active: the full name, as before. Others: a small label with the planet's letter.
         const L = b.label, tail = b.name.trim().split(/\s+/).pop();
@@ -452,13 +519,19 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
         L.style.fontSize = b.active ? '' : '9px'; L.style.opacity = b.active ? '' : '0.8'; L.style.color = b.active ? '' : (b.color || '#aebccc');
         L.style.transform = b.active ? '' : 'translate(7px, -140%)'; L.style.zIndex = b.active ? '1' : '';
         b.line.renderOrder = b.active ? 1 : 0;
+        // the planet's moon, when the model has one: its orbit about the planet as a ring of offsets
+        b.moon = moonForView(p.el, p.moon ? { ...p.moon, rprs: p.moon.rprs ?? p.rprs } : null);
+        if (b.moon) { if (!b.moonObj) b.moonObj = mkMoon(i); b.moonObj.geo.attributes.position.array.set(b.moon.ring); b.moonObj.geo.attributes.position.needsUpdate = true; }
       });
+      for (const b of slots) if (b.moonObj && !b.moon) { b.moonObj.mesh.visible = false; b.moonObj.ring.visible = false; b.moonObj.label.style.display = 'none'; }
       act = bodies.find((b) => b.active);
       { const C = dotsGeo.attributes.color.array; bodies.slice(0, N_DOTS).forEach((b, i) => C.set(b.active ? [1, 1, 1] : [b.rgb.r, b.rgb.g, b.rgb.b], i * 3));
         dotsGeo.attributes.color.needsUpdate = true; dotsGeo.setDrawRange(0, Math.min(bodies.length, N_DOTS)); }
       el = act.el; rprs = act.rprs; rmax = el.ars * (1 + el.e);
       rAll = Math.max(...bodies.map((b) => b.el.ars * (1 + b.el.e))); rprsMax = Math.max(...bodies.map((b) => b.rprs));
       starUni.uLD.value.set(sys.claret[0], sys.claret[1], sys.claret[2], sys.claret[3]);
+      // Rossiter-McLaughlin: the stellar rotation drawn on the disc when the model has v sin i (sys.rm = { vsini km/s, lambda deg })
+      if (sys.rm && sys.rm.vsini > 0) { const L = (sys.rm.lambda || 0) * Math.PI / 180; starUni.uRot.value = 1; starUni.uSpin.value.set(Math.cos(L), Math.sin(L)); } else starUni.uRot.value = 0;
       const [r, g, b] = teffToRGB(sys.teff);
       starUni.uColor.value.setRGB(r, g, b); glowUni.uColor.value.setRGB(r, g * 0.92, b * 0.8);
       hz = sys.hz || null;
@@ -496,6 +569,8 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     eventPosition: (kind) => (el && EVENT_LABELS[kind] ? eventPosition(el, kind) : null),
     getHighlight: () => evKind,
     // what is drawn, for tests and for a "fit" control: number of planets, framed radius and the outermost apastron (stellar radii)
-    getInfo: () => ({ planets: bodies.length, active: act ? bodies.indexOf(act) : -1, frameRadius: viewRadius(), outerRadius: rAll, drawCalls: renderer.info.render.calls }),
+    getInfo: () => ({ planets: bodies.length, maps: bodies.filter((b) => b.uni.uMapOn.value).length, active: act ? bodies.indexOf(act) : -1, frameRadius: viewRadius(), outerRadius: rAll, drawCalls: renderer.info.render.calls, moons: bodies.filter((b) => b.moon).length,
+      // the active planet's moon as drawn in the last pass: positions (stellar radii), radii, and whether its mesh is shown
+      moon: act && act.moon ? { planet: act.mesh.position.toArray(), moon: act.moonObj.mesh.position.toArray(), rMoon: act.moonObj.mesh.scale.x, rPlanet: act.mesh.scale.x, visible: act.moonObj.mesh.visible, separation: act.moon.sep } : null }),
   };
 }

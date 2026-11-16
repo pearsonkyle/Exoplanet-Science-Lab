@@ -1,0 +1,36 @@
+# On every pull request and push: the app and the docs build, the MCP server and a quick set of science tests pass.
+# The full suite (npm test, about 15 min) and the Python tests run on demand: Actions → CI → Run workflow → full.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full: { description: 'Run every Node suite and the Python tests', type: boolean, default: false }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: npm ci
+      - run: npm run build
+      - run: DOCS_BASE=/docs/ npm run docs:build
+      - name: Quick science tests
+        if: ${{ !inputs.full }}
+        run: |
+          for t in physics limbdark data fits photometry imexam lcfits session methodsText report assistant zip; do
+            node "test/$t.test.mjs" > "/tmp/$t.log" || { cat "/tmp/$t.log"; exit 1; }; echo "ok $t"
+          done
+      - name: Every Node suite
+        if: ${{ inputs.full }}
+        run: npm test
+      - name: MCP server
+        run: cd mcp && npm ci && npm test
+      - name: Python package
+        if: ${{ inputs.full }}
+        run: cd python && pip install -e ".[test]" && pytest -q

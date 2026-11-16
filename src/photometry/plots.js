@@ -49,7 +49,12 @@ export function renderPanel(ctx, W, H, p, th = PHOT_THEME) {
   ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
   if (p.xLabel) ctx.fillText(p.xLabel, mL + pw / 2, H - 2);
   if (p.yLabel) { ctx.save(); ctx.translate(11, mT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(p.yLabel, 0, 0); ctx.restore(); }
-  if (p.title) { ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = th.strong; ctx.fillText(p.title, mL, 4); }
+  if (p.title) {
+    // the series labels share the title's line: on a narrow plot the title is cut so that the two never overlap
+    const labW = p.series.reduce((a, q) => a + (q.label ? ctx.measureText(q.label).width + 14 : 0), 0), room = pw - labW - 6;
+    let t = p.title; if (ctx.measureText(t).width > room) { while (t.length > 4 && ctx.measureText(t + '…').width > room) t = t.slice(0, -1); t = t.trimEnd() + '…'; }
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = th.strong; ctx.fillText(t, mL, 4);
+  }
   // legend
   let lx = mL + pw - 6; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
   for (const s of p.series.slice().reverse()) { if (!s.label) continue; ctx.fillStyle = s.color; ctx.fillText(s.label, lx, p.title ? 4 : mT + 4); lx -= ctx.measureText(s.label).width + 14; }

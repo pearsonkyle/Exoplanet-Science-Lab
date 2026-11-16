@@ -11,6 +11,14 @@
 
 import { PHOT_THEME, niceTicks } from './plots.js';
 
+/** A title cut with an ellipsis when the canvas is narrower than the text (a phone). */
+function fitText(ctx, text, room) {
+  if (ctx.measureText(text).width <= room) return text;
+  let t = text; while (t.length > 4 && ctx.measureText(t + '…').width > room) t = t.slice(0, -1);
+  return t.trimEnd() + '…';
+}
+
+
 const SUP = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
 const pow10Label = (e, plain = e >= -3 && e <= 4) => (plain ? String(Number(Math.pow(10, e).toPrecision(1))) : '10' + String(e).split('').map((c) => SUP[c]).join(''));
 const fmtStep = (v, step) => v.toFixed(Math.max(0, Math.min(8, Math.ceil(-Math.log10(step) + 0.01))));
@@ -124,7 +132,7 @@ export function renderPsd(ctx, W, H, d, th = PHOT_THEME) {
   const xr = [f0 / 1.08, f1 * 1.08], { X, Y } = logFrame(ctx, th, box, xr, [y0, y1], { xLabel: `frequency (${fUnit})`, yLabel: d.yLabel || `PSD (flux² per ${fUnit})` });
   const mpc = minutesPerCycle(fUnit);
   durationAxis(ctx, th, box, (min) => X(mpc / min), 'period');
-  if (d.title) { ctx.fillStyle = th.strong; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(d.title, box.l, 4); }
+  if (d.title) { ctx.fillStyle = th.strong; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(fitText(ctx, d.title, W - box.l - 8), box.l, 4); }
   ctx.save(); ctx.beginPath(); ctx.rect(box.l, box.t, box.w, box.h); ctx.clip();
   // raw
   ctx.strokeStyle = th.data; ctx.globalAlpha = 0.5; ctx.lineWidth = 1; ctx.beginPath();
@@ -188,7 +196,7 @@ export function renderRmsBin(ctx, W, H, d, th = PHOT_THEME) {
   y0 = Math.max(y0, y1 * 1e-6) / 1.5; y1 *= 1.5;
   const xr = [n0 / 1.12, n1 * 1.12], { X, Y } = logFrame(ctx, th, box, xr, [y0, y1], { xLabel: 'bin size (points)', yLabel: `rms of binned residuals (${unit})` });
   if (d.dt > 0) durationAxis(ctx, th, box, (min) => X(min / (d.dt * 1440)), 'bin duration');
-  if (d.title) { ctx.fillStyle = th.strong; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(d.title, box.l, 4); }
+  if (d.title) { ctx.fillStyle = th.strong; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(fitText(ctx, d.title, W - box.l - 8), box.l, 4); }
   ctx.save(); ctx.beginPath(); ctx.rect(box.l, box.t, box.w, box.h); ctx.clip();
   if (d.rmsErr) {
     ctx.fillStyle = th.data; ctx.globalAlpha = 0.22; ctx.beginPath();
@@ -242,7 +250,7 @@ export function renderPixelMap(ctx, W, H, d, th = PHOT_THEME) {
   // equal scale in x and y when that does not waste more than half of the panel
   const xr = g.x1 - g.x0, yr = g.y1 - g.y0, sx = pw / xr, sy = ph / yr, eq = sx / sy > 0.5 && sx / sy < 2, s = Math.min(sx, sy);
   const dw = eq ? s * xr : pw, dh = eq ? s * yr : ph;
-  if (d.title) { ctx.fillStyle = th.strong; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(d.title, mL, 4); }
+  if (d.title) { ctx.fillStyle = th.strong; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(fitText(ctx, d.title, W - mL - 8), mL, 4); }
   panels.forEach((p, ip) => {
     const l = Math.round(mL + ip * (pw + gap) + (pw - dw) / 2), t = Math.round(mT + (ph - dh) / 2), X = (v) => l + (v - g.x0) / xr * dw, Y = (v) => t + dh - (v - g.y0) / yr * dh;
     for (let iy = 0; iy < g.ny; iy++) for (let ix = 0; ix < g.nx; ix++) {

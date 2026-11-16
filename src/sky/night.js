@@ -50,9 +50,10 @@ export function drawNightBar(canvas, night, now, horizon = () => 0) {
   // the transit: one-sigma margins, then the window itself
   if (transit) {
     const e = (transit.err || 0) * 60000;
-    if (e > 0) { g.fillStyle = 'rgba(95,212,255,0.16)'; g.fillRect(X(transit.ingress - e), 0, X(transit.egress + e) - X(transit.ingress - e), base); }
-    g.fillStyle = 'rgba(95,212,255,0.30)'; g.fillRect(X(transit.ingress), 0, X(transit.egress) - X(transit.ingress), base);
-    g.strokeStyle = '#5fd4ff'; g.lineWidth = 1; g.beginPath(); for (const t of [transit.ingress, transit.egress]) { g.moveTo(X(t) + 0.5, 0); g.lineTo(X(t) + 0.5, base); } g.stroke();
+    const c = night.color || '#5fd4ff', ca = (a) => `rgba(${[1, 3, 5].map((k) => parseInt(c.slice(k, k + 2), 16)).join(',')},${a})`;     // the window's colour (events.js)
+    if (e > 0) { g.fillStyle = ca(0.16); g.fillRect(X(transit.ingress - e), 0, X(transit.egress + e) - X(transit.ingress - e), base); }
+    g.fillStyle = ca(0.30); g.fillRect(X(transit.ingress), 0, X(transit.egress) - X(transit.ingress), base);
+    g.strokeStyle = c; g.lineWidth = 1; g.beginPath(); for (const t of [transit.ingress, transit.egress]) { g.moveTo(X(t) + 0.5, 0); g.lineTo(X(t) + 0.5, base); } g.stroke();
     g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(transit.mid) + 0.5, 0); g.lineTo(X(transit.mid) + 0.5, base); g.stroke(); g.setLineDash([]);
   }
   // altitude of the target: bright where it is above the horizon

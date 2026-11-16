@@ -42,7 +42,8 @@ src/viz/              three.js scene, GLSL, 2D fallback
 src/data/             bundled datasets and tables
 test/                 Node tests + headless-browser drivers
 tools/                offline builders (limb darkening, catalogues, observatories, example results, Python bundle); tools/README.md
-validation/           the Validation page; its recipe is validation/README.md
+validation/           redirect to methods/#validation; the validation recipe is validation/README.md
+methods/              Methods page: methods, validation, reproducibility, references, how to cite (src/methods/, src/validation/)
 ```
 
 ## How a fit flows
@@ -85,7 +86,7 @@ Plot views other than the light curve go through `plotFor(view)` in `main.js`, w
 `data.setTime(t)` moves a figure's time cursor. Per-tab modules receive an `app` object: `buildTimingTab` and
 `buildDynamics` (`src/ui/dynamics.js`) are the pattern.
 
-`window.__esl.api` (`makeAPI()` in `main.js`) is the scripted surface of the analyzer, used by the headless
+`window.__esl.api` (`createAPI(app)` in `src/ui/api.js`, wrapped by `makeAPI()` in `main.js`; `describe()` lists every call) is the scripted surface of the analyzer, used by the headless
 checks, the stored-results builder and the assistant.
 
 `src/main.js` is about 2,100 lines. The split still to do: state and undo; session import/export; one module per

@@ -429,3 +429,77 @@ export function experimentReport({ title, system, data, variants, comparison, wh
   out.push('## How to read this', '', comparison.rule, '', 'Produced by the Exoplanet Science Lab assistant. The table, the reading and the cautions are computed by the software, not written by the language model.', '');
   return out.join('\n');
 }
+
+// ---- optional models, on the session document ------------------------------------------------------------------
+// The planet's own light, a moon and N-body dynamics as docs/FORMAT.md stores them. The analyzer has its own calls
+// for these (setPhase, setMoon, setNbody); the MCP server, and a page that lacks them, change the document.
+const PHASE_KEYS = ['fpfs', 'contrast', 'hotspot', 'h2c', 'h2s', 'ellip', 'beam'], MOON_KEYS = ['rmoon', 'permoon', 'phmoon', 'mmoon', 'imoon'];
+export const isPlanetExtra = (base) => PHASE_KEYS.includes(base) || MOON_KEYS.includes(base) || /^y\d+m?\d+$/.test(base);
+const dropKeys = (d, sfx, test) => { const mine = (k) => { const [b, s] = k.split('@'); return test(b) && (s || '') === sfx; }; d.fit.free = d.fit.free.filter((f) => !mine(f.key)); if (d.fit.priors) for (const k of Object.keys(d.fit.priors)) if (mine(k)) delete d.fit.priors[k]; };
+export function setPhase(doc, { planet, on = true, mode, lmax, parameters = {} } = {}) {
+  const d = bare(doc), i = letterIndex(d, planet), q = d.planets[i].parameters, sfx = i ? d.planets[i].letter : '';
+  if (!on) { for (const k of Object.keys(q)) if (PHASE_KEYS.includes(k) || /^y\d+m?\d+$/.test(k)) delete q[k]; dropKeys(d, sfx, (b) => PHASE_KEYS.includes(b) || /^y\d+m?\d+$/.test(b)); if (!d.planets.some((p) => p.parameters.fpfs !== undefined)) delete d.phase; return { doc: d, planet: d.planets[i].letter, on: false }; }
+  const m = mode || (d.phase || {}).mode || 'harmonic';
+  if (!['harmonic', 'map'].includes(m)) throw new Error('mode is "harmonic" or "map"');
+  d.phase = { ...(d.phase || {}), mode: m, ...(m === 'map' ? { lmax: Math.min(3, Math.max(1, lmax || (d.phase || {}).lmax || 1)) } : {}) };
+  const defaults = m === 'map' ? { fpfs: 1e-3, y10: 0, y11: 0.5, y1m1: 0, ellip: 0, beam: 0 } : { fpfs: 1e-3, contrast: 0.5, hotspot: 0, h2c: 0, h2s: 0, ellip: 0, beam: 0 };
+  for (const [k, v] of Object.entries({ ...defaults, ...Object.fromEntries(Object.keys(defaults).filter((k) => q[k] !== undefined).map((k) => [k, q[k]])), ...parameters })) q[k] = v;
+  return { doc: d, planet: d.planets[i].letter, on: true, mode: m, keys: Object.keys(q).filter((k) => isPlanetExtra(k) && !MOON_KEYS.includes(k)).map((k) => (sfx ? `${k}@${sfx}` : k)) };
+}
+export function setMoon(doc, { planet, on = true, parameters = {} } = {}) {
+  const d = bare(doc), i = letterIndex(d, planet), q = d.planets[i].parameters, sfx = i ? d.planets[i].letter : '';
+  if (!on) { for (const k of MOON_KEYS) delete q[k]; dropKeys(d, sfx, (b) => MOON_KEYS.includes(b)); return { doc: d, planet: d.planets[i].letter, on: false }; }
+  const bad = Object.keys(parameters).filter((k) => !MOON_KEYS.includes(k)); if (bad.length) throw new Error(`not moon parameters: ${bad.join(', ')}. A moon takes ${MOON_KEYS.join(', ')}.`);
+  const defaults = { rmoon: Number((q.rprs * 0.3).toPrecision(3)), permoon: Number((q.per / 12).toPrecision(4)), phmoon: 0.25, mmoon: 0.01, imoon: 90 };
+  for (const [k, v] of Object.entries({ ...defaults, ...Object.fromEntries(MOON_KEYS.filter((k) => q[k] !== undefined).map((k) => [k, q[k]])), ...parameters })) q[k] = v;
+  return { doc: d, planet: d.planets[i].letter, on: true, keys: MOON_KEYS.map((k) => (sfx ? `${k}@${sfx}` : k)) };
+}
+export function setNbody(doc, { on = true, epoch, linear } = {}) {
+  const d = bare(doc);
+  if (!on) { delete d.nbody; return { doc: d, on: false }; }
+  if (d.planets.length < 2) throw new Error('N-body dynamics need at least two planets: add one first (add_planet)');
+  if (!d.kepler) throw new Error('N-body dynamics need the masses: turn Kepler mode on first (set_kepler)');
+  d.nbody = { ...(d.nbody || {}), epoch: Number.isFinite(epoch) ? epoch : (d.nbody || {}).epoch ?? d.planets[0].parameters.tmid, ...(linear !== undefined ? { linear: !!linear } : {}) };
+  return { doc: d, on: true, nbody: d.nbody };
+}
+
+// ---- tables for the reader -------------------------------------------------------------------------------------
+// The result of a tool as a Markdown table, written by the software. The harness puts it under an answer whose
+// numbers do not match the tool results (numcheck.js), so the reader always has the values as computed.
+const mdRow = (cells) => '| ' + cells.map((c) => String(c ?? '').replace(/\|/g, '/').replace(/\n/g, ' ')).join(' | ') + ' |';
+const mdTable = (head, rows) => [mdRow(head), '|' + head.map(() => '---').join('|') + '|', ...rows.map(mdRow)].join('\n');
+export function tableFor(name, data) {
+  if (!data || typeof data !== 'object') return '';
+  if (typeof data.table === 'string') return data.table;
+  const cmp = data.comparison && data.comparison.runs ? data.comparison : data.runs && data.verdict !== undefined ? data : null;
+  if (cmp && cmp.runs.length) return mdTable(['Run', 'Free parameters', 'ln Z', 'Δ ln Z', 'Reading'], cmp.runs.map((r) => [r.run, r.free, r.lnZ, r.delta_lnZ ?? '—', r.reading])) + (cmp.verdict ? `\n\n${cmp.verdict}` : '') + ((cmp.cautions || []).length ? '\n\n' + cmp.cautions.map((c) => `- ${c}`).join('\n') : '');
+  if (data.has_result && data.parameters) {
+    const rows = [...Object.entries(data.parameters), ...Object.entries(data.derived || {})];
+    if (data.evidence) rows.push(['ln Z (evidence)', `${data.evidence.lnZ} ± ${data.evidence.error}${data.converged ? '' : ' (not converged: a lower bound)'}`]);
+    if (data.chi2 !== undefined) rows.push(['chi-squared', `${data.chi2} for ${data.n_data} points`]);
+    return mdTable(['Quantity', 'Value (median, +, −)'], rows) + ((data.warnings || []).length ? '\n\n' + data.warnings.map((w) => `- Warning: ${w}`).join('\n') : '');
+  }
+  if (data.has_result && data.sentences) return data.sentences.map((s) => `- ${s}`).join('\n');
+  if (data.linear && data.linear.period_d) return mdTable(['Ephemeris', 'T0', 'Period (d)', 'chi2', 'BIC'], [['linear', data.linear.t0, data.linear.period_d, data.linear.chi2, data.linear.bic], ...(data.quadratic ? [['quadratic', data.quadratic.t0, data.quadratic.period_d, data.quadratic.chi2, data.quadratic.bic]] : [])]) + (data.quadratic ? `\n\ndP/dt = ${data.quadratic.dPdt_ms_per_year} ms/yr. ` : '\n\n') + (data.reading || '');
+  // a list of flat records (a page tool: transits, catalogue rows, validation rows)
+  const key = Object.keys(data).find((k) => Array.isArray(data[k]) && data[k].length && data[k].every((r) => r && typeof r === 'object' && !Array.isArray(r)));
+  if (key) { const rows = data[key].slice(0, 15), cols = [...new Set(rows.flatMap((r) => Object.keys(r).filter((c) => r[c] === null || typeof r[c] !== 'object')))].slice(0, 8); if (cols.length) return mdTable(cols, rows.map((r) => cols.map((c) => r[c] ?? ''))) + (data[key].length > 15 ? `\n\n(${data[key].length - 15} more rows)` : ''); }
+  return '';
+}
+
+// ---- FITS headers ----------------------------------------------------------------------------------------------
+/** The header cards of a FITS file as text (primary header, and the first extension's when the primary holds no image). */
+export function fitsHeaderText(buf) {
+  const bytes = new Uint8Array(buf), dec = new TextDecoder('ascii');
+  if (dec.decode(bytes.subarray(0, 9)) !== 'SIMPLE  =') return null;
+  const out = []; let off = 0, naxis = 0;
+  for (let hdu = 0; hdu < 2 && off + 2880 <= bytes.length; hdu++) {
+    let end = false; naxis = 0; if (hdu) out.push('', `--- extension ${hdu} ---`);
+    while (!end && off + 2880 <= bytes.length) {
+      for (let i = 0; i < 36; i++) { const card = dec.decode(bytes.subarray(off + i * 80, off + (i + 1) * 80)).replace(/\s+$/, ''); if (card === 'END') { end = true; break; } if (card) out.push(card); if (/^NAXIS   =/.test(card)) naxis = parseInt(card.slice(10), 10) || 0; }
+      off += 2880;
+    }
+    if (naxis > 0) break;
+  }
+  return out.join('\n');
+}

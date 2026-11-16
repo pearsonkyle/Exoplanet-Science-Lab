@@ -4,6 +4,9 @@ import { transitModel } from './transit.js';
 import { toTransitParams, autoSupersample } from './model.js';
 import { derived } from './kepler.js';
 import { makeRng } from './stats.js';
+import { utcToBjdTdb, tdbMinusUtc } from './fits.js';
+import { earthHeliocentric } from './astro.js';
+import { detrendFromColumns, gaussianWeights } from './detrend.js';
 
 /**
  * Simulate an observation of the current system.
@@ -56,6 +59,63 @@ export const TIME_SYSTEMS = {
 };
 export const FLUX_UNITS = { flux: 'Flux', magnitude: 'Magnitude', millimagnitude: 'Millimagnitude' };
 
+// ---- time standards ---------------------------------------------------------------------------------------------
+// The offset (TIME_SYSTEMS) says where day zero is; the standard says what the days are: where the clock sits (Earth,
+// Sun, barycentre) and which time scale it keeps (UTC, TDB). Fits want BJD_TDB. A JD in UTC differs from it by up to
+// ±8.3 min plus 69 s, an HJD in UTC by up to ±4 s plus 69 s, a BJD in UTC by 69 s (in 2017-2026).
+export const TIME_STANDARDS = {
+  bjd_tdb: { label: 'BJD_TDB (barycentric, TDB)', frame: 'barycentric', scale: 'TDB' },
+  bjd: { label: 'BJD, scale not stated (taken as TDB)', frame: 'barycentric', scale: 'TDB' },
+  bjd_utc: { label: 'BJD_UTC (barycentric, UTC)', frame: 'barycentric', scale: 'UTC' },
+  hjd_utc: { label: 'HJD_UTC (heliocentric, UTC)', frame: 'heliocentric', scale: 'UTC' },
+  jd_utc: { label: 'JD_UTC (at the Earth, UTC)', frame: 'geocentric', scale: 'UTC' },
+  jd: { label: 'JD, frame and scale not stated (taken as BJD_TDB)', frame: 'barycentric', scale: 'TDB' },
+  unknown: { label: 'not stated (taken as BJD_TDB)', frame: 'barycentric', scale: 'TDB' },
+};
+/**
+ * The time standard a file states, from the AAVSO DATE_TYPE line, the time column's name, and comment lines that
+ * name it. `offsetKey` is the TIME_SYSTEMS key the reader chose (BTJD and BKJD are BJD_TDB by definition).
+ * Returns { key, from } with key a TIME_STANDARDS key and `from` saying what it was read from.
+ */
+export function detectTimeStandard({ dateType = '', column = '', comments = [], offsetKey = '' } = {}) {
+  if (offsetKey === 'btjd' || offsetKey === 'bkjd') return { key: 'bjd_tdb', from: offsetKey === 'btjd' ? 'TESS time (BTJD is BJD_TDB − 2457000)' : 'Kepler time (BKJD is BJD_TDB − 2454833)' };
+  if (offsetKey === 'rel') return { key: 'unknown', from: 'relative days' };
+  const norm = (s) => String(s).toLowerCase().replace(/[^a-z]/g, '');
+  const read = (s) => {
+    const x = norm(s);
+    if (/bjdtdb|bjdtbd|tdbbjd/.test(x)) return 'bjd_tdb';
+    if (/bjdutc|utcbjd/.test(x)) return 'bjd_utc';
+    if (/hjd/.test(x)) return 'hjd_utc';   // HJD in another scale is rare; HJD_UTC is what IRAF and most pipelines wrote
+    if (/bjd|barycentric/.test(x)) return 'bjd';
+    if (/jdutc|utcjd|^mjdobs|^jdobs|^dateobs/.test(x)) return 'jd_utc';
+    if (/^(time)?(m|r)?jd$|juliandate/.test(x)) return 'jd';   // "JD" alone is written for BJD_TDB as often as for UTC (EXOTIC's "Time (JD)" is BJD_TDB)
+    return null;
+  };
+  if (dateType) { const k = read(dateType); if (k) return { key: k, from: `the file’s DATE_TYPE (“${String(dateType).trim()}”)` }; }
+  if (column) { const k = read(column); if (k) return { key: k, from: `the time column’s name (“${column}”)` }; }
+  for (const c of comments) { const m = String(c).match(/\b(BJD[_ ]?TDB|BJD[_ ]?UTC|HJD[_ ]?UTC|HJD|JD[_ ]?UTC)\b/i); if (m) return { key: read(m[1]), from: `a comment line (“${m[1]}”)` }; }
+  return { key: 'unknown', from: 'nothing in the file' };
+}
+const C_AU_DAY_HEL = 173.1446326846693;
+/** Light-travel time [days] from the Earth to the Sun's centre along a J2000 target direction (HJD − JD in one scale). */
+export function heliocentricDelay(jdUtc, raDeg, decDeg) {
+  const T = (jdUtc + tdbMinusUtc(jdUtc) - 2451545.0) / 36525, p = earthHeliocentric(T), a = (raDeg * Math.PI) / 180, d = (decDeg * Math.PI) / 180;
+  return (p[0] * Math.cos(d) * Math.cos(a) + p[1] * Math.cos(d) * Math.sin(a) + p[2] * Math.sin(d)) / C_AU_DAY_HEL;
+}
+/**
+ * One absolute time in a TIME_STANDARDS standard -> BJD_TDB, for a target at J2000 ra, dec (degrees).
+ * JD_UTC: leap seconds, TT − UTC, TDB − TT and the barycentric light time (src/core/fits.js utcToBjdTdb, the photometry
+ * page's conversion). HJD_UTC: the heliocentric light time is taken off first (two iterations). BJD_UTC: TDB − UTC only.
+ */
+export function toBjdTdb(t, standard, raDeg, decDeg) {
+  if (standard === 'jd_utc') return utcToBjdTdb(t, raDeg, decDeg);
+  if (standard === 'hjd_utc') { let jd = t - heliocentricDelay(t, raDeg, decDeg); jd = t - heliocentricDelay(jd, raDeg, decDeg); return utcToBjdTdb(jd, raDeg, decDeg); }
+  if (standard === 'bjd_utc') return t + tdbMinusUtc(t);
+  return t;
+}
+const needsConversion = (k) => k === 'jd_utc' || k === 'hjd_utc' || k === 'bjd_utc';
+const needsPosition = (k) => k === 'jd_utc' || k === 'hjd_utc';
+
 /** EXOTIC's flux_conversion(): differential magnitudes to flux, error as the geometric mean of the two sides. */
 function magToFlux(m, s, conv) {
   const f = Math.pow(10, -0.4 * (m / conv));
@@ -70,6 +130,10 @@ function magToFlux(m, s, conv) {
  *   - AAVSO exoplanet reports and EXOTIC FinalLightCurve files, including their "#KEY=VALUE" metadata
  *   - time in JD/BJD, MJD, RJD, BTJD, BKJD or relative days; flux, magnitudes or millimagnitudes
  * opts.time / opts.flux override the automatic guess ('auto' or a key of TIME_SYSTEMS / FLUX_UNITS).
+ * Time standard: read from DATE_TYPE, the time column's name or comments (detectTimeStandard), or opts.timeStandard
+ * (a TIME_STANDARDS key). JD_UTC, HJD_UTC and BJD_UTC are converted to BJD_TDB when opts.coords = { ra, dec } (J2000
+ * degrees) is given (BJD_UTC needs no position); otherwise a note says plainly that they were not. opts.convertTime
+ * false keeps the times as they are. The result carries timeStandard, timeStandardFrom, timeConverted, timeShiftSec.
  * Returns { t, f, e, airmass|null, tRef, timeSystem, fluxUnits, meta, notes } or throws a readable error.
  */
 export function parseLightCurve(text, name = 'Uploaded light curve', opts = {}) {
@@ -95,7 +159,7 @@ export function parseLightCurve(text, name = 'Uploaded light curve', opts = {}) 
   if (split(rowsTxt[0]).some((c) => !isNum(c))) { head = split(rowsTxt[0]); start = 1; }
   else for (let i = comments.length - 1; i >= 0 && !head; i--) { const c = split(comments[i]); if (c.length === ncol && c.every((x) => x && !isNum(x))) head = c; }
   let col = { t: 0, f: 1, e: ncol > 2 ? 2 : -1, am: ncol > 3 ? 3 : -1 };
-  let headTime = '', headFlux = '';
+  let headTime = '', headFlux = '', headTimeRaw = '';
   if (head) {
     const hl = head.map((x) => x.toLowerCase().replace(/[\s_\-()\[\]]+/g, ''));
     const find = (re, not) => hl.findIndex((x) => re.test(x) && !(not && not.test(x)));
@@ -103,9 +167,12 @@ export function parseLightCurve(text, name = 'Uploaded light curve', opts = {}) 
     const cf = find(/flux|^diff$|^mag|mmag|^f$|rel|counts|^y$/, /err|unc|sig|model|phase/);
     const final = hl.some((x) => /phase/.test(x)) && hl.some((x) => /^model$/.test(x));   // EXOTIC FinalLightCurve: already detrended
     const ca = final ? -1 : find(/airmass|secz|^am$|^detrend1$/);
-    if (ct >= 0 && cf >= 0) { col = { t: ct, f: cf, e: ce, am: ca }; headTime = hl[ct]; headFlux = hl[cf]; }
+    if (ct >= 0 && cf >= 0) { col = { t: ct, f: cf, e: ce, am: ca }; headTime = hl[ct]; headFlux = hl[cf]; headTimeRaw = head[ct]; }
     if (final) notes.push('EXOTIC final light curve: flux is already detrended, so its airmass-model column is ignored');
   }
+  // further numeric columns (centroids, sky, FWHM, ...) are kept by name for detrending (applyDetrend)
+  const extra = head ? head.map((nm, i) => [colName(nm), i]).filter(([nm, i]) => nm && ![col.t, col.f, col.e, col.am].includes(i)) : [];
+  const X = Object.fromEntries(extra.map(([nm]) => [nm, []]));
   const T = [], F = [], E = [], A = []; let bad = 0;
   for (let i = start; i < rowsTxt.length; i++) {
     const p = split(rowsTxt[i]).map((c) => (c === '' ? NaN : Number(c)));
@@ -114,6 +181,7 @@ export function parseLightCurve(text, name = 'Uploaded light curve', opts = {}) 
     T.push(tt); F.push(ff);
     E.push(col.e >= 0 && Number.isFinite(p[col.e]) && p[col.e] > 0 ? p[col.e] : NaN);
     A.push(col.am >= 0 && Number.isFinite(p[col.am]) ? p[col.am] : NaN);
+    for (const [nm, i] of extra) X[nm].push(Number.isFinite(p[i]) ? p[i] : NaN);
   }
   if (T.length < 10) throw new Error('Found fewer than 10 numeric rows. Expected columns: time, flux, error, airmass.');
   if (bad) notes.push(`${bad} unreadable row${bad > 1 ? 's' : ''} skipped`);
@@ -140,13 +208,26 @@ export function parseLightCurve(text, name = 'Uploaded light curve', opts = {}) 
   const keep = idx.filter((j, i) => i === 0 || T[j] !== T[idx[i - 1]]);
   if (keep.length < idx.length) notes.push(`${idx.length - keep.length} duplicate time stamps removed`);
   const n = keep.length;
-  const abs0 = T[keep[0]] + tOff, tRef = abs0 > 1000 ? Math.floor(abs0) : 0;
+  // ---- time standard: what the days are (BJD_TDB, HJD_UTC, JD_UTC, ...), converted to BJD_TDB when the target is known
+  const det = opts.timeStandard && opts.timeStandard !== 'auto' && TIME_STANDARDS[opts.timeStandard] ? { key: opts.timeStandard, from: 'your choice' } : detectTimeStandard({ dateType: meta.DATE_TYPE || '', column: headTimeRaw, comments, offsetKey: ts });
+  const co = opts.coords || {}, havePos = Number.isFinite(co.ra) && Number.isFinite(co.dec);
+  const absT = keep.map((j) => T[j] + tOff), dated = absT[0] > 2e6;
+  let converted = false, shift = 0;
+  if (dated && needsConversion(det.key) && opts.convertTime !== false && (havePos || !needsPosition(det.key))) {
+    for (let i = 0; i < n; i++) absT[i] = toBjdTdb(absT[i], det.key, co.ra, co.dec);
+    shift = (absT[0] - (T[keep[0]] + tOff)) * 86400; converted = true;
+    notes.push(`times read as ${TIME_STANDARDS[det.key].label.split(' (')[0]} (from ${det.from}) and converted to BJD_TDB${havePos ? ` for RA ${co.ra.toFixed(4)}°, Dec ${co.dec.toFixed(4)}°` : ''}: ${shift >= 0 ? '+' : '−'}${Math.abs(shift).toFixed(1)} s at the first point`);
+  } else if (dated && needsConversion(det.key)) {
+    notes.push(`times are ${TIME_STANDARDS[det.key].label.split(' (')[0]} (from ${det.from}) and were NOT converted to BJD_TDB because ${opts.convertTime === false ? 'conversion was switched off' : 'the target’s coordinates are not known'}: mid-transit times are off by up to ${det.key === 'jd_utc' ? '8.3 min' : det.key === 'hjd_utc' ? '4 s' : '0 s'} plus 69 s. Look the planet up (Start page) or give its RA and Dec, then load the file again`);
+  } else if (dated && (det.key === 'unknown' || det.key === 'jd')) notes.push(`${det.key === 'jd' ? `times are labelled JD (from ${det.from}) without saying where or in which scale` : 'the file does not say which time standard it uses'}: taken as BJD_TDB. If they are JD or HJD in UTC, choose that under “Time standard” below and they are converted`);
+  else if (dated && det.key === 'bjd') notes.push(`times are BJD (from ${det.from}); the time scale is not stated and is taken as TDB`);
+  const abs0 = absT[0], tRef = abs0 > 1000 ? Math.floor(abs0) : 0;
   const t = new Float64Array(n), f = new Float64Array(n), e = new Float64Array(n);
   const hasAm = A.every((a) => Number.isFinite(a)) && new Set(A).size > 1;
   const airmass = hasAm ? new Float64Array(n) : null;
   const conv = fu === 'millimagnitude' ? 1000 : 1;
   keep.forEach((j, i) => {
-    t[i] = T[j] + tOff - tRef;
+    t[i] = absT[i] - tRef;
     if (fu === 'flux') { f[i] = F[j]; e[i] = E[j]; } else { const [ff, ee] = magToFlux(F[j], Number.isFinite(E[j]) ? E[j] : NaN, conv); f[i] = ff; e[i] = ee; }
     if (airmass) airmass[i] = A[j];
   });
@@ -165,7 +246,10 @@ export function parseLightCurve(text, name = 'Uploaded light curve', opts = {}) 
   if (tRef) notes.push(`times shown as ${ts === 'jd' ? 'JD' : 'JD (from ' + TIME_SYSTEMS[ts].label.split(',')[0].split(' (')[0] + ')'} − ${tRef}`);
 
   // ---- metadata worth carrying into the app
-  const out = { name: meta.EXOPLANET_NAME ? `${meta.EXOPLANET_NAME} — ${name}` : name, tRef, t, f, e, airmass, notes, timeSystem: ts, fluxUnits: fu, meta: {} };
+  const out = { name: meta.EXOPLANET_NAME ? `${meta.EXOPLANET_NAME} — ${name}` : name, tRef, t, f, e, airmass, notes, timeSystem: ts, fluxUnits: fu, meta: {},
+    timeStandard: det.key, timeStandardFrom: det.from, timeConverted: converted, timeShiftSec: shift, ...(converted && havePos ? { timeCoords: { ra: co.ra, dec: co.dec } } : {}) };
+  const usable = extra.filter(([nm]) => X[nm].some(Number.isFinite) && new Set(X[nm].filter(Number.isFinite)).size > 1);
+  if (usable.length) { out.columns = Object.fromEntries(usable.map(([nm]) => [nm, Float64Array.from(keep, (j) => X[nm][j])])); notes.push(`further columns kept for detrending: ${usable.map(([nm]) => nm).join(', ')}`); }
   if (meta.EXOPLANET_NAME) out.meta.planet = meta.EXOPLANET_NAME;
   if (meta.FILTER) out.meta.filter = meta.FILTER;
   const ex = Number(meta.EXPOSURE_TIME); if (ex > 0) out.meta.exptimeMin = ex / 60;
@@ -175,7 +259,53 @@ export function parseLightCurve(text, name = 'Uploaded light curve', opts = {}) 
     for (let i = 0; i < 4; i++) grab(new RegExp(`u${i}=([-\\d.eE+]+)`), 'ld' + i);
     if (Object.keys(pr).length) out.meta.priors = pr;
   }
-  if (meta.RESULTS) { const m = meta.RESULTS.match(/Tc=([-\d.eE+]+)/); if (m) out.meta.tmid = Number(m[1]) - tRef; }
+  if (meta.RESULTS) { const m = meta.RESULTS.match(/Tc=([-\d.eE+]+)/); if (m) out.meta.tmid = (converted ? toBjdTdb(Number(m[1]), det.key, co.ra, co.dec) : Number(m[1])) - tRef; }
+  return out;
+}
+
+/** A column header as a detrending name: centroids are xc and yc, background sky, PSF width fwhm; others lower-cased. */
+export function colName(h) {
+  const x = String(h || '').toLowerCase().replace(/\[.*?\]|\(.*?\)/g, '').replace(/[^a-z0-9]+/g, '');
+  if (!x || /^(phase|orbitalphase|model|epoch|flag|quality)$/.test(x)) return null;
+  if (/^(xc|xcen|xcentroid|centroidx|x|xpos|xcent)$/.test(x)) return 'xc';
+  if (/^(yc|ycen|ycentroid|centroidy|y|ypos|ycent)$/.test(x)) return 'yc';
+  if (/^(sky|bkg|background|skybkg|skybackground)$/.test(x)) return 'sky';
+  if (/^(fwhm|psffwhm|seeing)$/.test(x)) return 'fwhm';
+  return x;
+}
+
+/**
+ * A light curve with its systematics model: from `d.columns` (one array per point, by name) and `detrend` =
+ * { columns: [names], poly: 0-3, pld: ['pld1', ...], kernel: null | { features: [names], neighbors } } (src/core/detrend.js).
+ * Returns a NEW dataset carrying `detrend`, `regressors` (standardised within each epoch) or null, `kernel` (built epoch by
+ * epoch, so no point borrows neighbours from another night; its n is the number of points) or null, and
+ * `detrendInfo` { names, dropped: [{ name, why }], kernel: features | null }. A null `detrend` takes the model off.
+ */
+export function applyDetrend(d, detrend) {
+  const out = { ...d }; delete out.regressors; delete out.kernel; delete out.detrendInfo;
+  if (!detrend || !d.columns) { out.detrend = detrend && !d.columns ? detrend : null; if (detrend && !d.columns) out.detrendInfo = { names: [], dropped: [{ name: 'all', why: 'the light curve carries no detrending columns' }], kernel: null }; return out; }
+  const cols = d.columns, epoch = d.epoch || null, n = d.t.length;
+  const r = detrendFromColumns(cols, { ...detrend, kernel: null }, d.t, epoch);
+  let kernel = null, kfeat = null;
+  const kd = detrend.kernel;
+  if (kd && kd.features && kd.features.length) {
+    kfeat = kd.features.filter((nm) => cols[nm] && Array.prototype.every.call(cols[nm], Number.isFinite));
+    for (const nm of kd.features) if (!kfeat.includes(nm)) r.dropped.push({ name: 'kernel ' + nm, why: cols[nm] ? 'has missing values' : 'not in the data' });
+    if (kfeat.length) {
+      const ne = epoch ? Math.max(...epoch) + 1 : 1, groups = Array.from({ length: ne }, () => []);
+      for (let i = 0; i < n; i++) groups[epoch ? epoch[i] : 0].push(i);
+      const k = Math.max(1, Math.min(kd.neighbors ?? 50, ...groups.map((g) => g.length - 1)));
+      const idx = new Int32Array(n * k), w = new Float64Array(n * k);
+      for (const g of groups) {
+        if (g.length < 2) continue;
+        const gw = gaussianWeights(kfeat.map((nm) => Float64Array.from(g, (i) => cols[nm][i])), { neighbors: k, w: kd.w ?? 1 });
+        g.forEach((i, a) => { for (let q = 0; q < k; q++) { idx[i * k + q] = g[gw.idx[a * gw.k + q]]; w[i * k + q] = gw.w[a * gw.k + q]; } });
+      }
+      kernel = { idx, w, k, n };
+    } else kfeat = null;
+  }
+  out.detrend = detrend; out.regressors = r.regressors; out.kernel = kernel;
+  out.detrendInfo = { names: r.names, dropped: r.dropped, kernel: kfeat };
   return out;
 }
 
@@ -214,15 +344,19 @@ export function combineEpochs(list) {
     });
   }
   segs.sort((a, b) => a.t0 - b.t0);
+  // detrending columns survive when every input has them (by name: the ones all share)
+  const cnames = list.every((d) => d.columns) ? Object.keys(list[0].columns).filter((nm) => list.every((d) => d.columns[nm])) : [];
   const rows = [];
-  segs.forEach((sg, s) => { for (const i of sg.idx) rows.push([sg.d.t[i] + sg.off, sg.d.f[i], sg.d.e[i], sg.airmass ? sg.d.airmass[i] : 0, s]); });
+  segs.forEach((sg, s) => { for (const i of sg.idx) rows.push([sg.d.t[i] + sg.off, sg.d.f[i], sg.d.e[i], sg.airmass ? sg.d.airmass[i] : 0, s, cnames.map((nm) => sg.d.columns[nm][i])]); });
   rows.sort((a, b) => a[0] - b[0] || a[4] - b[4]);
   const n = rows.length, t = new Float64Array(n), f = new Float64Array(n), e = new Float64Array(n), am = new Float64Array(n), epoch = new Int32Array(n);
   const segments = segs.map((sg) => ({ name: sg.name, n: 0, t0: Infinity, t1: -Infinity, airmass: sg.airmass }));
   rows.forEach((r, i) => { t[i] = r[0]; f[i] = r[1]; e[i] = r[2]; am[i] = r[3]; epoch[i] = r[4]; const sg = segments[r[4]]; sg.n++; sg.t0 = Math.min(sg.t0, r[0]); sg.t1 = Math.max(sg.t1, r[0]); });
   const any = segments.some((sg) => sg.airmass);
-  if (segments.length === 1) return { name: segments[0].name, tRef, t, f, e, airmass: any ? am : null, notes: list[0].notes || [] };
-  return { name: `${segments.length} epochs`, tRef, t, f, e, airmass: any ? am : null, epoch, segments, notes: [...new Set(list.flatMap((d) => d.notes || []))] };
+  const columns = cnames.length ? Object.fromEntries(cnames.map((nm, c) => [nm, Float64Array.from(rows, (r) => r[5][c])])) : null;
+  const detrend = columns ? (list.find((d) => d.detrend) || {}).detrend || null : null;
+  if (segments.length === 1) return { name: segments[0].name, tRef, t, f, e, airmass: any ? am : null, notes: list[0].notes || [], ...(columns ? { columns, detrend } : {}) };
+  return { name: `${segments.length} epochs`, tRef, t, f, e, airmass: any ? am : null, epoch, segments, notes: [...new Set(list.flatMap((d) => d.notes || []))], ...(columns ? { columns, detrend } : {}) };
 }
 
 /** The dataset without one of its epochs. */
@@ -234,7 +368,7 @@ export function removeEpoch(d, s) {
 function pickEpoch(d, s) {
   const idx = []; for (let i = 0; i < d.t.length; i++) if (d.epoch[i] === s) idx.push(i);
   const take = (a) => Float64Array.from(idx, (i) => a[i]);
-  return { tRef: d.tRef, t: take(d.t), f: take(d.f), e: take(d.e), airmass: d.airmass && d.segments[s].airmass ? take(d.airmass) : null, notes: d.notes };
+  return { tRef: d.tRef, t: take(d.t), f: take(d.f), e: take(d.e), airmass: d.airmass && d.segments[s].airmass ? take(d.airmass) : null, notes: d.notes, ...takeColumns(d, take) };
 }
 
 /**
@@ -248,9 +382,12 @@ export function splitByOrbit(d, per, tmid, minPoints = 5) {
   const keep = [...groups.entries()].filter(([, idx]) => idx.length >= minPoints).sort((a, b) => a[0] - b[0]);
   if (keep.length < 2) return d;
   const E0 = keep[0][0];
-  const parts = keep.map(([E, idx]) => { const take = (a) => Float64Array.from(idx, (i) => a[i]); return { name: `orbit ${E - E0}`, tRef: d.tRef, t: take(d.t), f: take(d.f), e: take(d.e), airmass: d.airmass ? take(d.airmass) : null, notes: d.notes }; });
+  const parts = keep.map(([E, idx]) => { const take = (a) => Float64Array.from(idx, (i) => a[i]); return { name: `orbit ${E - E0}`, tRef: d.tRef, t: take(d.t), f: take(d.f), e: take(d.e), airmass: d.airmass ? take(d.airmass) : null, notes: d.notes, ...takeColumns(d, take) }; });
   return { ...combineEpochs(parts), name: d.name };
 }
+
+/** The detrending columns (and their settings) of a subset of the points: { columns, detrend } or nothing. */
+export function takeColumns(d, take) { return d.columns ? { columns: Object.fromEntries(Object.entries(d.columns).map(([nm, a]) => [nm, take(a)])), detrend: d.detrend || null } : {}; }
 
 /** Times folded on the period: each is moved by whole periods to within half a period of tmid. */
 export function foldTimes(t, per, tmid) {
@@ -301,6 +438,8 @@ export function parseRV(text, name = 'RV') {
   if (bad) notes.push(`${bad} unreadable row${bad > 1 ? 's' : ''} skipped`);
   if (dup) notes.push(`${dup} repeated row${dup > 1 ? 's' : ''} dropped`);
   if (kms) notes.push('km/s converted to m/s');
+  const tsd = head ? detectTimeStandard({ column: head[ct] || '' }) : { key: 'unknown', from: 'no header' };
+  if (needsConversion(tsd.key)) notes.push(`times are ${TIME_STANDARDS[tsd.key].label.split(' (')[0]} (from ${tsd.from}): velocities are fitted as if they were BJD_TDB, which shifts them by up to ${tsd.key === 'jd_utc' ? '8.3 min' : '69 s'}; negligible for orbits of days unless the light curve times them`);
   const sets = [];
   for (const [g, rows] of groups) {
     rows.sort((a, b) => a[0] - b[0]);
@@ -314,5 +453,5 @@ export function parseRV(text, name = 'RV') {
   }
   if (!sets.length || sets.every((s) => s.t.length < 2)) throw new Error('Found fewer than two velocities.');
   sets.sort((a, b) => a.t[0] - b.t[0]);
-  return { sets, notes };
+  return { sets, notes, timeStandard: tsd.key };
 }

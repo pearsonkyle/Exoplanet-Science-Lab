@@ -6,7 +6,7 @@
 // The isolated effects are told apart by dash pattern as well as colour (the house colour cycle is
 // not safe for red-green colour blindness on its own), and each has its entry in the legend.
 
-import { niceTicks, decimals, groupColor } from './lightcurve.js';
+import { niceTicks, decimals, groupColor, fitText, fitItems, binGrid } from './lightcurve.js';
 
 const frame = (ctx, th, x, y, w, h) => { if (th.frame) { ctx.strokeStyle = th.frame; ctx.lineWidth = 1; ctx.setLineDash([]); ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); } };
 const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
@@ -33,10 +33,13 @@ const EFFECTS = [
 export function renderMoonLightCurve(ctx, W, H, d, th, opt = {}) {
   ctx.fillStyle = th.bg; ctx.fillRect(0, 0, W, H); ctx.setLineDash([]);
   const k = opt.fontScale || (W < 520 ? 0.95 : 1.12), F = (px) => (px * k).toFixed(1);
-  const L = 62 + 14 * k, R = 16, T = opt.title ? 20 + 18 * k : 12 + 12 * k, B = 22 + 16 * k, gap = 10;
+  const L = 62 + 14 * k, T = opt.title ? 20 + 18 * k : 12 + 12 * k, B = 22 + 16 * k, gap = 10;
+  // a wide, short panel: the legends go in a column on the right instead of over the curves
+  const side = W > 760 && W > 3.4 * (H - T - B), R = side ? 16 + Math.round(Math.min(230, 150 + 70 * k)) : 16;
   const c = d.curve, hasData = !!(d.t && d.t.length), nd = hasData ? d.t.length : 0;
   if (!c || !c.t || !c.t.length) { ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.font = `${F(11)}px ${th.font}`; ctx.fillText(d.label || 'No moon model', W / 2, H / 2); return null; }
-  const avail = H - T - B, hRes = hasData && d.model ? Math.max(44, avail * 0.17) : 0, hEff = Math.max(70, (avail - hRes) * 0.4), hMain = avail - hRes - hEff - gap * (hRes ? 2 : 1);
+  const avail = H - T - B, hRes = hasData && d.model && avail > 200 ? Math.max(avail < 320 ? 34 : 44, avail * 0.17) : 0;
+  const hEff = Math.max(Math.min(70, 0.42 * avail), (avail - hRes) * 0.4), hMain = avail - hRes - hEff - gap * (hRes ? 2 : 1);
   const px0 = L, px1 = W - R, yE0 = T + hMain + gap, yR0 = yE0 + hEff + gap;
   const x0 = d.x0 ?? c.t[0], x1 = d.x1 ?? c.t[c.t.length - 1], span = x1 - x0, tm = d.tmid ?? 0.5 * (x0 + x1), hours = span < 2.5, ux = hours ? 24 : 1;
   const X = (t) => px0 + ((t - x0) / span) * (px1 - px0);
@@ -64,15 +67,15 @@ export function renderMoonLightCurve(ctx, W, H, d, th, opt = {}) {
   const xt = niceTicks((x0 - tm) * ux, (x1 - tm) * ux, Math.max(3, Math.floor((px1 - px0) / (80 * k + 20))));
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
   for (const v of xt) { const x = X(v / ux + tm); ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + hMain); ctx.moveTo(x, yE0); ctx.lineTo(x, yE0 + hEff); if (hRes) { ctx.moveTo(x, yR0); ctx.lineTo(x, yR0 + hRes); } ctx.stroke(); ctx.fillStyle = th.text; ctx.fillText(v.toFixed(decimals(xt.step)), x, bottom + 5); }
-  ctx.fillText(hours ? 'Time from mid-transit (hours)' : 'Time from mid-transit (days)', (px0 + px1) / 2, H - 5 - 11 * k);
+  ctx.fillText(hours ? fitText(ctx, px1 - px0, 'Time from mid-transit (hours)', 'Hours from mid-transit', 'Hours') : fitText(ctx, px1 - px0, 'Time from mid-transit (days)', 'Days from mid-transit', 'Days'), (px0 + px1) / 2, H - 5 - 11 * k);
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-  const yt = niceTicks(y0, y1, Math.max(3, Math.floor(hMain / 36)));
+  const yt = niceTicks(y0, y1, Math.max(hMain < 45 ? 1 : hMain < 80 ? 2 : 3, Math.floor(hMain / 36)));
   for (const v of yt) { const y = Y(v); ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(px0, y); ctx.lineTo(px1, y); ctx.stroke(); ctx.fillStyle = th.text; ctx.fillText(v.toFixed(decimals(yt.step)), px0 - 6, y); }
-  const et = niceTicks(e0, e1, Math.max(2, Math.floor(hEff / 30)));
+  const et = niceTicks(e0, e1, Math.max(hEff < 45 ? 1 : 2, Math.floor(hEff / 30)));
   for (const v of et) { const y = YE(v); ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(px0, y); ctx.lineTo(px1, y); ctx.stroke(); ctx.fillStyle = th.text; ctx.fillText(v.toFixed(decimals(et.step)), px0 - 6, y); }
   if (hRes) { const rmag = Math.pow(10, Math.floor(Math.log10(rmax * 0.8))), rtick = [5, 2, 1].map((m) => m * rmag).find((v) => v <= rmax * 0.8) || rmag; for (const v of [-rtick, 0, rtick]) { if (v === 0 && hRes < 70) continue; const y = YR(v); ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(px0, y); ctx.lineTo(px1, y); ctx.stroke(); ctx.fillStyle = th.text; ctx.fillText(v.toFixed(0), px0 - 6, y); } }
   const ylab = (txt, y) => { ctx.save(); ctx.translate(4 + 8 * k, y); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillStyle = th.text; ctx.fillText(txt, 0, 0); ctx.restore(); };
-  ylab('Relative flux', T + hMain / 2); ylab(hEff < 110 ? 'ppm' : 'Moon effects (ppm)', yE0 + hEff / 2); if (hRes) ylab(hRes < 70 ? 'ppm' : 'Residuals (ppm)', yR0 + hRes / 2);
+  ylab(fitText(ctx, hMain, 'Relative flux', 'Flux', ''), T + hMain / 2); ylab(fitText(ctx, hEff, 'Moon effects (ppm)', 'ppm'), yE0 + hEff / 2); if (hRes) ylab(fitText(ctx, hRes, 'Residuals (ppm)', 'ppm'), yR0 + hRes / 2);
 
   const line = (yOf, arr, scale) => { ctx.beginPath(); let pen = false; for (let i = 0; i < c.t.length; i++) { const x = X(c.t[i]); if (x < px0 - 2 || x > px1 + 2) { pen = false; continue; } const y = yOf(arr[i] * scale); pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y); pen = true; } ctx.stroke(); };
   const colOf = (e) => (e.slot < 0 ? th.model : groupColor(th, e.slot)), cMoonless = th.frame ? '#808080' : '#d0d6e2';
@@ -86,12 +89,11 @@ export function renderMoonLightCurve(ctx, W, H, d, th, opt = {}) {
     for (let i = 0; i < nd; i++) { const x = X(d.t[i]); if (x < px0 - 3 || x > px1 + 3) continue; ctx.beginPath(); ctx.arc(x, Y(d.f[i]), rpt, 0, 6.3); ctx.fill(); }
     ctx.globalAlpha = 1;
     const vis = []; for (let i = 0; i < nd; i++) if (d.t[i] >= x0 && d.t[i] <= x1) vis.push(i);
-    const nb = opt.bins === false ? 0 : Math.min(48, Math.floor(vis.length / 8));
-    if (nb >= 4) {
-      const sw = new Float64Array(nb), sf = new Float64Array(nb), st = new Float64Array(nb);
-      for (const i of vis) { const b = Math.min(nb - 1, Math.floor(((d.t[i] - x0) / span) * nb)), w = d.e ? 1 / (d.e[i] * d.e[i]) : 1; sw[b] += w; sf[b] += w * d.f[i]; st[b] += w * d.t[i]; }
+    const G = opt.bins === false ? null : binGrid(d.t, 48);   // fixed by the dataset: zooming does not move the bins
+    if (G) {
+      const M = new Map(); for (const i of vis) { const k = G.index(d.t[i]); let q = M.get(k); if (!q) M.set(k, (q = [0, 0, 0])); const w = d.e ? 1 / (d.e[i] * d.e[i]) : 1; q[0] += w; q[1] += w * d.f[i]; q[2] += w * d.t[i]; }
       ctx.fillStyle = th.bin; ctx.strokeStyle = th.bin; ctx.lineWidth = 1.2;
-      for (let b = 0; b < nb; b++) if (sw[b] > 0) { const x = X(st[b] / sw[b]), v = sf[b] / sw[b], s = d.e ? 1 / Math.sqrt(sw[b]) : 0; ctx.beginPath(); ctx.moveTo(x, Y(v - s)); ctx.lineTo(x, Y(v + s)); ctx.stroke(); ctx.beginPath(); ctx.arc(x, Y(v), 2.8, 0, 6.3); ctx.fill(); }
+      for (const [, [sw0, sf0, st0]] of M) if (sw0 > 0) { const x = X(st0 / sw0), v = sf0 / sw0, s = d.e ? 1 / Math.sqrt(sw0) : 0; ctx.beginPath(); ctx.moveTo(x, Y(v - s)); ctx.lineTo(x, Y(v + s)); ctx.stroke(); ctx.beginPath(); ctx.arc(x, Y(v), 2.8, 0, 6.3); ctx.fill(); }
     }
   }
   ctx.strokeStyle = cMoonless; ctx.lineWidth = 1.4; ctx.setLineDash([5, 4]); line(Y, c.moonless, 1);
@@ -116,19 +118,26 @@ export function renderMoonLightCurve(ctx, W, H, d, th, opt = {}) {
 
   // title, annotation, legends
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = th.title; ctx.font = `${F(opt.title ? 14 : 11.5)}px ${th.sans}`;
-  ctx.fillText(opt.title || d.label || '', px0, T - 6);
-  if (d.info && d.info.length) { ctx.font = `${F(11)}px ${th.font}`; ctx.textAlign = 'right'; const txt = d.info.join('     '); if (ctx.measureText(txt).width < px1 - px0 - 20) ctx.fillText(txt, px1 - 8, T + 6 + 11 * k); else d.info.forEach((s, i) => ctx.fillText(s, px1 - 8, T + 6 + 11 * k + i * 14 * k)); }
+  const ttl = opt.title || d.label || ''; ctx.fillText(ttl, px0, T - 6);
+  const titleW = ctx.measureText(ttl).width;
+  if (d.info && d.info.length) {
+    ctx.font = `${F(11)}px ${th.font}`; ctx.textAlign = 'right'; const txt = d.info.join('     ');
+    if (side || hMain < 120) ctx.fillText(fitItems(ctx, d.info, W - R - px0 - titleW - 20 + (side ? R - 16 : 0), '     ', false), W - 16, T - 6);
+    else if (ctx.measureText(txt).width < px1 - px0 - 20) ctx.fillText(txt, px1 - 8, T + 6 + 11 * k); else d.info.forEach((s, i) => ctx.fillText(s, px1 - 8, T + 6 + 11 * k + i * 14 * k));
+  }
   ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'left';
   const legend = (items, yTop) => {
-    let lx = px0 + 10, ly = yTop + 13 * k;
+    const x0l = side ? px1 + 14 : px0 + 10, x1l = side ? W - 6 : px1 - 6;
+    let lx = x0l, ly = yTop + 13 * k;
     for (const it of items) {
       const w = 38 + ctx.measureText(it.name).width;
-      if (lx + w > px1 - 6 && lx > px0 + 10) { lx = px0 + 10; ly += 13 * k; }
+      if ((side && lx > x0l) || (lx + w > x1l && lx > x0l)) { lx = x0l; ly += 13 * k; }
       ctx.strokeStyle = it.color; ctx.lineWidth = it.width; ctx.setLineDash(it.dash); ctx.beginPath(); ctx.moveTo(lx, ly - 3.5); ctx.lineTo(lx + 22, ly - 3.5); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = th.text; ctx.fillText(it.name, lx + 27, ly); lx += w;
     }
   };
-  legend([{ name: 'planet + moon', color: th.model, width: 2, dash: [] }, { name: 'planet alone, no moon', color: cMoonless, width: 1.4, dash: [5, 4] }], T + hMain - 20 * k);
+  if (!side && hMain < 110) return { px0, px1, T, hMain, x0, x1 };   // no room for legends over the curves
+  legend([{ name: 'planet + moon', color: th.model, width: 2, dash: [] }, { name: 'planet alone, no moon', color: cMoonless, width: 1.4, dash: [5, 4] }], side ? T - 6 * k : T + hMain - 20 * k);
   legend(shown.map((e) => ({ name: e.name, color: colOf(e), width: e.width, dash: e.dash })), yE0 + 1);
   return { px0, px1, T, hMain, x0, x1 };
 }

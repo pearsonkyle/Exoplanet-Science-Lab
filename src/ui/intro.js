@@ -33,12 +33,60 @@ export function checkList(h, checks) {
   return h('ul', { class: 'checks' }, checks.map((c) => h('li', { class: c.status }, h('b', {}, icon[c.status] || '·'), h('span', {}, c.detail || c.name))));
 }
 
+/** "TOI-1234.01", "TOI 1234", "toi1234.2" -> { host: 1234, planet: 1 | null } or null. */
+export function parseTOIName(name) {
+  const m = String(name || '').trim().match(/^TOI[-\s_]?(\d+)(?:\.(\d{1,2}))?$/i);
+  return m ? { host: Number(m[1]), planet: m[2] ? Number(m[2]) : null } : null;
+}
+/**
+ * A TESS candidate as a session: the TOI records of src/core/sources/toi.js (the snapshot catalog-table/toi.json) for
+ * one host. Pipeline values, not a published fit: Rp/R★ = √depth; a/R★ from Kepler's law with M★ = g R★² / G (log g
+ * and R★ of the TOI row, 1 M☉ when they are missing); the impact parameter from the duration, b² = (1 + k)² −
+ * (a/R★ sin(π T₁₄ / P))², 0 when that is negative; circular orbits. Everything is labelled a TESS candidate.
+ * Returns null when no record matches.
+ */
+export function sessionFromTOI(records, name, snapshot) {
+  const q = parseTOIName(name); if (!q) return null;
+  const all = records.filter((r) => Math.floor(Number(r.name.slice(4))) === q.host).sort((a, b) => Number(a.name.slice(4)) - Number(b.name.slice(4)));
+  const pick = q.planet ? all.filter((r) => Math.round((Number(r.name.slice(4)) % 1) * 100) === q.planet) : all;
+  if (!pick.length) return null;
+  const v0 = pick[0].v, e0 = pick[0].e, err = (k) => (e0[k] ? 0.5 * (e0[k][0] + e0[k][1]) : 0);
+  const G = 6.6743e-11, Rsun = 6.957e8, Msun = 1.98841e30;
+  const rstar = v0.rstar > 0 ? v0.rstar : 1, logg = Number.isFinite(v0.logg) ? v0.logg : 4.44, mstar = Math.min(5, Math.max(0.08, (Math.pow(10, logg) / 100) * (rstar * Rsun) ** 2 / G / Msun));
+  const star = { teff: Math.round(v0.teff > 0 ? v0.teff : 5700), teffErr: Math.round(err('teff')) || 150, logg: Number(logg.toFixed(3)), loggErr: err('logg') || 0.1, feh: 0, fehErr: 0.2,
+    rstar: Number(rstar.toFixed(4)), rstarErr: Number((err('rstar') || 0.07 * rstar).toFixed(4)), mstar: Number(mstar.toFixed(3)), mstarErr: Number((0.15 * mstar).toFixed(3)) };
+  for (const k of ['ra', 'dec']) if (Number.isFinite(v0[k])) star[k] = v0[k];
+  if (Number.isFinite(v0.tmag)) star.tmag = v0.tmag;
+  const letters = 'bcdefghij', planets = [], free = [], priors = {}, notes = [];
+  pick.forEach((r, i) => {
+    const v = r.v, per = v.per > 0 ? v.per : null;
+    if (!per) { notes.push(`${r.name} has no period (a single transit): it is left out`); return; }
+    const k = Math.min(0.5, Math.max(0.005, Math.sqrt(v.depth > 0 ? v.depth : 1e-3))), P = per * 86400;
+    const ars = Math.cbrt((G * mstar * Msun * P * P) / (4 * Math.PI * Math.PI)) / (rstar * Rsun), t14 = v.t14 > 0 ? v.t14 : null;
+    const b2 = t14 ? (1 + k) ** 2 - (ars * Math.sin((Math.PI * t14) / per)) ** 2 : 0.25, b = Math.sqrt(Math.max(0, Math.min(b2, (1 + k - 0.05) ** 2)));
+    const inc = (Math.acos(Math.min(1, b / ars)) * 180) / Math.PI, L = letters[planets.length], key = (f) => (planets.length ? `${f}@${L}` : f);
+    planets.push({ letter: L, values: { rprs: Number(k.toFixed(5)), ars: Number(ars.toFixed(3)), inc: Number(inc.toFixed(3)), per, tmid: v.tmid, ecc: 0, omega: 90 } });
+    free.push(key('rprs'), key('inc'), key('tmid'));
+    if (e0 && r.e.per) priors[key('per')] = { type: 'normal', a: per, b: Math.max(1e-6, 0.5 * (r.e.per[0] + r.e.per[1])) };
+    notes.push(`${r.name} (planet ${L}): ${r.v.status}, TIC ${r.info.tic}`);
+  });
+  if (!planets.length) return null;
+  const host = 'TOI-' + q.host, title = (q.planet ? pick[0].name : host) + ' (TESS candidate)';
+  return {
+    name: host, title, star, ldLaw: 'quadratic', ld: null, band: 'TESS (approx.)', planets, kepler: false, lc: null, rv: [], timing: [],
+    use: { lc: true, rv: false, timing: false }, free, priors, view: 'lc', fold: false, tab: 'data', candidate: true,
+    note: `TOI candidate: ${title} from the TESS Objects of Interest snapshot of ${snapshot} (NASA Exoplanet Archive / ExoFOP). These are pipeline estimates, not a published fit: Rp/R★ from the depth, a/R★ from Kepler’s law with M★ from log g and R★, the inclination from the duration, circular orbit. ${notes.join('; ')}. The light curve shown is simulated from them as a stand-in: load your own data on the Data tab.`,
+  };
+}
+
 /** Turn a catalog system into a session for the app (see ui/examples.js for the shape). */
-export function sessionFromCatalog(sys, kinds, snapshot) {
+export function sessionFromCatalog(sys, kinds, snapshot, system = null) {
   const val = (v, k, d) => (v[k] && Number.isFinite(v[k].value) ? v[k].value : d), err = (v, k) => (v[k] && v[k].err > 0 ? v[k].err : 0);
   const sv = sys.star.values, wantRV = kinds.includes('rv'), wantLC = kinds.includes('transit') || !kinds.length;
   const star = { teff: Math.round(val(sv, 'teff', 5700)), teffErr: Math.round(err(sv, 'teff')) || 100, logg: Number(val(sv, 'logg', 4.4).toFixed(3)), loggErr: err(sv, 'logg') || 0.1, feh: Number(val(sv, 'feh', 0).toFixed(3)), fehErr: err(sv, 'feh') || 0.1,
     rstar: Number(val(sv, 'rstar', 1).toFixed(4)), rstarErr: Number((err(sv, 'rstar') || 0.05 * val(sv, 'rstar', 1)).toFixed(4)), mstar: Number(val(sv, 'mstar', 1).toFixed(4)), mstarErr: Number((err(sv, 'mstar') || 0.05 * val(sv, 'mstar', 1)).toFixed(4)) };
+  // the host's position and 2MASS magnitudes (archive searches, time conversion, TSM and ESM), from the catalogue's system record
+  if (system) for (const [k, c, d] of [['ra', 'ra', 7], ['dec', 'dec', 7], ['jmag', 'sy_jmag', 3], ['kmag', 'sy_kmag', 3]]) if (Number.isFinite(system[c])) star[k] = Number(system[c].toFixed(d));
   const letters = sys.planets.map((p, i) => (p.planet.match(/\s([a-z])$/) || [])[1] || 'bcdefghij'[i]);
   const planets = sys.planets.map((p, i) => { const v = p.values; return { letter: letters[i], values: { rprs: val(v, 'rprs', 0.1), ars: val(v, 'ars', 10), inc: val(v, 'inc', 89), per: val(v, 'per', 3), tmid: val(v, 'tmid', 0), ecc: val(v, 'ecc', 0), omega: val(v, 'omega', 0), ...(Number.isFinite(val(v, 'mplanet', NaN)) ? { mplanet: val(v, 'mplanet') } : wantRV ? { mplanet: 0.1 } : {}) } }; });
   // free by default: what each kind of data measures. Priors: the catalog's wide suggestions.
@@ -58,7 +106,7 @@ export function sessionFromCatalog(sys, kinds, snapshot) {
 
 export function initIntro(app) {
   const { h } = app, root = document.getElementById('intro');
-  const st = { step: 'home', kinds: new Set(['transit']), index: null, sys: null, look: null, refs: {}, msg: '', busy: false };
+  const st = { step: 'home', kinds: new Set(), index: null, sys: null, look: null, refs: {}, msg: '', busy: false };
   const close = () => { root.hidden = true; document.body.classList.remove('intro-open'); if (app.onClose) app.onClose(); };
   const kindsArr = () => KINDS.map((k) => k.key).filter((k) => st.kinds.has(k));
   const useOf = () => { const k = kindsArr(); return k.length === 1 ? k[0] : 'all'; };
@@ -90,12 +138,12 @@ export function initIntro(app) {
     const inp = h('input', { type: 'text', id: 'isearch', placeholder: 'Planet or star, e.g. HAT-P-32 b, WASP-12, TRAPPIST-1', autocomplete: 'off', 'aria-label': 'Planet or star name', list: 'inames' }), dl = h('datalist', { id: 'inames' });
     inp.addEventListener('input', async () => { if (inp.value.trim().length < 2) return; try { if (!st.index) st.index = await loadIndex(app.fetchCatalog); dl.innerHTML = ''; for (const r of searchNames(st.index, inp.value, 10)) dl.append(h('option', { value: r.label })); } catch { /* the catalog could not be read: the Look up button reports it */ } });
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && inp.value.trim()) lookup(inp.value.trim()); });
-    return [h('p', { class: 'ilead' }, 'Analyze: which kinds of data?'), h('div', { class: 'ikinds' }, KINDS.map(chip), all),
+    return [h('p', { class: 'ilead' }, 'Analyze: which kinds of data? (optional: choosing narrows the examples below)'), h('div', { class: 'ikinds' }, KINDS.map(chip), all),
       h('p', { class: 'ilead second' }, 'Which system?'),
       h('div', { class: 'isearch' }, inp, dl, h('button', { class: 'btn primary', disabled: st.busy, onclick: () => inp.value.trim() && lookup(inp.value.trim()) }, st.busy ? 'Looking up…' : 'Look up parameters')),
       h('p', { class: 'note' + (st.msg ? ' bad' : '') }, st.msg || 'Parameters are filled in from a bundled snapshot of the NASA Exoplanet Archive. You will see where each value comes from before anything is used.'),
       h('p', { class: 'ilead second' }, 'Or start from a worked example'),
-      h('div', { class: 'iexamples' }, exs.map((e) => h('button', { class: 'iex', onclick: async () => { st.busy = true; try { await app.loadExample(e); close(); } catch (err) { st.msg = 'Could not load the example: ' + (err.message || err); render(); } st.busy = false; } }, h('b', {}, e.title), h('span', {}, e.sub), h('small', {}, 'EXOTIC: ' + e.exotic)))),
+      h('div', { class: 'iexamples' }, exs.map((e) => h('button', { class: 'iex', onclick: async () => { st.busy = true; try { await app.loadExample(e); close(); } catch (err) { st.msg = 'Could not load the example: ' + (err.message || err); render(); } st.busy = false; } }, h('b', {}, e.title), h('span', {}, e.sub)))),
       h('p', { class: 'ilead second' }, 'Your saved analyses'),
       (() => { const box = h('div', { class: 'isaved' }, h('p', { class: 'note' }, 'Looking in this browser…'));
         const fill = async () => { try { const list = await app.listSaved(); box.innerHTML = '';
@@ -124,7 +172,7 @@ export function initIntro(app) {
     }
     out.push(h('p', { class: 'note' }, 'Priors start wide (the catalog only centres them), so the fit is driven by your data. Times are used as the archive lists them, without converting between time systems.'));
     out.push(h('div', { class: 'btnrow' }, h('button', { class: 'chip', onclick: () => { st.step = 'kinds'; render(); } }, '← Back'),
-      h('button', { class: 'btn primary', onclick: () => { app.applySession(sessionFromCatalog(sys, kindsArr(), st.look.snapshot || st.index.date)); close(); } }, 'Use these parameters')));
+      h('button', { class: 'btn primary', onclick: () => { app.applySession(sessionFromCatalog(sys, kindsArr(), st.look.snapshot || st.index.date, st.look.system)); close(); } }, 'Use these parameters')));
     return out;
   }
   function render() {

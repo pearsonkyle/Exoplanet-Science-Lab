@@ -1,5 +1,6 @@
-// Gravitational N-body dynamics for planetary systems: dynamical transit times, transit timing variations,
-// radial velocities of the star, stability checks, and the interpretation of an O - C signal by a grid of
+// Gravitational N-body dynamics for planetary systems: dynamical transit and eclipse times, transit timing variations,
+// radial velocities of the star, sky positions for photodynamical light curves, stability checks (Hill, AMD, MEGNO),
+// and the interpretation of an O - C signal by a grid of
 // simulations over a hypothetical perturber. No DOM, no dependencies outside src/core. Runs in Node.
 //
 // ============================================================================================================
@@ -20,22 +21,34 @@
 //    Requirements: every planet needs `mplanet` (M Jup) and the star `mstar` (the spec.kepler case already has
 //    both); `per`, `tmid`, `ecc`, `omega`, `inc` keep their keys but become OSCULATING elements at
 //    `spec.nbody.epoch` (see "Reference epoch" below), so with all masses zero the result is identical to the
-//    present Keplerian one. Only kind 'transit' is produced: mid-eclipse times need the same root finding on the
-//    far side (Z < 0), which `simulate` does not report yet. Cost: one simulation per likelihood call; see the
+//    present Keplerian one. Cost: one simulation per likelihood call; see the
 //    timings at the end of this header. `nbodyTimingProblem` below is the same likelihood as a stand-alone
 //    problem ({ ndim, keys, transform, loglike }) for MiniNest, used by test/nbody.test.mjs.
 //
-// 2. Photodynamics (next step, not built). A light curve from N-body positions needs, for each planet and
-//    each exposure, the sky-projected separation from the star in stellar radii and whether the planet is in
-//    front. `makeTransit(tp)` in transit.js builds its own Keplerian orbit from `tp`; it would need either
-//      (a) a per-transit ephemeris: for transit k of planet p, call makeTransit with
-//          { ...tp, tmid: T_k, per: local period, inc: from the simulated impact parameter b_k } and evaluate each
-//          point with the transit nearest in time. `simulate` returns T_k, b_k and the sky speed for this. Good to
-//          the size of the change of the orbit within one transit, which is negligible for planets; or
-//      (b) a variant `makeTransitFromSeparation(tp)` returning flux(d, front) so that the caller supplies
-//          d(t) from `simulate(..., { times })` positions (samples.x, relative to the star, in stellar radii).
-//    (a) needs no change to transit.js and is what TTVFast-based photodynamical codes do for well-separated
-//    planets; (b) is needed only for mutual events and strongly perturbed (circumbinary-like) orbits.
+// 2. Photodynamics (built: `dynamicalModel(..., { lc })` returns `photo`, used by buildProblem when spec.nbody is set and
+//    a light curve is in the fit). One integration serves everything: besides the velocities, `simulate` outputs the
+//    positions and velocities of every body at evenly spaced nodes that cover the light curve's points (plus half an
+//    exposure and the light-travel margin; runs of nodes only where there are data). `photo.transit(p, { rprs, ldLaw, ld })`
+//    returns flux(t): a cubic Hermite interpolation of the planet's sky position relative to the star, then
+//    `blockedFraction` of transit.js. It is a plain function of time, so buildProblem's exposure sub-sampling applies
+//    unchanged. Planets are treated one at a time: the area two planets share on the stellar disc during a mutual
+//    event is counted twice (buildProblem multiplies the planets' fluxes), and a planet with its own light or a
+//    moon keeps its Keplerian curve.
+//    Accuracy: the interpolation leaves 1e-9 of the flux at the default 150 nodes per orbit; the rest is the
+//    integrator. Against REBOUND IAS15 positions through batman, for 1 and 2 M_Jup at 10 and 20.3 d over 125 d:
+//    0.008 ppm with 'ias15', 57 ppm with the Wisdom-Holman defaults (its transit times are 7 s off there, growing
+//    with time as eps^2 dt^2), 14 ppm at 60 steps per orbit (test/nbodyphoto.test.mjs).
+//
+// 3. Mid-eclipse times: `simulate(..., { eclipses: true })` records the same event on the far side (Z < 0);
+//    timing sets of kind 'eclipse' go through `dynamicalModel` like transits.
+//
+// 4. Light-travel time (req.ltt / spec.nbody.ltt), referred to the plane through the barycentre: light seen at t
+//    left a body at t + Z/c. Transits are seen about a/c early, eclipses a/c late (so the pair is 2a/c apart, as in
+//    phasecurve.js, whose convention keeps the transit at tmid instead). Applied to the light curve and to event times.
+//
+// 5. Mean-ephemeris elements (req.elements = 'mean'): per and tmid of every planet are the straight line through its
+//    simulated mid-transit times over the span of the data; `osculatingFromMean` finds the osculating values. This is
+//    what makes a planet's own period and T0 sampleable together with a companion's mass (see that function).
 //
 // ============================================================================================================
 // Units and frame
@@ -93,7 +106,8 @@
 // i = 89.27 deg, b = 0.78), under a second for hot Jupiters with e < 0.05. `dynamicalModel` defaults to
 // 'conjunction' because it stands in for `tmid + E per` in the timing likelihood and because the app's light
 // curves are built on tmid = conjunction.
-// Light-travel time across the system is not applied (neither do REBOUND-based codes or TTVFast).
+// Light-travel time across the system is not applied unless asked for (`ltt`; neither REBOUND-based codes nor
+// TTVFast apply it).
 //
 // ============================================================================================================
 // Integrators
@@ -123,6 +137,8 @@
 //   Lithwick, Xie & Wu 2012, ApJ 761, 122 (near-resonant TTV amplitudes)
 //   Gladman 1993, Icarus 106, 247; Chambers, Wetherill & Boss 1996, Icarus 119, 261 (Hill spacing)
 //   Laskar & Petit 2017, A&A 605, A72 (AMD stability)
+//   Cincotta & Simo 2000, A&AS 147, 205; Cincotta, Giordano & Simo 2003, Physica D 182, 151 (MEGNO)
+//   Carter et al. 2011, Science 331, 562 (photodynamics)
 //   Pearson 2019, AJ 158, 243 (Nbody-AI: the grid/prior idea reproduced by ttvGrid)
 
 import { solveKepler, trueAnomaly, meanAnomalyAtTransit } from './kepler.js';
@@ -130,6 +146,8 @@ import { C } from './derive.js';
 import { fitEphemeris } from './ephemeris.js';
 import { timingPeriodogram } from './periodogram.js';
 import { makeTransform } from './priors.js';
+import { blockedFraction } from './transit.js';
+import { prepareLD, toClaret } from './limbdark.js';
 
 const TWO_PI = 2 * Math.PI, DEG = Math.PI / 180;
 
@@ -385,6 +403,8 @@ const GR_C = (() => {
  *                     0.12 s in the reference systems of test/nbody.test.mjs)
  *   epsilon           IAS15 accuracy parameter (default 1e-9)
  *   transits          true (default): find mid-transit times of every planet
+ *   eclipses          true: also find mid-eclipse times (the same event on the far side, Z < 0); default false
+ *   velocities        true (with positions): also return velocities at `times`
  *   event             'minsep' (default) | 'conjunction'
  *   times             output times [d] (any order, inside the window): radial velocity and positions there
  *   positions         true: also return positions at `times` (default false)
@@ -396,10 +416,12 @@ const GR_C = (() => {
  *   transits: [per planet, in the order of p.planets]
  *              { n, t (mid-transit times, sorted), b (sky separation at mid-transit in stellar radii; AU when
  *                rstar is not given), vsky [stellar radii or AU per day], dur (first to fourth contact, days;
- *                0 when grazing-out or rstar unknown), z (always > 0) }  as Float64Array views,
+ *                0 when grazing-out or rstar unknown), z (always > 0), ltt (light-travel path in the same length
+ *                unit: the event is seen at t - ltt / c, referred to the plane through the barycentre) }  as Float64Array views,
+ *   eclipses:   the same per planet for mid-eclipse (z < 0), filled when opt.eclipses,
  *   rv:  Float64Array, m/s at opt.times in the order given (positive = receding), barycentric, no zero point,
- *   samples: { x: [per body incl. star, Float64Array 3*nt] } positions relative to the barycentre at opt.times
- *            (stellar radii when rstar is given, else AU),
+ *   samples: { x: [per body incl. star, Float64Array 3*nt], v: the same for velocities (per day) or null }
+ *            positions relative to the barycentre at opt.times (stellar radii when rstar is given, else AU),
  *   energy: { initial, final, relErr (|dE/E| at the end), maxRelErr (largest seen at the checks) },
  *   angmom: { relErr },
  *   minSepHill: smallest planet-planet distance met, in mutual Hill radii (Infinity for one planet),
@@ -412,7 +434,8 @@ export function simulate(sys, opt = {}) {
   const n = sys.n, n3 = 3 * n, m = sys.m, epoch = sys.epoch;
   const tEnd = opt.tEnd ?? epoch, tStart = opt.tStart ?? epoch;
   const useIAS = opt.integrator === 'ias15';
-  const wantTr = opt.transits !== false, conj = opt.event === 'conjunction';
+  const wantTr = opt.transits !== false, wantEc = !!opt.eclipses, wantEv = wantTr || wantEc, conj = opt.event === 'conjunction';
+  const downToo = conj && wantEc;                                   // X' = 0 on the far side is the opposite sign change
   let pMin = Infinity; for (let i = 1; i < n; i++) if (sys.per[i] < pMin) pMin = sys.per[i];
   const dt0 = opt.dt > 0 ? opt.dt : defaultStep(sys, opt.stepsPerOrbit);
   const corr = opt.corrector ?? 5, exact = opt.exactSync !== false;
@@ -432,15 +455,19 @@ export function simulate(sys, opt = {}) {
   const gPrev = new Float64Array(n), gNow = new Float64Array(n);
   const span = Math.max(tEnd - epoch, 0) + Math.max(epoch - tStart, 0);
   const cap = new Int32Array(n), cnt = new Int32Array(n);
-  const trT = [], trB = [], trV = [], trD = [], trZ = [];
+  const trT = [], trB = [], trV = [], trDt = [], trZ = [], trL = [];
+  const cntE = new Int32Array(n), ecT = [], ecB = [], ecV = [], ecD = [], ecZ = [], ecL = [];
   for (let i = 0; i < n; i++) {
-    cap[i] = i && wantTr ? opt.maxTransits || Math.ceil((1.5 * span) / sys.per[i]) + 8 : 0;
-    trT.push(new Float64Array(cap[i])); trB.push(new Float64Array(cap[i])); trV.push(new Float64Array(cap[i])); trD.push(new Float64Array(cap[i])); trZ.push(new Float64Array(cap[i]));
+    cap[i] = i && wantEv ? opt.maxTransits || Math.ceil((1.5 * span) / sys.per[i]) + 8 : 0;
+    const ct = wantTr ? cap[i] : 0, ce = wantEc ? cap[i] : 0;
+    trT.push(new Float64Array(ct)); trB.push(new Float64Array(ct)); trV.push(new Float64Array(ct)); trDt.push(new Float64Array(ct)); trZ.push(new Float64Array(ct)); trL.push(new Float64Array(ct));
+    ecT.push(new Float64Array(ce)); ecB.push(new Float64Array(ce)); ecV.push(new Float64Array(ce)); ecD.push(new Float64Array(ce)); ecZ.push(new Float64Array(ce)); ecL.push(new Float64Array(ce));
   }
   const times = opt.times ? Float64Array.from(opt.times) : new Float64Array(0), nt = times.length;
   const tIdx = Array.from({ length: nt }, (_, i) => i).sort((p, q) => times[p] - times[q]);
-  const rv = new Float64Array(nt), wantPos = !!opt.positions && nt > 0;
+  const rv = new Float64Array(nt), wantPos = !!opt.positions && nt > 0, wantVel = wantPos && !!opt.velocities;
   const samples = wantPos ? Array.from({ length: n }, () => new Float64Array(3 * nt)) : null;
+  const samplesV = wantVel ? Array.from({ length: n }, () => new Float64Array(3 * nt)) : null;
   let status = 'ok', steps = 0, fevals = 0;
   const e0 = energy(n, m, sys.x, sys.v), L0 = angularMomentum(n, m, sys.x, sys.v), L0n = Math.hypot(L0[0], L0[1], L0[2]);
   let eMax = 0, eFinal = e0, lErr = 0;
@@ -456,6 +483,19 @@ export function simulate(sys, opt = {}) {
     return gVal;
   };
   const evalAll = (X, V, out) => { for (let i = 1; i < n; i++) out[i] = evalG(X, V, i); };
+  // an event exactly at the epoch leaves g at +-1e-17 of rounding, so whether the strict sign test saw it was a coin flip:
+  // a g that vanishes to rounding is put just before zero on the side its derivative comes from, so the forward leg (which
+  // owns t = epoch) records it and the backward leg does not
+  const seedEvents = (X, V, out) => {
+    evalAll(X, V, out);
+    for (let i = 1; i < n; i++) {
+      evalG(X, V, i); const k = 3 * i, r = Math.hypot(X[k] - X[0], X[k + 1] - X[1], X[k + 2] - X[2]), w = conj ? 1 : Math.hypot(V[k] - V[0], V[k + 1] - V[1], V[k + 2] - V[2]);
+      if (Math.abs(gVal) <= 1e-12 * r * w) out[i] = gDer > 0 ? -1e-300 : 1e-300;
+    }
+  };
+  // +1: the event function rises through zero in the direction of integration (a transit; with 'minsep' also an eclipse);
+  // -1: it falls through zero ('conjunction' on the far side: an eclipse); 0: no event
+  const crossing = (i, dir) => (gPrev[i] * dir < 0 && gNow[i] * dir >= 0 ? 1 : downToo && gPrev[i] * dir > 0 && gNow[i] * dir <= 0 ? -1 : 0);
 
   // ---- store one transit of body i: (X, V) is the inertial state at time t, already near the root
   const record = (i, t, X, V) => {
@@ -475,12 +515,19 @@ export function simulate(sys, opt = {}) {
       del += d;
       if (Math.abs(d) < 1e-13 * sys.per[i]) { kx[0] = mx[0]; kx[1] = mx[1]; kx[2] = mx[2]; kv[0] = mv[0]; kv[1] = mv[1]; kv[2] = mv[2]; if (del !== 0) keplerDrift(kx, kv, 0, mui, del); break; }
     }
-    if (!(kx[2] > 0)) return true;                                 // behind the star: an occultation, not stored
+    const front = kx[2] > 0;                                       // behind the star it is an occultation (mid-eclipse)
+    if (front ? !wantTr : !wantEc) return true;
     const tt = t + del;
-    if (tt < tStart - 1e-9 || tt > tEnd + 1e-9) return true;
-    if (cnt[i] >= cap[i]) { if (!warnings.length || !warnings[warnings.length - 1].startsWith('More transits')) warnings.push('More transits than the reserved capacity; pass maxTransits.'); return true; }
-    const c = cnt[i]++, bs = Math.hypot(kx[0], kx[1]), vs = Math.hypot(kv[0], kv[1]);
-    trT[i][c] = tt; trB[i][c] = bs * lenU; trV[i][c] = vs * lenU; trZ[i][c] = kx[2] * lenU; trD[i][c] = 0;
+    // the window edge with 1e-6 d of slack: the map's root of an event at the epoch can land a millisecond before it
+    if (tt < tStart - 1e-6 || tt > tEnd + 1e-6) return true;
+    const ctr = front ? cnt : cntE;
+    if (ctr[i] >= cap[i]) { if (!warnings.length || !warnings[warnings.length - 1].startsWith('More transits')) warnings.push('More transits than the reserved capacity; pass maxTransits.'); return true; }
+    const c = ctr[i]++, bs = Math.hypot(kx[0], kx[1]), vs2 = kv[0] * kv[0] + kv[1] * kv[1], vs = Math.sqrt(vs2);
+    const eT = front ? trT : ecT, eB = front ? trB : ecB, eV = front ? trV : ecV, eZ = front ? trZ : ecZ, trD = front ? trDt : ecD, eL = front ? trL : ecL;
+    eT[i][c] = tt; eB[i][c] = bs * lenU; eV[i][c] = vs * lenU; eZ[i][c] = kx[2] * lenU; trD[i][c] = 0;
+    // light-travel path: the event is seen at  t - L / c  (barycentric plane as the reference), L = Z of the planet from the
+    // barycentre plus the small term from the star's own delay, (Z_p - Z_s) (V_s . V_rel) / V_rel^2 in the sky plane
+    eL[i][c] = (kx[2] + X[2] + (vs2 > 0 ? (kx[2] * (V[0] * kv[0] + V[1] * kv[1])) / vs2 : 0)) * lenU;
     if (sys.rstarAU > 0) {
       const Lc = (1 + sys.rprs[i]) * sys.rstarAU;
       if (bs < Lc) {
@@ -507,6 +554,7 @@ export function simulate(sys, opt = {}) {
   const output = (j, X, V) => {
     rv[j] = -V[2] * NB.AUday_ms;
     if (wantPos) for (let i = 0; i < n; i++) { const s = samples[i]; s[3 * j] = X[3 * i] * lenU; s[3 * j + 1] = X[3 * i + 1] * lenU; s[3 * j + 2] = X[3 * i + 2] * lenU; }
+    if (wantVel) for (let i = 0; i < n; i++) { const s = samplesV[i]; s[3 * j] = V[3 * i] * lenU; s[3 * j + 1] = V[3 * i + 1] * lenU; s[3 * j + 2] = V[3 * i + 2] * lenU; }
   };
   const monitor = (X, V) => {
     const e = energy(n, m, X, V), r = e0 !== 0 ? Math.abs((e - e0) / e0) : 0; if (r > eMax) eMax = r; eFinal = e;
@@ -567,7 +615,7 @@ export function simulate(sys, opt = {}) {
         if (last && kk > k) break;
       }
     };
-    if (wantTr) { subStep(0); evalAll(ox, ov, gPrev); }
+    if (wantEv) { subStep(0); seedEvents(ox, ov, gPrev); }
     if (nt) doOutputs(0, false);
     if (corr) corrector(xj, vj, h, 1);
     if (!kepAll(xj, vj, 0.5 * h)) { status = 'unbound'; return; }
@@ -579,10 +627,10 @@ export function simulate(sys, opt = {}) {
       steps++;
       const tk = epoch + k * h, tNow = last ? tk : tk + 0.5 * h;
       let need = false;
-      if (wantTr) {
+      if (wantEv) {
         fromJacobi(n, m, eta, xj, ox); fromJacobi(n, m, eta, vj, ov);
         evalAll(ox, ov, gNow);
-        for (let i = 1; i < n; i++) if (gPrev[i] * dir < 0 && gNow[i] * dir >= 0) need = true;
+        for (let i = 1; i < n; i++) if (crossing(i, dir)) need = true;
       }
       if (nt && outPtr >= 0 && outPtr < nt) { const t = times[tIdx[outPtr]]; if (inLeg(t) && Math.min(K, Math.round(Math.abs(t - epoch) / dt0)) <= k) need = true; }
       if (need || last) {
@@ -591,7 +639,7 @@ export function simulate(sys, opt = {}) {
         if (!last) kepAll(bxj, bvj, -0.5 * h);
         if (corr && (exact || last)) corrector(bxj, bvj, h, -1);
         baseK = k;
-        if (wantTr) for (let i = 1; i < n; i++) if (gPrev[i] * dir < 0 && gNow[i] * dir >= 0) {
+        if (wantEv) for (let i = 1; i < n; i++) { const sg = crossing(i, dir); if (!sg) continue;
           // first guess by linear interpolation of g between the two check points, then Newton with re-stepping
           let tau = tPrev + ((tNow - tPrev) * gPrev[i]) / (gPrev[i] - gNow[i]) - tk, good = false;
           for (let it = 0; it < 6; it++) {
@@ -605,7 +653,7 @@ export function simulate(sys, opt = {}) {
           if (!good) {
             // bisection between the check points
             let lo = tPrev - tk, hi = tNow - tk;
-            for (let it = 0; it < 40; it++) { tau = 0.5 * (lo + hi); subStep(tau); if (evalG(ox, ov, i) * dir < 0) lo = tau; else hi = tau; }
+            for (let it = 0; it < 40; it++) { tau = 0.5 * (lo + hi); subStep(tau); if (evalG(ox, ov, i) * dir * sg < 0) lo = tau; else hi = tau; }
           }
           if (!record(i, tk + tau, ox, ov)) { status = 'unbound'; return; }
         }
@@ -616,7 +664,7 @@ export function simulate(sys, opt = {}) {
           if (dir > 0) { endState.t = tk; endState.x.set(ox); endState.v.set(ov); }
         }
       }
-      if (wantTr) { gPrev.set(gNow); }
+      if (wantEv) { gPrev.set(gNow); }
       tPrev = tNow;
       if ((k & 255) === 0) { fromJacobi(n, m, eta, vj, ov); let bad = false; for (let q = 0; q < n3; q++) if (!Number.isFinite(x[q]) || !Number.isFinite(ov[q])) bad = true; if (bad) { status = 'unbound'; return; } }
     }
@@ -643,7 +691,7 @@ export function simulate(sys, opt = {}) {
         ov[q] = v0[q] + s * (a0[q] + hh * (b0 / 2 + hh * (b1 / 3 + hh * (b2 / 4 + hh * (b3 / 5 + hh * (b4 / 6 + hh * (b5 / 7 + hh * b6 / 8)))))));
       }
     };
-    if (wantTr) evalAll(x0, v0, gPrev);
+    if (wantEv) seedEvents(x0, v0, gPrev);
     let guard = 0;
     while (dir * (tStop - t) > 1e-13 * Math.max(1, Math.abs(tStop))) {
       if (++guard > 5e7) { status = 'not converged'; return; }
@@ -695,16 +743,16 @@ export function simulate(sys, opt = {}) {
       // ---- the step is accepted: events and outputs inside it, from the interpolating polynomial
       const t1 = t + dtDone;
       dense(1, dtDone);
-      if (wantTr) {
+      if (wantEv) {
         evalAll(ox, ov, gNow);
-        for (let i = 1; i < n; i++) if (gPrev[i] * dir < 0 && gNow[i] * dir >= 0) {
+        for (let i = 1; i < n; i++) { const sg = crossing(i, dir); if (!sg) continue;
           // Illinois regula falsi on the fraction of the step
           let lo = 0, hi = 1, glo = gPrev[i], ghi = gNow[i], hh = 0.5, side = 0;
           for (let it = 0; it < 60; it++) {
             hh = (lo * ghi - hi * glo) / (ghi - glo);
             dense(hh, dtDone); const gm = evalG(ox, ov, i);
             if (Math.abs(gm / gDer) < 1e-12) break;
-            if (gm * dir < 0) { lo = hh; glo = gm; if (side === -1) ghi *= 0.5; side = -1; } else { hi = hh; ghi = gm; if (side === 1) glo *= 0.5; side = 1; }
+            if (gm * dir * sg < 0) { lo = hh; glo = gm; if (side === -1) ghi *= 0.5; side = -1; } else { hi = hh; ghi = gm; if (side === 1) glo *= 0.5; side = 1; }
             if (hi - lo < 1e-15) break;
           }
           if (!record(i, t + hh * dtDone, ox, ov)) { status = 'unbound'; return; }
@@ -755,20 +803,30 @@ export function simulate(sys, opt = {}) {
   } else if (status === 'unbound' && !warnings.length) warnings.push('A planet left its orbit (unbound or non-finite state): the configuration is unstable.');
 
   // ---- transits, per planet in the caller's order, sorted in time
-  const transits = [];
+  const transits = [], eclipses = [];
   for (let s = 0; s < sys.np; s++) {
-    const i = sys.slot[s], c = cnt[i], idx = Array.from({ length: c }, (_, q) => q).sort((p, q) => trT[i][p] - trT[i][q]);
-    const pick = (arr) => Float64Array.from(idx, (q) => arr[q]);
-    transits.push({ n: c, t: pick(trT[i]), b: pick(trB[i]), vsky: pick(trV[i]), dur: pick(trD[i]), z: pick(trZ[i]) });
+    const i = sys.slot[s];
+    for (const front of [true, false]) {
+      const T = front ? trT[i] : ecT[i], c = front ? cnt[i] : cntE[i], idx = Array.from({ length: c }, (_, q) => q).sort((p, q) => T[p] - T[q]);
+      const pick = (arr) => Float64Array.from(idx, (q) => arr[q]);
+      (front ? transits : eclipses).push({ n: c, t: pick(T), b: pick((front ? trB : ecB)[i]), vsky: pick((front ? trV : ecV)[i]), dur: pick((front ? trDt : ecD)[i]), z: pick((front ? trZ : ecZ)[i]), ltt: pick((front ? trL : ecL)[i]) });
+    }
   }
   const t01 = typeof performance !== 'undefined' ? performance.now() : Date.now();
   return {
     ok: status === 'ok', status, warnings, integrator: useIAS ? 'ias15' : 'wh', dt: useIAS ? null : dt0, corrector: useIAS ? null : corr, steps, forceEvaluations: fevals, seconds: (t01 - t00) / 1000,
-    transits, rv, samples: wantPos ? { x: bodyOrder(samples, sys) } : null,
+    transits, eclipses, rv, samples: wantPos ? { x: bodyOrder(samples, sys), v: wantVel ? bodyOrder(samplesV, sys) : null } : null,
     energy: { initial: e0, final: eFinal, relErr: e0 !== 0 ? Math.abs((eFinal - e0) / e0) : 0, maxRelErr: eMax }, angmom: { relErr: lErr },
     minSepHill, minStar, state: endState,
   };
 }
+
+// Weights of the 8-node Gauss-Radau rule on [0, 1] (nodes GR_H): exact for polynomials up to degree 14.
+const GR_W = GR_H.map((hk, k) => {
+  let c = [1];
+  for (let j = 0; j < 8; j++) if (j !== k) { const q = new Array(c.length + 1).fill(0), d = hk - GR_H[j]; for (let i = 0; i < c.length; i++) { q[i + 1] += c[i] / d; q[i] -= (GR_H[j] * c[i]) / d; } c = q; }
+  return c.reduce((a, ci, i) => a + ci / (i + 1), 0);
+});
 
 /** Positions per body in the caller's planet order: [star, planets[0], planets[1], ...]. */
 function bodyOrder(samples, sys) { const out = [samples[0]]; for (let s = 0; s < sys.np; s++) out.push(samples[sys.slot[s]]); return out; }
@@ -807,56 +865,275 @@ export function nbody(p, opt = {}) {
 // ------------------------------------------------------------------------------------------------------------
 
 /**
- * Dynamical transit times and radial velocities in place of the Keplerian ones.
+ * Dynamical mid-transit and mid-eclipse times, radial velocities and sky positions in place of the Keplerian ones.
  *
- * system: { mstar [M_sun], rstar [R_sun, optional], epoch [d, default earliest tmid], coords,
+ * system: { mstar [M_sun], rstar [R_sun; needed for a light curve], epoch [d, default earliest tmid], coords,
  *           planets: [{ per, tmid, ecc, omega [deg], inc [deg], Omega [deg, optional], mplanet [M_Jup] }] }
  *         times in any consistent system (the app uses days relative to data.tRef)
- * req:    { timing: [{ planet: index into system.planets, t: observed mid-transit times }],
+ * req:    { timing: [{ planet: index into system.planets, t: observed times, kind: 'transit' (default) | 'eclipse' }],
  *           rv:     [{ t: times }],
+ *           lc:     { t: times of the light curve, pad: half the longest exposure [d], sorted: true when t is ascending }
+ *                   -> `photo`, position tracks for the transit kernel (see makeTrack below),
+ *           photoStep [d] or nodesPerOrbit (default 150 per periastron period of the innermost planet): spacing of the track nodes,
+ *           ltt: true to apply the light-travel time across the system to the light curve and to the event times,
+ *           elements: 'mean' when per and tmid of the planets are the mean ephemeris of their simulated transits over
+ *                   the span of the data (osculatingFromMean below); meanTol, meanIter; warm: an object the caller keeps
+ *                   between calls, in which the last solution is stored as the starting point of the next,
  *           event: 'conjunction' (default here) | 'minsep',
  *           integrator, dt, stepsPerOrbit, corrector, exactSync, epsilon   (passed to simulate),
  *           pad: extra time simulated beyond the first and last datum, in periods of the longest orbit (default 0.6) }
  * Returns { ok, status, warnings,
- *           timing: [{ model: Float64Array (simulated mid-transit time nearest each observed one),
- *                      epoch: Int32Array (index of that transit counted from the first simulated one at or after
- *                             the start of the window; consecutive transits differ by 1),
- *                      miss: number of observed times with no simulated transit within half a period }],
+ *           timing: [{ model: Float64Array (simulated event nearest each observed one, as seen when ltt),
+ *                      epoch: Int32Array (index of that event counted from the first simulated one at or after
+ *                             the start of the window; consecutive events differ by 1),
+ *                      miss: number of observed times with no simulated event within half a period }],
  *           rv: [Float64Array m/s, positive = receding, no zero point],
+ *           photo: null | { position(p, t, out), transit(p, { rprs, ldLaw, ld }) -> flux(t), nodes, h },
+ *           osculating: null | [{ per, tmid }] (with elements: 'mean'), iterations (simulations spent finding them),
  *           sim: the simulate() result (transits of every planet, energy error, ...) }
- * ok is false when the integration failed, a close encounter invalidated the Wisdom-Holman map, or an observed
- * time has no simulated transit near it (the planet stopped transiting or left).
+ * ok is false when the integration failed, a close encounter invalidated the Wisdom-Holman map, an observed
+ * time has no simulated event near it (the planet stopped transiting or left), or the mean elements were not found.
  */
 export function dynamicalModel(system, req = {}) {
-  const sys = buildSystem(system), tim = req.timing || [], rvs = req.rv || [];
-  let lo = sys.epoch, hi = sys.epoch, pMax = 0;
-  for (let i = 1; i < sys.n; i++) pMax = Math.max(pMax, sys.per[i]);
-  for (const x of tim) for (let i = 0; i < x.t.length; i++) { if (x.t[i] < lo) lo = x.t[i]; if (x.t[i] > hi) hi = x.t[i]; }
-  let nrv = 0; for (const d of rvs) { nrv += d.t.length; for (let i = 0; i < d.t.length; i++) { if (d.t[i] < lo) lo = d.t[i]; if (d.t[i] > hi) hi = d.t[i]; } }
-  const pad = (req.pad ?? 0.6) * pMax, times = new Float64Array(nrv);
-  { let q = 0; for (const d of rvs) for (let i = 0; i < d.t.length; i++) times[q++] = d.t[i]; }
-  const sim = simulate(sys, {
-    tStart: lo < sys.epoch ? lo - pad : sys.epoch, tEnd: hi + pad, event: req.event || 'conjunction', times, transits: tim.length > 0,
-    integrator: req.integrator, dt: req.dt, stepsPerOrbit: req.stepsPerOrbit, corrector: req.corrector, exactSync: req.exactSync, epsilon: req.epsilon,
-  });
+  const tim = req.timing || [], rvs = req.rv || [], lc = req.lc && req.lc.t && req.lc.t.length ? req.lc : null;
+  const simOpt = { event: req.event || 'conjunction', integrator: req.integrator, dt: req.dt, stepsPerOrbit: req.stepsPerOrbit, corrector: req.corrector, exactSync: req.exactSync, epsilon: req.epsilon };
+  let sys = buildSystem(system);
+  if (lc && !(sys.rstarAU > 0)) throw new Error('Photodynamics needs the stellar radius (rstar, solar radii)');
+  // ---- the window: every datum, plus the exposure and light-travel margins of the light curve
+  let lo = sys.epoch, hi = sys.epoch, pMax = 0, rMax = 0, pPeri = Infinity;
+  for (let i = 1; i < sys.n; i++) { const e = sys.ecc[i]; pMax = Math.max(pMax, sys.per[i]); rMax = Math.max(rMax, sys.a[i] * (1 + e)); pPeri = Math.min(pPeri, (sys.per[i] * Math.pow(1 - e, 1.5)) / Math.sqrt(1 + e)); }
+  // days of light travel per unit of length of the outputs (stellar radii when rstar is given, else AU)
+  const kappa = req.ltt ? (sys.rstarAU > 0 ? sys.rstarAU : 1) * AU_LIGHT_DAYS : 0;
+  let dLo = Infinity, dHi = -Infinity;
+  for (const x of tim) for (let i = 0; i < x.t.length; i++) { if (x.t[i] < dLo) dLo = x.t[i]; if (x.t[i] > dHi) dHi = x.t[i]; }
+  let nrv = 0; for (const d of rvs) { nrv += d.t.length; for (let i = 0; i < d.t.length; i++) { if (d.t[i] < dLo) dLo = d.t[i]; if (d.t[i] > dHi) dHi = d.t[i]; } }
+  let lcT = null, lcPad = 0, hNode = 0, clusters = null, nNode = 0;
+  if (lc) {
+    lcT = lc.t; if (!lc.sorted) lcT = Float64Array.from(lcT).sort();
+    hNode = req.photoStep > 0 ? req.photoStep : pPeri / (req.nodesPerOrbit || 150);
+    lcPad = (lc.pad || 0) + (req.ltt ? 1.05 * rMax * AU_LIGHT_DAYS : 0) + 1e-9;
+    if (lcT[0] - lcPad < dLo) dLo = lcT[0] - lcPad; if (lcT[lcT.length - 1] + lcPad > dHi) dHi = lcT[lcT.length - 1] + lcPad;
+  }
+  if (dLo < lo) lo = dLo; if (dHi > hi) hi = dHi;
+  const pad = (req.pad ?? 0.6) * pMax, tStart = lo < sys.epoch ? lo - pad : sys.epoch, tEnd = hi + pad;
+
+  // ---- per and tmid given as the mean ephemeris of the simulated transits: find the osculating elements that produce it
+  let osculating = null, iterations = 0, meanSim = null;
+  if (req.elements === 'mean') {
+    const r = osculatingFromMean(system, { ...simOpt, tStart, tEnd, lo: dLo <= dHi ? dLo : lo, hi: dLo <= dHi ? dHi : hi, kappa, tol: req.meanTol, maxIter: req.meanIter, start: req.warm ? req.warm.offset : null });
+    iterations = r.iterations; meanSim = r.ok ? r.sim : null;
+    if (req.warm && r.ok) req.warm.offset = r.offset;
+    if (!r.ok) return { ok: false, status: r.status, warnings: r.warnings, timing: [], rv: [], photo: null, sim: r.sim, osculating: r.osculating, iterations };
+    system = r.system; osculating = r.osculating; sys = buildSystem(system);
+  }
+
+  // ---- output times: the velocities, then the nodes of the position tracks
+  if (lc) { clusters = trackClusters(lcT, lcPad, hNode); nNode = clusters.total; }
+  const times = new Float64Array(nrv + nNode);
+  { let q = 0; for (const d of rvs) for (let i = 0; i < d.t.length; i++) times[q++] = d.t[i]; if (lc) for (const c of clusters.list) for (let i = 0; i < c.n; i++) times[q++] = c.t0 + i * hNode; }
+  const wantEc = tim.some((x) => x.kind === 'eclipse'), wantTr = tim.some((x) => x.kind !== 'eclipse');
+  // with mean elements and nothing but mid-transit times wanted, the last simulation of the iteration is the model
+  const sim = meanSim && !wantEc && !times.length ? meanSim : simulate(sys, { ...simOpt, tStart, tEnd, times, transits: wantTr, eclipses: wantEc, positions: !!lc, velocities: !!lc });
   let ok = sim.ok;
   const timing = tim.map((x) => {
-    const tr = sim.transits[x.planet] || { n: 0, t: [] }, P = system.planets[x.planet].per, N = x.t.length;
+    const tr = (x.kind === 'eclipse' ? sim.eclipses : sim.transits)[x.planet] || { n: 0, t: [] }, P = system.planets[x.planet].per, N = x.t.length;
+    // light-travel time: the event is seen at t - ltt / c
+    const tt = kappa ? Float64Array.from(tr.t, (t, j) => t - kappa * tr.ltt[j]) : tr.t;
     const model = new Float64Array(N), epoch = new Int32Array(N); let miss = 0;
     for (let i = 0; i < N; i++) {
-      // nearest simulated transit by bisection
+      // nearest simulated event by bisection
       let a = 0, b = tr.n - 1;
       if (b < 0) { model[i] = NaN; miss++; continue; }
-      while (b - a > 1) { const c = (a + b) >> 1; if (tr.t[c] <= x.t[i]) a = c; else b = c; }
-      const j = Math.abs(tr.t[a] - x.t[i]) <= Math.abs(tr.t[b] - x.t[i]) ? a : b;
-      model[i] = tr.t[j]; epoch[i] = j;
-      if (!(Math.abs(tr.t[j] - x.t[i]) < 0.5 * P)) miss++;
+      while (b - a > 1) { const c = (a + b) >> 1; if (tt[c] <= x.t[i]) a = c; else b = c; }
+      const j = Math.abs(tt[a] - x.t[i]) <= Math.abs(tt[b] - x.t[i]) ? a : b;
+      model[i] = tt[j]; epoch[i] = j;
+      if (!(Math.abs(tt[j] - x.t[i]) < 0.5 * P)) miss++;
     }
     if (miss) ok = false;
     return { model, epoch, miss };
   });
   const rv = []; { let q = 0; for (const d of rvs) { rv.push(sim.rv.slice(q, q + d.t.length)); q += d.t.length; } }
-  return { ok, status: sim.status, warnings: sim.warnings, timing, rv, sim };
+  const photo = lc && sim.samples ? makeTrack(sim.samples, clusters, hNode, nrv, kappa) : null;
+  return { ok, status: sim.status, warnings: sim.warnings, timing, rv, photo, sim, osculating, iterations };
+}
+
+// ------------------------------------------------------------------------------------------------------------
+// Photodynamics: positions on the sky from the integration, for the transit kernel of transit.js
+// ------------------------------------------------------------------------------------------------------------
+
+/** Light-travel time across one astronomical unit, in days (499.005 s). */
+export const AU_LIGHT_DAYS = C.AU / 299792458 / C.day;
+
+/**
+ * Runs of evenly spaced nodes (spacing h) that cover [t - pad, t + pad] of every time in the sorted array t.
+ * Intervals closer than two spacings are joined. Returns { list: [{ t0, t1, n, off }], total }.
+ */
+function trackClusters(t, pad, h) {
+  const list = []; let a = t[0] - pad, b = t[0] + pad, total = 0;
+  const close = () => { const n = Math.max(2, Math.ceil((b - a) / h) + 1); list.push({ t0: a, t1: a + (n - 1) * h, n, off: total }); total += n; };
+  for (let i = 1; i < t.length; i++) {
+    const l = t[i] - pad, r = t[i] + pad;
+    if (l <= b + 2 * h) { if (r > b) b = r; } else { close(); a = l; b = r; }
+  }
+  close();
+  return { list, total };
+}
+
+/**
+ * Position tracks: cubic Hermite interpolation of every body's position between the nodes of the integration
+ * (positions and velocities there). The error is  h^4 |d4x/dt4| / 384 : for a circular orbit a (2 pi h / P)^4 / 384,
+ * 8e-9 of the orbit's radius at the default of 150 nodes per (periastron) period of the innermost planet.
+ *
+ * Returns {
+ *   h, nodes (count), clusters,
+ *   position(p, t, out)       sky position of planet p (index into system.planets) relative to the star at the
+ *                             observer's time t: out = [X, Y, Z] in stellar radii, Z > 0 in front. false when t
+ *                             is outside the tracks.
+ *   transit(p, { rprs, ldLaw, ld })   flux(t) of the star with planet p in front of it: 1 - blockedFraction(d, rprs)
+ *                             of transit.js. Planets are treated one at a time: where two planets overlap on the
+ *                             disc the area they share is counted twice (mutual events are not modelled).
+ * }
+ * Light-travel time (kappa > 0, days per stellar radius): light that reaches the observer at t (time referred to the
+ * plane through the barycentre perpendicular to the line of sight) left a body at  t' = t + Z(t') / c. The planet is
+ * placed at t + Z_p(t) / c and the star at t + Z_s(t) / c (one fixed-point step; the neglected term is of order
+ * (v_z / c) times the delay: under a millisecond for planets). A transit is then seen about a/c before the geometric one.
+ */
+function makeTrack(samples, clusters, h, off, kappa) {
+  const cl = clusters.list, nb = samples.x.length, total = clusters.total, n3 = 3 * total;
+  // per body: positions and h * velocities at the nodes; without light-travel time, relative to the star
+  const P = [], Q = [];
+  for (let b = 0; b < nb; b++) {
+    const x = samples.x[b].subarray(3 * off, 3 * off + n3), v = samples.v[b].subarray(3 * off, 3 * off + n3), p = new Float64Array(n3), q = new Float64Array(n3);
+    if (kappa || b === 0) for (let k = 0; k < n3; k++) { p[k] = x[k]; q[k] = h * v[k]; }
+    else { const xs = samples.x[0].subarray(3 * off, 3 * off + n3), vs = samples.v[0].subarray(3 * off, 3 * off + n3); for (let k = 0; k < n3; k++) { p[k] = x[k] - xs[k]; q[k] = h * (v[k] - vs[k]); } }
+    P.push(p); Q.push(q);
+  }
+  let cur = 0, j = 0, h00 = 0, h10 = 0, h01 = 0, h11 = 0;
+  /** Find the segment of time t and the four Hermite weights. */
+  const locate = (t) => {
+    let c = cl[cur];
+    if (!(t >= c.t0 && t <= c.t1)) {
+      let a = 0, b = cl.length - 1;
+      while (a < b) { const m = (a + b + 1) >> 1; if (cl[m].t0 <= t) a = m; else b = m - 1; }
+      c = cl[a];
+      if (!(t >= c.t0 - 1e-9 && t <= c.t1 + 1e-9)) return false;
+      cur = a;
+    }
+    const u = (t - c.t0) / h; let i = Math.floor(u); if (i > c.n - 2) i = c.n - 2; if (i < 0) i = 0;
+    const s = u - i, s1 = 1 - s;
+    h00 = (1 + 2 * s) * s1 * s1; h10 = s * s1 * s1; h01 = s * s * (3 - 2 * s); h11 = -s * s * s1;
+    j = 3 * (c.off + i);
+    return true;
+  };
+  const at = (b, k) => h00 * P[b][j + k] + h10 * Q[b][j + k] + h01 * P[b][j + 3 + k] + h11 * Q[b][j + 3 + k];
+  const position = (p, t, out) => {
+    const b = p + 1;
+    if (!locate(t)) return false;
+    if (!kappa) { out[0] = at(b, 0); out[1] = at(b, 1); out[2] = at(b, 2); return true; }
+    const zs = at(0, 2), zp = at(b, 2);
+    if (!locate(t + kappa * zs)) return false;
+    const xs = at(0, 0), ys = at(0, 1);
+    if (!locate(t + kappa * zp)) return false;
+    out[0] = at(b, 0) - xs; out[1] = at(b, 1) - ys; out[2] = zp - zs;
+    return true;
+  };
+  const transit = (p, par) => {
+    const ld = prepareLD(toClaret(par.ldLaw || 'nonlinear', par.ld || [0, 0, 0, 0])), k = Math.abs(par.rprs), lim = (1 + k) * (1 + k), o = [0, 0, 0];
+    return (t) => {
+      if (!position(p, t, o) || !(o[2] > 0)) return 1;
+      const d2 = o[0] * o[0] + o[1] * o[1];
+      if (d2 >= lim) return 1;
+      return 1 - blockedFraction(Math.sqrt(d2), k, ld);
+    };
+  };
+  return { h, nodes: total, clusters: cl, position, transit };
+}
+
+/**
+ * Osculating period and conjunction time of each planet such that the straight line through its simulated
+ * mid-transit times is the given one.
+ *
+ * `per` and `tmid` of every planet in `system` are read as that line (the mean, "observed" ephemeris): with E the
+ * whole number of orbits from tmid, the least-squares line  A + B E  through the planet's simulated times between
+ * opt.lo and opt.hi (the span of the data) has A = tmid and B = per. Found by iteration, one simulation of transit
+ * times each: the osculating tmid and per are first corrected by (tmid - A) and (per - B), then by Broyden's method
+ * (a secant update of that unit Jacobian), until the line is matched to opt.tol (default 2e-7 d, 0.02 s, anywhere in
+ * the span). Typically 4 to 7 simulations (the first guess is off by the difference between mean and osculating
+ * period times the number of orbits in the span, and the timing variations respond non-linearly to that); inside a
+ * mean-motion resonance, where the mean period hardly depends on the osculating one, it may not converge (ok: false,
+ * and the likelihood rejects the point). A planet with fewer than three transits in the span keeps its
+ * values as osculating elements. ecc, omega, inc and the masses are osculating in both descriptions.
+ *
+ * Why: the osculating period of a planet near a resonance differs from its mean period by a part in a thousand,
+ * by an amount that depends on the companion's mass and phase. A sampler that moves the companion then has to
+ * move the planet's period and T0 with it along a curved ridge a few parts in a million wide; in these parameters
+ * the ridge is straight and the planet's ephemeris is nearly uncorrelated with the companion.
+ *
+ * opt: { tStart, tEnd, lo, hi, kappa (light-travel days per length unit, 0 for none), tol, maxIter (default 12),
+ *        start: [{ per, tmid }] offsets (osculating - mean) of a nearby solution to start from (the `offset` returned),
+ *        event, integrator, dt, stepsPerOrbit, corrector, exactSync, epsilon }
+ * Returns { ok, status, warnings, system (a copy with osculating per and tmid), osculating: [{ per, tmid }], offset,
+ *           iterations, residual (days: how far the simulated line is from the wanted one), sim (the transit-only
+ *           simulation of exactly these elements) }.
+ */
+export function osculatingFromMean(system, opt = {}) {
+  if (opt.start && opt.start.length === system.planets.length) {
+    // warm start from the offsets (osculating - mean) of an earlier, nearby solution; from scratch when that fails
+    const r = osculatingFromMean({ ...system, planets: system.planets.map((q) => ({ ...q })) }, { ...opt, start: null, _offset: opt.start });
+    if (r.ok) return r;
+    const c = osculatingFromMean(system, { ...opt, start: null }); c.iterations += r.iterations; return c;
+  }
+  const pl = system.planets.map((q, i) => (opt._offset ? { ...q, per: q.per + opt._offset[i].per, tmid: q.tmid + opt._offset[i].tmid } : { ...q })), cur = { ...system, planets: pl }, np = pl.length;
+  const tol = opt.tol > 0 ? opt.tol : 2e-7, maxIter = opt.maxIter || 12, kappa = opt.kappa || 0;
+  const so = { tStart: opt.tStart, tEnd: opt.tEnd, event: opt.event || 'conjunction', integrator: opt.integrator, dt: opt.dt, stepsPerOrbit: opt.stepsPerOrbit, corrector: opt.corrector, exactSync: opt.exactSync, epsilon: opt.epsilon };
+  let sim = null, resid = Infinity, it = 0;
+  const out = (ok, status, warnings) => ({ ok, status, warnings, system: cur, osculating: pl.map((q) => ({ per: q.per, tmid: q.tmid })),
+    offset: pl.map((q, i) => ({ per: q.per - system.planets[i].per, tmid: q.tmid - system.planets[i].tmid })), iterations: it, residual: resid, sim });
+  // unknowns x = (tmid, per * L) of every planet, residuals F = (A - tmid, (B - per) * L) with L the longest lever arm in
+  // orbits, so that everything is in days. Broyden's method from the unit Jacobian: the first step is the plain correction.
+  const D = 2 * np, F = new Float64Array(D), Fp = new Float64Array(D), dx = new Float64Array(D), H = new Float64Array(D * D), L = new Float64Array(np), act = new Uint8Array(np);
+  for (let i = 0; i < D; i++) H[i * D + i] = 1;
+  const u = new Float64Array(D), w = new Float64Array(D);
+  for (; it < maxIter;) {
+    let sys; try { sys = buildSystem(cur); } catch (err) { return out(false, 'unbound', [String(err.message || err)]); }
+    sim = simulate(sys, so); it++;
+    if (!sim.ok) return out(false, sim.status, sim.warnings);
+    resid = 0; Fp.set(F);
+    for (let p = 0; p < np; p++) {
+      const tr = sim.transits[p], Tm = system.planets[p].tmid, Pm = system.planets[p].per;
+      // transits are numbered consecutively from the one nearest the wanted tmid (not by rounding against the wanted line:
+      // before convergence the simulated period can be off by more than half an orbit over the span)
+      let k0 = 0; for (let k = 1; k < tr.n; k++) if (Math.abs(tr.t[k] - Tm) < Math.abs(tr.t[k0] - Tm)) k0 = k;
+      let n = 0, sE = 0, sEE = 0, sT = 0, sET = 0;
+      for (let k = 0; k < tr.n; k++) {
+        const t = kappa ? tr.t[k] - kappa * tr.ltt[k] : tr.t[k];
+        if (t < opt.lo - 0.5 * Pm || t > opt.hi + 0.5 * Pm) continue;
+        const E = k - k0, y = t - Tm - E * Pm;                             // residual from the wanted line
+        n++; sE += E; sEE += E * E; sT += y; sET += E * y;
+      }
+      if (n < 3) { if (act[p]) return out(false, 'not converged', ['A planet stopped having three transits in the span of the data.']); F[2 * p] = 0; F[2 * p + 1] = 0; continue; }
+      if (it === 1) { act[p] = 1; L[p] = Math.max(1, Math.abs((opt.lo - Tm) / Pm), Math.abs((opt.hi - Tm) / Pm)); }
+      else if (!act[p]) { F[2 * p] = 0; F[2 * p + 1] = 0; continue; }
+      const det = n * sEE - sE * sE, dA = (sEE * sT - sE * sET) / det, dB = (n * sET - sE * sT) / det;
+      F[2 * p] = dA; F[2 * p + 1] = dB * L[p];
+      resid = Math.max(resid, Math.abs(dA) + Math.abs(dB) * L[p]);
+    }
+    if (opt.trace) opt.trace.push(resid);
+    if (resid < tol) return out(true, 'ok', sim.warnings);             // `sim` is the simulation of the elements returned
+    if (it > 1) {
+      // H += (s - H y) (s^T H) / (s^T H y),  s = the last step, y = the change of F
+      let den = 0;
+      for (let i = 0; i < D; i++) { let hy = 0, sh = 0; for (let j = 0; j < D; j++) { hy += H[i * D + j] * (F[j] - Fp[j]); sh += dx[j] * H[j * D + i]; } u[i] = dx[i] - hy; w[i] = sh; }
+      for (let i = 0; i < D; i++) { let hy = 0; for (let j = 0; j < D; j++) hy += H[i * D + j] * (F[j] - Fp[j]); den += dx[i] * hy; }
+      if (Math.abs(den) > 1e-300) for (let i = 0; i < D; i++) for (let j = 0; j < D; j++) H[i * D + j] += (u[i] * w[j]) / den;
+    }
+    for (let i = 0; i < D; i++) { let h = 0; for (let j = 0; j < D; j++) h += H[i * D + j] * F[j]; dx[i] = -h; }
+    for (let p = 0; p < np; p++) if (act[p]) {
+      pl[p].tmid += dx[2 * p]; pl[p].per += dx[2 * p + 1] / L[p];
+      if (!(pl[p].per > 0)) return out(false, 'not converged', ['The mean ephemeris could not be turned into an orbit.']);
+    }
+  }
+  return out(false, 'not converged', [`The osculating elements for the given mean ephemeris were not found in ${maxIter} iterations (last correction ${(resid * 86400).toFixed(2)} s).`]);
 }
 
 /**
@@ -1046,10 +1323,148 @@ export function amdCritical(alpha, gamma) {
 }
 
 /**
+ * MEGNO, the Mean Exponential Growth factor of Nearby Orbits (Cincotta & Simo 2000; Cincotta, Giordano & Simo 2003):
+ * a chaos indicator from the variational equations. With delta the displacement in phase space (positions and
+ * velocities of every body) of an infinitesimally close orbit,
+ *     Y(t) = (2 / t) int_0^t (delta . d delta/dt) / (delta . delta) s ds,      <Y>(t) = (1 / t) int_0^t Y(s) ds.
+ * <Y> tends to 2 for quasi-periodic (regular) motion and grows as lambda t / 2 for chaotic motion with Lyapunov
+ * exponent lambda. Which it is shows within a few hundred to a few thousand orbits, long before any planet is lost.
+ *
+ * The orbit and the variational equations  d2 delta_i/dt2 = sum_j G m_j [ D/r^3 - 3 (r . D) r / r^5 ],  r = x_j - x_i,
+ * D = delta_j - delta_i, are integrated together with the 15th-order Gauss-Radau scheme of IAS15 (step controlled by
+ * the orbit only, as in REBOUND). The initial displacement is a random direction (opt.seed). The displacement
+ * carries no shift or drift of the centre of mass. Y is integrated with the Gauss-Radau rule on the nodes of each step,
+ * and the Lyapunov exponent is the least-squares slope of Y(t), as in REBOUND.
+ *
+ * p: as in buildSystem, or a system from buildSystem. opt: { orbits (of the outermost planet, default 1000) or days,
+ *    seed (default 1), epsilon (default 1e-9), threshold (default 0.5), stopAbove (default 20: stop as soon as <Y> exceeds
+ *    it after 20 outer orbits, the answer is then known; 0 to run to the end), maxSteps (default 400 per inner orbit) }.
+ * Returns { megno (<Y> at the end), lyapunov [1/d] (slope of Y; about 0 when regular), lyapunovTime [d] (1 / lyapunov
+ *           when chaotic, else Infinity), chaotic (megno > 2 + threshold, or the integration stopped early), threshold (default 0.5),
+ *           days, orbits (those integrated), steps, stopped (true when stopAbove ended it), ok (false when the integration
+ *           failed: an escape, or close encounters that collapse the step; megno is then that of the part integrated and
+ *           chaotic is true), status, energyErr, seconds }.
+ * The value for a chaotic orbit depends on the initial displacement and on rounding (two seeds give 225 and 394 in
+ * REBOUND for the same system): only "about 2" against "much more than 2" is meaningful.
+ */
+export function megno(p, opt = {}) {
+  const t00 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const sys = p && p.x && p.m ? p : buildSystem(p), n = sys.n, n3 = 3 * n, N = 2 * n3, m = sys.m;
+  let pMax = 0, pMin = Infinity; for (let i = 1; i < n; i++) { pMax = Math.max(pMax, sys.per[i]); pMin = Math.min(pMin, sys.per[i]); }
+  const days = opt.days > 0 ? opt.days : (opt.orbits || 1000) * pMax, eps = opt.epsilon || 1e-9, threshold = opt.threshold ?? 0.5;
+  const maxSteps = opt.maxSteps || Math.max(2e5, (400 * days) / pMin), stopAbove = opt.stopAbove ?? 20;
+  // state: [x (3n), delta (3n)] and the same for velocities
+  const x0 = new Float64Array(N), v0 = new Float64Array(N), a0 = new Float64Array(N), at = new Float64Array(N), xt = new Float64Array(N), cx = new Float64Array(N), cv = new Float64Array(N);
+  const g = new Float64Array(7 * N), b = new Float64Array(7 * N), e = new Float64Array(7 * N), br = new Float64Array(7 * N), er = new Float64Array(7 * N);
+  x0.set(sys.x); v0.set(sys.v);
+  { // random unit displacement (mulberry32, Box-Muller)
+    let sd = (opt.seed ?? 1) >>> 0; const rnd = () => { sd = (sd + 0x6D2B79F5) >>> 0; let z = sd; z = Math.imul(z ^ (z >>> 15), z | 1); z ^= z + Math.imul(z ^ (z >>> 7), z | 61); return ((z ^ (z >>> 14)) >>> 0) / 4294967296; };
+    const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-300)) * Math.cos(TWO_PI * rnd());
+    let s2 = 0; for (let q = n3; q < N; q++) { x0[q] = gauss(); v0[q] = gauss(); s2 += x0[q] * x0[q] + v0[q] * v0[q]; }
+    // no displacement of the centre of mass: that direction only adds a uniform drift  t * V_cm  to every body, which makes
+    // |delta| swing within each orbit and the integrand oscillate with an amplitude that grows with time
+    let mt = 0; for (let i = 0; i < n; i++) mt += m[i];
+    for (let c = 0; c < 3; c++) { let sx = 0, sv = 0; for (let i = 0; i < n; i++) { sx += m[i] * x0[n3 + 3 * i + c]; sv += m[i] * v0[n3 + 3 * i + c]; } for (let i = 0; i < n; i++) { x0[n3 + 3 * i + c] -= sx / mt; v0[n3 + 3 * i + c] -= sv / mt; } }
+    s2 = 0; for (let q = n3; q < N; q++) s2 += x0[q] * x0[q] + v0[q] * v0[q];
+    const f = 1 / Math.sqrt(s2); for (let q = n3; q < N; q++) { x0[q] *= f; v0[q] *= f; }
+  }
+  const acc = (X, A) => {
+    for (let k = 0; k < N; k++) A[k] = 0;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const ki = 3 * i, kj = 3 * j, dx = X[kj] - X[ki], dy = X[kj + 1] - X[ki + 1], dz = X[kj + 2] - X[ki + 2];
+      const Dx = X[n3 + kj] - X[n3 + ki], Dy = X[n3 + kj + 1] - X[n3 + ki + 1], Dz = X[n3 + kj + 2] - X[n3 + ki + 2];
+      const r2 = dx * dx + dy * dy + dz * dz, w = G / (r2 * Math.sqrt(r2)), wi = w * m[j], wj = w * m[i], c = (3 * (dx * Dx + dy * Dy + dz * Dz)) / r2;
+      A[ki] += wi * dx; A[ki + 1] += wi * dy; A[ki + 2] += wi * dz; A[kj] -= wj * dx; A[kj + 1] -= wj * dy; A[kj + 2] -= wj * dz;
+      const ux = Dx - c * dx, uy = Dy - c * dy, uz = Dz - c * dz;
+      A[n3 + ki] += wi * ux; A[n3 + ki + 1] += wi * uy; A[n3 + ki + 2] += wi * uz; A[n3 + kj] -= wj * ux; A[n3 + kj + 1] -= wj * uy; A[n3 + kj + 2] -= wj * uz;
+    }
+  };
+  const e0 = energy(n, m, sys.x, sys.v);
+  let t = 0, dt = Math.min(pMin / 50, days), dtLast = 0, steps = 0, status = 'ok', stopped = false;
+  let Ys = 0, Yss = 0, Yprev = NaN, nY = 0, mY = 0, mT = 0, covYT = 0, varT = 0;
+  const ratio = new Float64Array(8);                                // (delta . d delta/dt) / (delta . delta) at the nodes of a step
+  // the linear variational part may be rescaled at any time: every array of the scheme is linear in it
+  const rescale = (f) => { for (let q = n3; q < N; q++) { x0[q] *= f; v0[q] *= f; a0[q] *= f; cx[q] *= f; cv[q] *= f; for (let k = 0; k < 7; k++) { const z = k * N + q; g[z] *= f; b[z] *= f; e[z] *= f; br[z] *= f; er[z] *= f; } } };
+  while (days - t > 1e-13 * days) {
+    if (steps >= maxSteps) { status = 'close encounter'; break; }      // the step has collapsed: bodies keep meeting
+    if (t + dt > days) dt = days - t;
+    acc(x0, a0);
+    { let dd = 0, d2 = 0; for (let q = n3; q < N; q++) { dd += x0[q] * v0[q] + v0[q] * a0[q]; d2 += x0[q] * x0[q] + v0[q] * v0[q]; } ratio[0] = dd / d2; }
+    for (let q = 0; q < N; q++) for (let k = 6; k >= 0; k--) { let s = b[k * N + q]; for (let l = k + 1; l < 7; l++) s -= GR_C[l][k] * g[l * N + q]; g[k * N + q] = s; }
+    let pcErr = 1e300, pcLast = 2, iter = 0, maxA = 0, maxB = 0, maxAv = 0, maxBv = 0;
+    for (;;) {
+      if (pcErr < 1e-16 || (iter > 2 && pcLast <= pcErr) || iter >= 12) break;
+      pcLast = pcErr; iter++; maxA = 0; maxB = 0; maxAv = 0; maxBv = 0;
+      for (let nn = 1; nn < 8; nn++) {
+        const hh = GR_H[nn], s = dt * hh;
+        for (let q = 0; q < N; q++) {
+          const b0 = b[q], b1 = b[N + q], b2 = b[2 * N + q], b3 = b[3 * N + q], b4 = b[4 * N + q], b5 = b[5 * N + q], b6 = b[6 * N + q];
+          xt[q] = x0[q] + s * (v0[q] + s * (a0[q] / 2 + hh * (b0 / 6 + hh * (b1 / 12 + hh * (b2 / 20 + hh * (b3 / 30 + hh * (b4 / 42 + hh * (b5 / 56 + hh * b6 / 72))))))));
+        }
+        acc(xt, at);
+        { // the MEGNO integrand at this node (the last iteration's values are kept)
+          let dd = 0, d2 = 0;
+          for (let q = n3; q < N; q++) {
+            const b0 = b[q], b1 = b[N + q], b2 = b[2 * N + q], b3 = b[3 * N + q], b4 = b[4 * N + q], b5 = b[5 * N + q], b6 = b[6 * N + q];
+            const vq = v0[q] + s * (a0[q] + hh * (b0 / 2 + hh * (b1 / 3 + hh * (b2 / 4 + hh * (b3 / 5 + hh * (b4 / 6 + hh * (b5 / 7 + hh * b6 / 8)))))));
+            dd += xt[q] * vq + vq * at[q]; d2 += xt[q] * xt[q] + vq * vq;
+          }
+          ratio[nn] = dd / d2;
+        }
+        const kq = (nn - 1) * N, Ck = GR_C[nn - 1];
+        for (let q = 0; q < N; q++) {
+          let val = (at[q] - a0[q]) / hh;
+          for (let l = 1; l < nn; l++) val = (val - g[(l - 1) * N + q]) / (hh - GR_H[l]);
+          const tmp = val - g[kq + q]; g[kq + q] = val;
+          for (let j = 0; j < nn; j++) b[j * N + q] += tmp * Ck[j];
+          if (nn === 7) { const ab = Math.abs(tmp), aa = Math.abs(at[q]); if (q < n3) { if (ab > maxB) maxB = ab; if (aa > maxA) maxA = aa; } else { if (ab > maxBv) maxBv = ab; if (aa > maxAv) maxAv = aa; } }
+        }
+      }
+      // converged when both the orbit and the variations are (each against its own largest acceleration)
+      pcErr = Math.max(maxB / maxA, maxAv > 0 ? maxBv / maxAv : 0);
+    }
+    let mA = 0, mB6 = 0; for (let q = 0; q < n3; q++) { const aa = Math.abs(at[q]), bb = Math.abs(b[6 * N + q]); if (aa > mA) mA = aa; if (bb > mB6) mB6 = bb; }
+    const err = mB6 / mA, dtDone = dt;
+    let dtNew = err > 0 && Number.isFinite(err) ? Math.pow(eps / err, 1 / 7) * dtDone : dtDone * 4;
+    if (!Number.isFinite(dtNew) || !(mA < Infinity)) { status = 'unbound'; break; }
+    if (dtNew / dtDone < 0.25) { dt = dtNew; if (dtLast !== 0) predict(dt / dtLast, er, br, e, b, N); if (!(dt > 1e-12 * pMin)) { status = 'close encounter'; break; } continue; }
+    if (dtNew / dtDone > 4) dtNew = dtDone * 4;
+    // advance (compensated summation)
+    const s = dtDone;
+    for (let q = 0; q < N; q++) {
+      const b0 = b[q], b1 = b[N + q], b2 = b[2 * N + q], b3 = b[3 * N + q], b4 = b[4 * N + q], b5 = b[5 * N + q], b6 = b[6 * N + q];
+      const dxq = s * (v0[q] + s * (a0[q] / 2 + b0 / 6 + b1 / 12 + b2 / 20 + b3 / 30 + b4 / 42 + b5 / 56 + b6 / 72));
+      const dvq = s * (a0[q] + b0 / 2 + b1 / 3 + b2 / 4 + b3 / 5 + b4 / 6 + b5 / 7 + b6 / 8);
+      let y = dxq - cx[q], z = x0[q] + y; cx[q] = (z - x0[q]) - y; x0[q] = z;
+      y = dvq - cv[q]; z = v0[q] + y; cv[q] = (z - v0[q]) - y; v0[q] = z;
+    }
+    t += dtDone; steps++; dtLast = dtDone;
+    er.set(e); br.set(b); dt = dtNew; predict(dt / dtDone, er, br, e, b, N);
+    // MEGNO: the integrand 2 s (delta . d delta/dt) / (delta . delta) oscillates within every orbit with an amplitude that
+    // grows with time, so it is integrated with the Gauss-Radau rule on the nodes of the step (a sum over step ends, as
+    // REBOUND does, drifts away from 2 for regular orbits when the step varies along the orbit); <Y> by the trapezoid rule
+    { let sum = 0; for (let k = 0; k < 8; k++) sum += GR_W[k] * 2 * (t - dtDone + GR_H[k] * dtDone) * ratio[k]; Ys += dtDone * sum; }
+    const Y = Ys / t; Yss += 0.5 * (Y + (nY ? Yprev : Y)) * dtDone; Yprev = Y;
+    let d2 = 0; for (let q = n3; q < N; q++) d2 += x0[q] * x0[q] + v0[q] * v0[q];
+    if (!Number.isFinite(d2) || !Number.isFinite(x0[0])) { status = 'unbound'; break; }
+    nY++; const dT = t - mT, dY = Y - mY; mT += dT / nY; mY += dY / nY; covYT += dT * (Y - mY); varT += dT * (t - mT);
+    if (d2 > 1e60) rescale(1 / Math.sqrt(d2));
+    let far = false; for (let i = 1; i < n; i++) { const k = 3 * i, r2 = (x0[k] - x0[0]) ** 2 + (x0[k + 1] - x0[1]) ** 2 + (x0[k + 2] - x0[2]) ** 2; if (r2 > 1e4 * sys.a[n - 1] * sys.a[n - 1]) far = true; }
+    if (far) { status = 'unbound'; break; }
+    if (stopAbove > 0 && Yss / t > stopAbove && t > 20 * pMax) { stopped = true; break; }
+  }
+  const val = t > 0 ? Yss / t : NaN, lyap = varT > 0 ? covYT / varT : 0, ok = status === 'ok', chaotic = !ok || val > 2 + threshold;
+  const eF = energy(n, m, x0.subarray(0, n3), v0.subarray(0, n3));
+  return { megno: val, lyapunov: lyap, lyapunovTime: chaotic && lyap > 0 ? 1 / lyap : Infinity, chaotic, threshold, days: t, orbits: t / pMax, steps, ok, status, stopped,
+    energyErr: e0 !== 0 ? Math.abs((eF - e0) / e0) : 0, seconds: ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t00) / 1000 };
+}
+
+/**
  * Stability checks that need no integration, plus (opt.integrate) a short monitored one.
  * p: as in buildSystem. opt: { integrate: number of orbits of the outermost planet to integrate (default 0: none),
  *                              stepsPerOrbit (default 30), shadow: true (default) also integrate a copy displaced by
- *                              1e-10 and report how fast the two diverge }
+ *                              1e-10 and report how fast the two diverge, megno: true (default) also compute MEGNO over
+ *                              the same span, seed }
  * Returns {
  *   pairs: [{ inner, outer (indices into p.planets), periodRatio, deltaHill (separation in mutual Hill radii),
  *             hillStable (deltaHill > 2 sqrt(3), Gladman 1993: two planets on circular coplanar orbits can never
@@ -1060,7 +1475,8 @@ export function amdCritical(alpha, gamma) {
  *   chambers: smallest deltaHill when there are three or more planets (Chambers et al. 1996: below about 10 such
  *             systems go unstable within about 1e8 orbits),
  *   integration: null | { orbits, days, ok, status, energyErr, minSepHill, divergence (growth factor of the
- *                         displacement), chaotic (grew far faster than the shear of regular orbits), seconds },
+ *                         displacement), megno (see megno(); null with opt.megno: false), megnoOrbits, megnoStopped, lyapunovTime [d],
+ *                         chaotic (MEGNO above 2.5, or the displaced copy grew far faster than the shear of regular orbits), seconds },
  *   stable: true | false | null   (null: the criteria do not decide),
  *   findings: [strings]   plain-language statements, most important first
  * }
@@ -1098,7 +1514,7 @@ export function stabilityReport(p, opt = {}) {
     let pMax = 0; for (let i = 1; i < n; i++) pMax = Math.max(pMax, sys.per[i]);
     const days = opt.integrate * pMax, so = { tEnd: sys.epoch + days, transits: false, stepsPerOrbit: opt.stepsPerOrbit || 30 };
     const r = simulate(sys, so);
-    integration = { orbits: opt.integrate, days, ok: r.ok, status: r.status, energyErr: r.energy.maxRelErr, minSepHill: r.minSepHill, divergence: null, chaotic: null, seconds: r.seconds };
+    integration = { orbits: opt.integrate, days, ok: r.ok, status: r.status, energyErr: r.energy.maxRelErr, minSepHill: r.minSepHill, divergence: null, chaotic: null, megno: null, lyapunovTime: null, seconds: r.seconds };
     if (r.ok && opt.shadow !== false) {
       const s2 = { ...sys, x: Float64Array.from(sys.x), v: Float64Array.from(sys.v) }, d0 = 1e-10 * sys.a[1];
       s2.x[3] += d0;
@@ -1109,6 +1525,12 @@ export function stabilityReport(p, opt = {}) {
         const growth = Math.sqrt(d) / d0, shear = Math.max(1, (3 * Math.PI * days) / pMin) * Math.max(1, sys.a[n - 1] / sys.a[1]);
         integration.divergence = growth; integration.chaotic = growth > 1e3 * shear; integration.seconds += r2.seconds;
       }
+    }
+    if (opt.megno !== false) {
+      // MEGNO over the same span (variational equations, IAS15, which also handles the close encounters the map cannot): 2 for regular motion
+      const mg = megno(sys, { days, seed: opt.seed });
+      integration.megno = mg.megno; integration.megnoOrbits = mg.orbits; integration.megnoStopped = mg.stopped; integration.lyapunovTime = mg.lyapunovTime; integration.seconds += mg.seconds;
+      if (mg.chaotic) integration.chaotic = true; else if (integration.chaotic === null && r.ok) integration.chaotic = false;
     }
   }
 
@@ -1124,8 +1546,11 @@ export function stabilityReport(p, opt = {}) {
   for (const q of pairs) if (Math.abs(q.resonance.delta) < 0.002) findings.push(`${letter(sys.slot[q.inner])} and ${letter(sys.slot[q.outer])} have a period ratio within 0.2% of ${q.resonance.j}:${q.resonance.j - 1}: they may be in the resonance, where transit timing variations are large and the Hill and AMD criteria do not apply.`);
   else if (Math.abs(q.resonance.delta) < 0.05) findings.push(`${letter(sys.slot[q.inner])} and ${letter(sys.slot[q.outer])} are ${fx(100 * Math.abs(q.resonance.delta), 1)}% ${q.resonance.delta > 0 ? 'wide' : 'short'} of the ${q.resonance.j}:${q.resonance.j - 1} resonance: expect transit timing variations with a period of ${fx(nearestFirstOrder(sys.per[sys.slot[q.inner]], sys.per[sys.slot[q.outer]]).superPeriod, 1)} d. The Hill and AMD criteria ignore resonances.`);
   if (integration && integration.ok) {
-    findings.push(`Integrated for ${integration.orbits} orbits of the outer planet (${fx(integration.days, 0)} d): no close encounter (closest approach ${fx(integration.minSepHill)} mutual Hill radii), energy conserved to ${integration.energyErr.toExponential(1)}.${integration.chaotic === true ? ' Two copies displaced by 1e-10 diverged exponentially: the motion is chaotic on this time scale.' : integration.chaotic === false ? ' Two copies displaced by 1e-10 separated no faster than regular orbits do.' : ''} This says nothing about longer times.`);
+    findings.push(`Integrated for ${integration.orbits} orbits of the outer planet (${fx(integration.days, 0)} d): no close encounter (closest approach ${fx(integration.minSepHill)} mutual Hill radii), energy conserved to ${integration.energyErr.toExponential(1)}.${integration.megno !== null ? '' : integration.chaotic === true ? ' Two copies displaced by 1e-10 diverged exponentially: the motion is chaotic on this time scale.' : integration.chaotic === false ? ' Two copies displaced by 1e-10 separated no faster than regular orbits do.' : ''} This says nothing about longer times.`);
   }
+  if (integration && integration.megno !== null && Number.isFinite(integration.megno)) findings.push(integration.chaotic
+    ? `MEGNO ${integration.megnoStopped ? 'passed ' : ''}${fx(integration.megno, integration.megno < 10 ? 2 : 0)} after ${fx(integration.megnoOrbits, 0)} orbits of the outer planet (2 for regular motion): the orbits are chaotic${Number.isFinite(integration.lyapunovTime) ? `, nearby orbits separating e-fold about every ${fx(integration.lyapunovTime, integration.lyapunovTime < 10 ? 1 : 0)} d` : ''}. Chaotic is not the same as unstable, but nothing can be predicted far beyond that time.`
+    : `MEGNO ${fx(integration.megno, 2)} after ${fx(integration.megnoOrbits, 0)} orbits of the outer planet: the motion is regular (2 is the value for quasi-periodic orbits; chaotic ones grow without bound).`);
   if (n === 2) findings.push('One planet: a two-body orbit, stable.');
   let stable = null;
   if ((integration && (!integration.ok || integration.chaotic)) || anyCross) stable = false;

@@ -18,14 +18,24 @@
 // Authorization header of those requests and nowhere else.
 
 import { openAITools } from './toolspec.js';
+import { checkNumbers, appendix } from './numcheck.js';
 
-export const PRESETS = [
-  { id: 'lmstudio', label: 'LM Studio', base: 'http://localhost:1234/v1' },
-  { id: 'ollama', label: 'Ollama', base: 'http://localhost:11434/v1' },
-  { id: 'vllm', label: 'vLLM / llama.cpp', base: 'http://localhost:8000/v1' },
-];
+// No address of a model server is written in this code: the set-up card's presets are in presets.js, the only place
+// one may appear. These are the names of servers known to speak the protocol, for the help text of the card.
+export const SERVER_KINDS = ['LM Studio', 'Ollama', 'vLLM', 'llama.cpp'];
 
-/** "localhost:1234" -> "http://localhost:1234/v1"; a pasted ".../v1/chat/completions" loses its tail. */
+/** Loopback names: a page may call these over plain http even when it is served over https. */
+const LOOPBACK = /^(localhost|127(?:\.\d+){3}|\[::1\]|[^/:]+\.localhost)$/i;
+/**
+ * Would the browser block this call as mixed content? True for a page served over https calling a plain-http
+ * address on another machine. pageUrl defaults to the page's own address (nothing is blocked outside a browser).
+ */
+export function mixedContent(base, pageUrl = typeof location !== 'undefined' ? location.href : '') {
+  try { const b = new URL(normalizeBase(base)), p = new URL(pageUrl); return p.protocol === 'https:' && b.protocol === 'http:' && !LOOPBACK.test(b.hostname); } catch { return false; }
+}
+export const MIXED_HELP = 'This page is served over https, and browsers do not let an https page call a plain http address on another machine (mixed content). Three ways round it: run the site on your own computer (npm run dev, or any static server on the built site) and open it over http; put the model server behind https (a reverse proxy with a certificate); or use the MCP server in mcp/ from a desktop client instead of this chat.';
+
+/** "host:port" -> "http://host:port/v1"; a pasted ".../v1/chat/completions" loses its tail. */
 export function normalizeBase(url) {
   let u = String(url || '').trim();
   if (!u) return '';
@@ -38,7 +48,7 @@ const headers = (apiKey) => ({ 'Content-Type': 'application/json', ...(apiKey ? 
 
 /** The models a server lists, with the context window when it says (vLLM max_model_len, LM Studio, llama.cpp, Ollama variants). */
 export async function listModels(base, { apiKey = '', fetch: f = globalThis.fetch, signal } = {}) {
-  const b = normalizeBase(base); if (!b) throw new Error('Enter the address of a model server, for example http://localhost:1234/v1');
+  const b = normalizeBase(base); if (!b) throw new Error('Enter the address of your model server: its OpenAI-compatible base URL, which usually ends in /v1.');
   let res;
   try { res = await f(b + '/models', { headers: apiKey ? { Authorization: 'Bearer ' + apiKey } : {}, credentials: 'omit', signal }); }
   catch (err) { throw new Error(describeError(err, b)); }
@@ -60,8 +70,8 @@ export function describeError(err, base) {
   }
   const msg = String((err && err.message) || err);
   if (/failed to fetch|networkerror|load failed|fetch failed|ECONNREFUSED/i.test(msg)) {
-    const https = typeof location !== 'undefined' && location.protocol === 'https:' && /^http:\/\//.test(base) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(base);
-    return `Could not reach ${base}. ` + (https ? 'This page is served over https and browsers block calls from it to a plain http address other than localhost: run the model on this computer, or put it behind https.' : 'Check that the server is running, that the address and port are right, and that it allows requests from web pages (CORS): LM Studio has a "Enable CORS" switch, Ollama needs OLLAMA_ORIGINS, llama.cpp and vLLM allow it by default or with --allowed-origins.');
+    if (mixedContent(base)) return `Could not reach ${base}. ${MIXED_HELP}`;
+    return `Could not reach ${base}. Check that the server is running, that the address and port are right, and that it allows requests from web pages (CORS): LM Studio has an "Enable CORS" switch, Ollama needs OLLAMA_ORIGINS, llama.cpp and vLLM allow it by default or with --allowed-origins.`;
   }
   return msg;
 }
@@ -69,31 +79,47 @@ export function describeError(err, base) {
 // ---- the system prompt -----------------------------------------------------------------------------------------
 // Constant text: nothing here changes between steps, so it stays in the server's prompt cache. What changes
 // (what is loaded, what is free, the latest fit, the files at hand) is in the state card.
-export const PRIMER = `You are the assistant built into Exoplanet Science Lab (ESL), a web app that models and fits exoplanet transits, radial velocities and transit timing with nested sampling, in the user's browser. You operate the app for the user through tools: load and describe data, set up a fit, run it, read the results, compare models, write files.
+export const PRIMER = `You are the assistant built into Exoplanet Science Lab (ESL), a website for planning, observing, reducing and fitting exoplanet observations in the user's browser. You operate the site for the user through tools. The site has several pages and you are on one of them at a time; the tools you have are those of the page you are on, plus navigate, which takes you (and the conversation) to another page.
+
+PAGES
+- plan: which transits can be observed from a site in a range of nights. observe: a view of the sky from a place at a time. photometry: light curves from images (FITS frames). analyze: model and fit transits, radial velocities and timing with nested sampling. search: the catalogue of known planets. validation: how these models compare with other codes. home: the landing page.
+- To work on another page, call navigate. The page reloads there and you continue the same request with that page's tools: plan the whole request first, do everything this page can do, then navigate. Do not navigate to the page you are already on.
 
 HOW YOU WORK
 - Act by calling tools; do not describe what you would do. Call a tool, read its result, continue. When the task is done, answer briefly in plain language.
-- A CURRENT STATE block is added at the end of the conversation for every step. It is live: what is loaded, what is free and fixed, the latest fit, the files at hand. Trust it over your memory, and do not call get_state for what it already shows.
-- Data stay in the app. You only ever see summaries. To use an attached file, pass its name to load_light_curve, load_radial_velocities, set_timings or import_session. Never paste or retype rows of data.
-- Every number you report comes from a tool result. Quote it exactly as returned, with its + and - and unit (write 0.1487 +0.0011 -0.0010, not ±). Never compute, convert, estimate or invent a number, and do not add remarks about a number that no tool gave you.
-- For model comparison, report the "reading", "verdict" and "cautions" fields in the software's words. Do not add your own interpretation of an evidence difference.
+- A CURRENT STATE block is added at the end of the conversation for every step. It is live: the page you are on, what is loaded, the files at hand. Trust it over your memory, and do not call a tool for what it already shows. Its PROJECT part says what was done on other pages (site, planned event, data, fits with their numbers): use it instead of asking or redoing work.
+- A long tool result is cut; read_result with its id reads the rest. A page may have more tools than you are shown: more_tools lists and adds them.
+- Data stay in the app. You only ever see summaries. To use an attached file, pass its name to the tool that loads it. Never paste or retype rows of data.
 - If a tool returns ERROR, read the message, correct the call and try once more. If it fails again, tell the user what is wrong.
 - A few actions replace or delete the user's work; the app asks the user first. If the result says DENIED, do not retry: ask the user what they want.
+- Do what was asked and no more. Do not run a fit, replace data or change page unless the request calls for it; when the user says "do not run it", stop after the set-up. Say only what the tool results show: never claim something was or was not done against them.
 - If the request is unclear, or a file you need is not attached, ask one short question instead of guessing.
 
-CONVENTIONS
+NUMBERS (the app checks your answer against the tool results)
+- Every number you write must be copied from a tool result of this conversation, character for character. Never compute, convert, round to a different unit, estimate or recall a number: no hours from days, no percent from a fraction, no Earth radii from Jupiter radii, no differences or ratios of your own. If the user wants a quantity no tool returned, call the tool that gives it (get_derived, explain_results) or say the app does not provide it.
+- A value that came with an uncertainty is always quoted with it, in the same form: write 0.1487 +0.0011 -0.0010 (not 0.1487, not ±0.001), and 1253.73 ± 0.54 for an evidence.
+- Keep the unit the tool gave: depth_ppt is parts per thousand (not percent), times in BJD or days stay so.
+- For model comparison give each run's ln Z and Δ ln Z as returned, then the "reading", "verdict" and "cautions" in the software's words. Do not interpret an evidence difference yourself, and never compute one.
+- An answer whose numbers do not match the tool results gets the app's own table attached under it.
+
+ANALYZE PAGE
 - Parameter keys: rprs (Rp/R*), ars (a/R*), inc (degrees), per (days), tmid (mid-transit time, days), ecc, omega (degrees), mplanet (Jupiter masses). Limb darkening: ld0..ld3. Airmass slope: a2 (a2@2 for the second epoch). Velocities: rvlin, rvquad, jit@rv1. Star: mstar, rstar, teff, feh. Keys of a second or later planet carry its letter: per@c, rprs@c.
 - a/R* (ars) is never fitted. With Kepler mode on it follows from the stellar mass and radius, the period and the planet mass; with it off, ars is a fixed number.
-- Times are in days, BJD when the data are dated. Inside the app tmid is counted from the "time reference" in the state; tools accept either form.
+- Times are in days, BJD when the data are dated. tmid is counted from the "time reference" in the state; tools accept either form.
 - Priors: uniform (a = minimum, b = maximum) or normal (a = mean, b = standard deviation).
 - The evidence ln Z compares models only when they were fitted to the same data, with the same priors on the parameters they share. A run that did not converge gives a lower bound only.
 
 RECIPES
-- Fit a transit in an attached file: load_light_curve with the file name and, when the user named the planet, the "planet" argument (that loads its parameters from the catalogue); if the System line of CURRENT STATE is still not the planet in the file, call lookup_planet (it keeps the loaded file); set_free (usually rprs, inc, tmid; a2 too when the file has an airmass column); run_fit; then report Rp/R*, the other fitted values and any warning. Check in CURRENT STATE that the light curve in the fit is the user's file before you run.
-- Compare models: one call to run_experiment (eccentricity, limb_darkening, airmass, or custom variants). Do not call run_fit for this: two run_fit calls without a change between them are the same model. run_experiment sets up each model, runs every fit, compares them and writes a report file (text and a table, no plots). Then relay its verdict and cautions.
-- Explain results ("what do these results mean?"): you MUST call explain_results first, even when you remember the numbers, and relay its sentences and warnings. Do not add conversions (hours, degrees Celsius, au, Earth radii) or interpretations that are not in it.
+- Fit a transit in an attached file (analyze): load_light_curve with the file name and, when the user named the planet, the "planet" argument; if the System line of CURRENT STATE is still not the planet in the file, call lookup_planet (it keeps the loaded file); set_free (usually rprs, inc, tmid; a2 too when the file has an airmass column); run_fit; then report the fitted values with their intervals and any warning.
+- Compare models, or "try A against B" (analyze): one call to run_experiment (eccentricity, limb_darkening, airmass, companion, or custom variants, which may carry set-up steps). Do not call run_fit several times for this. Then give the comparison table, the verdict and the cautions as returned.
+- Explain results: call explain_results first, even when you remember the numbers, and relay its sentences and warnings.
 - Transit timing: set_timings with the file, fit_ephemeris, then timing_periodogram if the user asks about variations.
-- Hand over files with export_file: list every file the user asked for in "kinds" (session, report, python, CSV tables). write_file is for your own text. Only say a file was saved when a tool result shows its name.
+- Plan an observation: on the plan page set the site, the dates and the target, then list the transits; to go on with one of them, open it in the sky view or the analyzer (the tool navigates for you). The best one is observable "yes" with the highest conditions_of_100 (for an analysis afterwards, a confirmed planet: rows marked tess_candidate are not in the analyzer's catalogue); say when (mid_utc and local_times) and why (altitude, Moon, conditions) in the words of the list.
+- Analyse a planned night (analyze, after plan_open_transit with "analyze"): the planet is loaded on arrival; simulate_light_curve with mid_transit "planned" (the planned night of PROJECT); set_free rprs, inc, tmid; run_fit; get_figure light_curve; then give Rp/R* and tmid exactly as run_fit returned them.
+- Look up parameters and priors (analyze): lookup_planet loads a system with its catalogue values and uncertainties; get_state lists every parameter with its value, whether it is free and its prior; set_prior changes one. Quote priors as get_state gives them.
+- Reduce images (photometry page): photometry_frames, photometry_examine_star or photometry_focus_map to check the stars and the focus, photometry_pick_stars, photometry_run, then photometry_send_to_analyze.
+- Write up (analyze, at the end): write_report gives the standard project report with its BibTeX, session and figures; say which files were written and what the report asks the user to check.
+- Files: export_file writes single outputs (session, report, python, CSV tables); get_figure makes a figure; write_file is for your own text. Only say a file was saved when a tool result shows its name.
 
 Keep answers short: what was done, the result with its caveats, and at most one suggestion for what to do next.`;
 
@@ -117,7 +143,19 @@ export function slimSpecs(specs, level = 1) {
   return specs.map((t) => ({ ...t, description: firstSentences(t.description, dN), parameters: { ...slim(t.parameters), description: undefined } }));
 }
 /** The tools a model with a very small window gets: enough for the common workflows. */
-export const CORE_TOOLS = ['load_example', 'lookup_planet', 'set_parameters', 'describe_data', 'load_light_curve', 'load_radial_velocities', 'set_timings', 'set_free', 'set_prior', 'set_sampler', 'run_fit', 'get_results', 'explain_results', 'compare_runs', 'run_experiment', 'fit_ephemeris', 'export_file', 'list_files', 'read_file', 'write_file'];
+export const CORE_TOOLS = ['load_example', 'lookup_planet', 'set_parameters', 'describe_data', 'load_light_curve', 'load_radial_velocities', 'simulate_light_curve', 'set_free', 'set_prior', 'set_kepler', 'choose_data', 'run_fit', 'get_results', 'explain_results', 'compare_runs', 'run_experiment', 'get_figure', 'export_file', 'search_catalog', 'list_files', 'read_file'];
+/** For a very small window (under 9k tokens) the core is smaller still. */
+export const TINY_TOOLS = ['load_example', 'lookup_planet', 'set_parameters', 'describe_data', 'load_light_curve', 'load_radial_velocities', 'set_timings', 'set_free', 'set_prior', 'set_sampler', 'run_fit', 'get_results', 'explain_results', 'compare_runs', 'run_experiment', 'fit_ephemeris', 'export_file', 'list_files', 'read_file', 'write_file'];
+/** A page whose tool definitions are longer than this (characters of JSON) shows its core tools and lists the rest under more_tools. */
+export const TIER_CHARS = 12000;
+/** The default history budget (tokens): what the conversation itself may take of a prompt, besides the primer, the tools and the state. */
+export const HISTORY_BUDGET = 6000;
+const gist = (t) => { const d = String(t.description || '').split(/(?<=[.:;])\s/)[0].replace(/[.:;]$/, ''); return d.length > 56 ? d.slice(0, 55).replace(/\s+\S*$/, '') + '…' : d; };
+/** The harness's own tools: read the rest of a cut result; add the definitions of tools that are not shown. */
+export const READ_RESULT = { name: 'read_result', readOnly: true, description: 'Read the full text of a tool result that was cut (its end says "read_result"). Give the call id; read on with offset.',
+  parameters: { type: 'object', properties: { id: { type: 'string', description: 'The id named in the cut result, e.g. "call_7".' }, offset: { type: 'integer', description: 'Start at this character (default 0).', minimum: 0 }, max_chars: { type: 'integer', description: 'How many characters (default 4000).', minimum: 200, maximum: 20000 } }, required: ['id'], additionalProperties: false } };
+export const moreToolsSpec = (hidden, short = false) => ({ name: 'more_tools', readOnly: true, description: `More tools of this page, not listed above to keep the prompt short. Call more_tools with the names you need and their definitions are added; or call one directly if you know its arguments. ${hidden.map((t) => (short ? t.name : `${t.name} (${gist(t)})`)).join('; ')}.`,
+  parameters: { type: 'object', properties: { names: { type: 'array', items: { type: 'string' }, description: 'Tool names from the list.' } }, required: ['names'], additionalProperties: false } });
 
 // ---- calls written as text -------------------------------------------------------------------------------------
 /** Every balanced {...} in a string, outermost only. */
@@ -162,8 +200,13 @@ export function parseTextCalls(text, names) {
 }
 
 // ---- the agent -------------------------------------------------------------------------------------------------
+/** "do not run it", "don't start the fit yet", "without running": a request that says so gets no fit, whatever the model decides. */
+export const NOT_RUN = /\b(?:do not|don['’]?t|without|no need to|not yet|before you)\s+(?!forget|hesitate)(?:\w+\s+){0,2}?(?:run(?:ning)?|start(?:ing)?|launch(?:ing)?)\b/i;
 const CHARS_PER_TOKEN = 3.2;
+const hashOf = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36) + ':' + s.length; };
 const cutText = (s, n) => (s.length > n ? s.slice(0, n) + `… [${s.length - n} chars cut by the harness]` : s);
+/** A result as it is stored for the prompt: cut to n characters, the whole kept (up to 200k) for read_result. */
+const storeResult = (id, name, text, n) => (text.length > n ? { id, name, text: text.slice(0, n) + `… [${text.length - n} more characters: read_result {"id": "${id}", "offset": ${n}}]`, full: text.slice(0, 200000) } : { id, name, text });
 
 /**
  * createAgent(config) -> { send(text), resume(), stop(), reset(), configure(patch), turns, info() }
@@ -172,23 +215,47 @@ const cutText = (s, n) => (s.length > n ? s.slice(0, n) + `… [${s.length - n} 
  *           protocol = 'auto' | 'native' | 'text', stream = true, primer = PRIMER }
  * Events: user, assistant_delta { text }, assistant { text, final }, tool_start { id, name, args }, tool_progress { id, text },
  *         tool_end { id, name, ok, text, ms, denied }, note { text }, context { tokens, limit, trimmed }, cap { steps },
- *         error { message }, done { steps, seconds, reason: 'answered' | 'cap' | 'stopped' | 'error' }
+ *         halt { halt }, error { message }, done { steps, seconds, reason: 'answered' | 'cap' | 'stopped' | 'error' | 'navigate' }
  */
 export function createAgent(config) {
-  const cfg = { maxSteps: 12, maxTokens: 1500, temperature: 0.2, protocol: 'auto', stream: true, primer: PRIMER, contextLimit: null, apiKey: '', ...config };
+  const cfg = { maxSteps: 12, maxTokens: 1500, temperature: 0.2, protocol: 'auto', stream: true, primer: PRIMER, contextLimit: null, apiKey: '', historyBudget: HISTORY_BUDGET, tiers: true, ...config };
   const f = cfg.fetch || globalThis.fetch.bind(globalThis), emit = (ev) => { try { cfg.onEvent && cfg.onEvent(ev); } catch { /* a listener's problem */ } };
-  const tools = cfg.tools;
+  let tools = cfg.tools;
   // what the server turned out to support; each flag is dropped once, on the server's own refusal
   const cap = { native: cfg.protocol !== 'text', stream: cfg.stream !== false, usage: true };
   const turns = [];            // { user, steps: [{ content, calls: [{ id, name, args }], results: [{ id, name, text }] }], final, summary, notes: [] }
   let abort = null, busy = false, callSeq = 0, ratio = CHARS_PER_TOKEN, lastUsage = null, trimmedNote = '';
+  const active = new Set();    // tools of the page beyond the core ones that this conversation has asked for or used
 
   const limit = () => cfg.contextLimit || 8192;
   const level = () => (limit() < 9000 ? 2 : limit() < 20000 ? 1 : 0);
-  const specs = () => { const l = level(); let s = tools.specs; if (l === 2) s = s.filter((t) => CORE_TOOLS.includes(t.name)); return l ? slimSpecs(s, l) : s; };
-  const names = () => tools.specs.map((t) => t.name);
-  const resultCap = () => Math.round(Math.min(6000, Math.max(700, (limit() * ratio) / 14)));
+  const isCore = (t) => t.core || (level() === 2 ? TINY_TOOLS : CORE_TOOLS).includes(t.name) || t.name === 'navigate';
+  /** The page's tools split into those shown and those listed under more_tools (a long tool list is tiered). */
+  function tiers() {
+    const all = tools.specs, tier = cfg.tiers !== false && (level() === 2 || JSON.stringify(all).length > TIER_CHARS);
+    if (!tier) return { shown: all, hidden: [] };
+    return { shown: all.filter((t) => isCore(t) || active.has(t.name)), hidden: all.filter((t) => !isCore(t) && !active.has(t.name)) };
+  }
+  const anyCut = () => turns.some((t) => t.steps.some((s) => s.results.some((r) => r.full)));
+  const specs = () => { const l = level(), { shown, hidden } = tiers(), s = [...shown, ...(anyCut() ? [READ_RESULT] : []), ...(hidden.length ? [moreToolsSpec(hidden, l === 2)] : [])]; return l ? slimSpecs(s, l).map((t) => (t.name === 'more_tools' ? { ...t, description: moreToolsSpec(hidden, l === 2).description } : t)) : s; };
+  const names = () => [...tools.specs.map((t) => t.name), READ_RESULT.name, 'more_tools'];
+  const historyBudget = () => (cfg.historyBudget > 0 ? cfg.historyBudget : Math.floor(limit() * 0.5));
+  const resultCap = () => Math.round(Math.min(6000, Math.max(1200, (Math.min(historyBudget(), limit() * 0.5) * ratio) / 6)));
   const budgetTokens = () => Math.max(1500, Math.floor(limit() * 0.85) - cfg.maxTokens - 200);
+  /** The harness's own tools, answered here: no page is involved. */
+  function harnessCall(name, args) {
+    const a = args && typeof args === 'object' ? args : {};
+    if (name === 'read_result') {
+      const id = String(a.id || '').trim(), hit = turns.flatMap((t) => t.steps.flatMap((s) => s.results)).find((r) => r.id === id || r.id === 'call_' + id.replace(/^call_?/, ''));
+      if (!hit) return { ok: false, text: `ERROR: there is no tool result "${id}". The ids are those named in a cut result, like "call_7".` };
+      const full = hit.full || hit.text, off = Math.max(0, Math.floor(Number(a.offset) || 0)), n = Math.max(200, Math.min(20000, Math.floor(Number(a.max_chars) || 4000))), part = full.slice(off, off + n);
+      return { ok: true, text: JSON.stringify({ id: hit.id, tool: hit.name, characters: `${off} to ${off + part.length} of ${full.length}`, text: part, read_on: off + part.length < full.length ? `read_result {"id": "${hit.id}", "offset": ${off + part.length}}` : undefined }) };
+    }
+    const { hidden } = tiers(), want = [].concat(a.names || a.name || []).map(String), known = want.filter((n) => tools.specs.some((t) => t.name === n)), unknown = want.filter((n) => !known.includes(n));
+    for (const n of known) active.add(n);
+    const defs = !cap.native ? textProtocol(tools.specs.filter((t) => known.includes(t.name))).split('\n').filter((l) => l.startsWith('- ')).join('\n') : undefined;
+    return { ok: known.length > 0 || !want.length, text: JSON.stringify({ added: known.length ? known : undefined, unknown: unknown.length ? unknown : undefined, available: !want.length || unknown.length ? hidden.map((t) => t.name) : undefined, definitions: defs, note: known.length ? 'Their definitions are now in your tool list: call them.' : 'Give names from the list.' }) };
+  }
 
   // ---- building the prompt -------------------------------------------------------------------------------------
   const turnSummary = (t) => t.summary || `The user asked: "${cutShort(t.user, 160)}". ` + (t.steps.length ? `Tools used: ${t.steps.flatMap((s) => s.calls.map((c, i) => `${c.name}${(s.results[i] && /^(ERROR|DENIED)/.test(s.results[i].text)) ? ' (failed)' : ''}`)).join(', ')}. ` : '') + (t.final ? `You answered: "${cutShort(t.final, 260)}"` : 'No answer was given.');
@@ -199,7 +266,8 @@ export function createAgent(config) {
     const text = !cap.native, sp = specs(), primer = level() === 2 ? cfg.primer.replace(/\n\nRECIPES\n[\s\S]*?(?=\n\nKeep answers short)/, '') : cfg.primer;   // a very small window gets the rules without the recipes
     const msgs = [{ role: 'system', content: primer + (text ? '\n\n' + textProtocol(sp) : '') }];
     const kept = turns.slice(plan.dropTurns), gone = turns.slice(0, plan.dropTurns);
-    let preface = gone.length ? `[Earlier in this conversation, summarised by the app]\n${gone.map((t, i) => `${i + 1}. ${turnSummary(t)}`).join('\n')}\n[End of summary]\n\n` : '';
+    const older = gone.length > 8 ? gone.length - 8 : 0;
+    let preface = gone.length ? `[Earlier in this conversation, summarised by the app]\n${older ? `(${older} earlier request${older > 1 ? 's' : ''} before these; what they produced is in PROJECT.)\n` : ''}${gone.slice(older).map((t, i) => `${older + i + 1}. ${turnSummary(t)}`).join('\n')}\n[End of summary]\n\n` : '';
     kept.forEach((t, ti) => {
       const current = ti === kept.length - 1;
       msgs.push({ role: 'user', content: preface + t.user }); preface = '';
@@ -221,23 +289,26 @@ export function createAgent(config) {
     });
     // the live state goes on the end of the last message, whatever its role: no server objects to that
     // (and the user's own words come after it, so the request is the last thing the model reads, not the state)
-    const last = msgs[msgs.length - 1], cur = kept[kept.length - 1], card = tools.stateCard();
+    const last = msgs[msgs.length - 1], cur = kept[kept.length - 1], card = tools.stateCard(); cardChars = card.length;
     if (last.role === 'user' && cur && !cur.steps.length && last.content.endsWith(cur.user)) last.content = last.content.slice(0, last.content.length - cur.user.length) + card + '\n\nTHE USER\'S REQUEST:\n' + cur.user;
     else last.content = (last.content ? last.content + '\n\n' : '') + card + (cur ? `\n\nThe user's request, for reference: "${cutShort(cur.user, 400)}"` : '');
-    return { msgs, sp };
+    return { msgs, sp, fixedChars: msgs[0].content.length + cardChars + (cap.native ? JSON.stringify(openAITools(sp)).length : 0) };
   }
+  let cardChars = 0;
   const sizeOf = ({ msgs, sp }) => Math.ceil((msgs.reduce((a, m) => a + (m.content || '').length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0) + 12, 0) + (cap.native ? JSON.stringify(openAITools(sp)).length : 0)) / ratio);
   /** The prompt, cut down step by step until it fits the budget: older results to a line, then oldest turns to a summary, then older steps of this request. */
   function fitPrompt() {
-    const plan = { shrink: false, keepRecent: 2, dropTurns: 0, dropSteps: 0 }, budget = budgetTokens();
+    const plan = { shrink: false, keepRecent: 2, dropTurns: 0, dropSteps: 0 };
     let p = build(plan), n = sizeOf(p), how = '';
+    // the conversation may take historyBudget tokens besides the fixed part (primer, tools, state), and the whole must fit the context
+    const fixed = Math.ceil(p.fixedChars / ratio), budget = Math.min(budgetTokens(), fixed + historyBudget());
     if (n > budget) { plan.shrink = true; p = build(plan); n = sizeOf(p); how = 'older tool results shortened'; }
     while (n > budget && plan.dropTurns < turns.length - 1) { plan.dropTurns++; p = build(plan); n = sizeOf(p); how = `${plan.dropTurns} earlier request${plan.dropTurns > 1 ? 's' : ''} summarised`; }
     const cur = turns[turns.length - 1];
     while (n > budget && cur && plan.dropSteps < cur.steps.length - 2) { plan.dropSteps++; p = build(plan); n = sizeOf(p); how = (plan.dropTurns ? `${plan.dropTurns} earlier requests summarised, ` : '') + `${plan.dropSteps} earlier step${plan.dropSteps > 1 ? 's' : ''} of this request summarised`; }
-    if (how !== trimmedNote) emit({ type: 'context', tokens: n, limit: limit(), budget, trimmed: how });
+    if (how !== trimmedNote) emit({ type: 'context', tokens: n, limit: limit(), budget, history: historyBudget(), trimmed: how });
     trimmedNote = how;
-    return { ...p, tokens: n, plan };
+    return { ...p, tokens: n, fixed, budget, plan };
   }
 
   // ---- one request ---------------------------------------------------------------------------------------------
@@ -292,6 +363,7 @@ export function createAgent(config) {
           out = { content: m.content || '', reasoning: m.reasoning || m.reasoning_content || '', calls: (m.tool_calls || []).map((c) => ({ id: c.id, name: c.function.name, arguments: c.function.arguments })), finish: j.choices && j.choices[0] && j.choices[0].finish_reason, usage: j.usage || null };
           if (cap.stream && !/event-stream/i.test(ct)) cap.stream = false;   // it ignored "stream": do not ask again
         }
+        emit({ type: 'usage', estimate: p.tokens, fixed: p.fixed, budget: p.budget, tools: p.sp.length, prompt_tokens: out.usage ? out.usage.prompt_tokens : null, completion_tokens: out.usage ? out.usage.completion_tokens : null });
         if (out.usage && out.usage.prompt_tokens > 200) { const chars = p.tokens * ratio; ratio = Math.min(5, Math.max(2, 0.5 * ratio + 0.5 * (chars / out.usage.prompt_tokens))); lastUsage = out.usage; }
         return out;
       } catch (err) {
@@ -313,7 +385,8 @@ export function createAgent(config) {
 
   // ---- the loop ------------------------------------------------------------------------------------------------
   async function loop(turn) {
-    const t0 = Date.now(), signal = abort.signal; let steps = 0, nudged = false, emptyRetry = false, lastKey = '', lastText = '', repeats = 0;
+    turn.seen = turn.seen || {};
+    const t0 = Date.now(), signal = abort.signal; let halt = null, steps = 0, nudged = false, emptyRetry = false, lastKey = '', lastText = '', repeats = 0;
     const end = (reason) => { emit({ type: 'done', steps, seconds: (Date.now() - t0) / 1000, reason, usage: lastUsage }); return reason; };
     try {
       for (;;) {
@@ -328,11 +401,19 @@ export function createAgent(config) {
           if (!content.trim() && !emptyRetry) { emptyRetry = true; (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: '[From the app, not the user] Your last reply was empty. Call a tool, or answer the user.' }); continue; }
           // a promise instead of an action ("I will now load…"): ask once for the action itself
           if (!nudged && !turn.steps.length && content.length < 600 && /\b(i will|i'll|let me|i am going to|i'm going to|first,? i)\b/i.test(content) && !/\?\s*$/.test(content.trim())) { nudged = true; (turn.notes = turn.notes || []).push({ after: 0, text: `[From the app, not the user] You wrote: "${cutShort(content, 200)}" but called no tool. Do it now: call the tool.` }); continue; }
+          // an answer that ends by promising the next action ("I'll generate the figure next."): once, do it or stop promising
+          const tail = content.trim().split(/(?<=[.!])\s+/).slice(-1)[0] || '';
+          if (!nudged && turn.steps.length && /\b(i will|i'll|let me|i am going to|i'm going to)\b/i.test(tail) && !/\?\s*$/.test(tail) && !/\b(if you|would you|let me know|happy to)\b/i.test(tail)) { nudged = true; (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: `[From the app, not the user] Your answer ends with "${cutShort(tail, 160)}", but that was not done. Do it now with a tool call, then give the whole answer again; or answer without promising it.` }); continue; }
+          // a figure the user asked for and no figure made in this request: once, make it
+          const wantsFig = /\b(figure|plot|graph|chart)\b/i.test(turn.user) && !/\b(no|without|don'?t (?:need|want))\s+(?:a\s+|any\s+)?(figure|plot|graph)/i.test(turn.user), hasFig = tools.specs.some((t) => t.name === 'get_figure');
+          if (wantsFig && hasFig && !turn.figChecked && turn.steps.length && !turn.steps.some((st) => st.results.some((r) => r.name === 'get_figure' && !/^(ERROR|DENIED)/.test(r.text)))) { turn.figChecked = true; (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: '[From the app, not the user] The user asked for a figure and none was made in this request. Call get_figure now (which "light_curve" unless another plot was asked for), then give the whole answer again.' }); emit({ type: 'note', text: 'The request asked for a figure and none was made: the assistant was asked to make it.' }); continue; }
           // an answer that names a file nobody wrote ("I saved session.json"): one chance to write it or take the claim back
           const have = tools.fileNames ? tools.fileNames().map((n) => n.toLowerCase()) : null;
           const ghost = have ? [...new Set((content.match(/[\w][\w.()-]*\.(?:json|md|csv|py|tex|png|txt|yaml)\b/gi) || []).filter((n) => !have.includes(n.toLowerCase())))] : [];
           if (ghost.length && !turn.fileChecked && turn.steps.length) { turn.fileChecked = true; (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: `[From the app, not the user] Your answer mentions ${ghost.join(', ')}, but no such file exists (files: ${have.join(', ') || 'none'}). If you meant to give the user that file, write it now with export_file or write_file; otherwise answer again without claiming it.` }); emit({ type: 'note', text: `The answer mentioned ${ghost.join(', ')}, which does not exist; the assistant was asked to write it or correct itself.` }); continue; }
           if (ghost.length && turn.fileChecked) emit({ type: 'note', text: `Check: the answer below mentions ${ghost.join(', ')}, but no such file was written.` });
+          const extra = content.trim() && cfg.checkNumbers !== false ? numberCheck(content, turn) : '';
+          if (extra) { content = content.trim() + extra; emit({ type: 'note', text: 'The answer quoted numbers that differ from the tool results (or dropped an uncertainty): the app\'s own table was added under it.' }); }
           turn.final = content.trim() || '(The model returned an empty answer.' + (cap.native ? ')' : ' With the JSON-in-text tool protocol this happens when the server strips the model\'s own tool-call syntax: if the server supports tool calling, let the assistant use it.)');
           emit({ type: 'assistant', text: turn.final, final: true });
           return end('answered');
@@ -344,24 +425,34 @@ export function createAgent(config) {
           const id = 'call_' + (++callSeq), key = c.name + ' ' + JSON.stringify(c.args);
           step.calls.push({ id, name: c.name, args: c.args });
           emit({ type: 'tool_start', id, name: c.name, args: c.args });
-          const t1 = Date.now(); let text, ok = false, denied = false, data;
+          const t1 = Date.now(); let text, ok = false, denied = false, data, table = '';
           if (signal.aborted) text = 'ERROR: stopped by the user before this call ran.';
+          else if ((turn.seen[key] || {}).n >= 2 && turn.seen[key].gen === (turn.gen || 0)) text = `ERROR: this exact call was already made ${turn.seen[key].n} times in this request with the same result, and nothing has changed since. Do not make it again: use its result, or answer the user with what you have.`;
           else if (key === lastKey && repeats >= 1) text = `ERROR: this exact call was just made ${repeats + 1} times with the same result:\n${cutText(lastText, 300)}\nDo not repeat it. Use the result, try something different, or answer the user.`;
+          else if (c.name === READ_RESULT.name || c.name === 'more_tools') { const r = harnessCall(c.name, c.args); ok = r.ok; text = r.text; }
           else {
-            const reason = tools.confirmFor(c.name, typeof c.args === 'object' && c.args ? c.args : {});
+            const reason = tools.confirmFor(c.name, typeof c.args === 'object' && c.args ? c.args : {}), spec = tools.specs.find((t) => t.name === c.name);
+            if (spec) active.add(c.name);   // a tool the model called directly stays shown
+            if (spec && spec.long && NOT_RUN.test(turn.user)) { text = `ERROR: the user asked not to run a fit in this request ("${cutShort((turn.user.match(NOT_RUN) || [''])[0], 60)}"). The set-up is all that was asked: do not call ${c.name}; finish and say the fit was not run.`; }
+            else
             // one "no" stands for the rest of the request: the user is not asked again, and a second attempt ends the request
             if (reason && turn.denied) { denied = true; turn.deniedTwice = true; text = 'DENIED: the user already declined this in the current request.'; }
             else if (reason && cfg.confirm && !(await cfg.confirm({ id, name: c.name, args: c.args, reason }))) { denied = true; turn.denied = true; text = 'DENIED: the user declined this action. Do not retry it or try another way to do the same thing. Tell the user it was not done and ask what they would like instead.'; }
             else {
               const r = await tools.call(c.name, c.args, { signal, onProgress: (p) => emit({ type: 'tool_progress', id, progress: p }) });
-              ok = r.ok; text = r.text; data = r.data;
+              ok = r.ok; text = r.text; data = r.data; if (r.table) table = r.table; if (r.halt) halt = r.halt;
             }
           }
-          if (!/^ERROR: this exact call/.test(text)) { repeats = key === lastKey && text === lastText ? repeats + 1 : 0; lastKey = key; lastText = text; }
-          const stored = cutText(text, resultCap());
-          step.results.push({ id, name: c.name, text: stored });
-          emit({ type: 'tool_end', id, name: c.name, ok, denied, text, data, ms: Date.now() - t1 });
+          if (!/^ERROR: this exact call/.test(text)) {
+            // the same call with the same result, with nothing changed in between, counts towards the guard above
+            const was = turn.seen[key], gen = turn.gen || 0, hash = hashOf(text); turn.seen[key] = was && was.hash === hash && was.gen === gen ? { n: was.n + 1, hash, gen } : { n: 1, hash, gen };
+            const sp = tools.specs.find((t) => t.name === c.name); if (ok && sp && !sp.readOnly) turn.gen = gen + 1; turn.seen[key].gen = turn.gen || 0;
+            repeats = key === lastKey && text === lastText ? repeats + 1 : 0; lastKey = key; lastText = text; }
+          step.results.push({ ...storeResult(id, c.name, text, c.name === READ_RESULT.name ? 21000 : resultCap()), ...(table ? { table: cutText(table, 2400) } : {}) });
+          emit({ type: 'tool_end', id, name: c.name, args: c.args, ok, denied, text, data, ms: Date.now() - t1 });
+          if (halt) break;   // the page is about to change: nothing more runs here
         }
+        if (halt) { turn.halted = halt; emit({ type: 'halt', halt }); return end(halt.reason || 'halt'); }
         if (turn.deniedTwice) { turn.final = 'I stopped here: you declined that action, so nothing was replaced or deleted. Tell me how you would like to continue.'; emit({ type: 'assistant', text: turn.final, final: true }); return end('answered'); }
       }
     } catch (err) {
@@ -369,6 +460,21 @@ export function createAgent(config) {
       emit({ type: 'error', message: String((err && err.message) || err) });
       return end('error');
     }
+  }
+  /**
+   * The check on a final answer: its numbers against every tool result of the conversation, the live state and the
+   * user's words. Returns the text to put under the answer ('' when it passes): the reason and the tools' own tables.
+   */
+  function numberCheck(content, turn) {
+    const sources = [tools.stateCard(), ...turns.flatMap((t) => [t.user, ...t.steps.flatMap((s) => s.results.flatMap((r) => [r.text, r.table || '']))])];
+    const chk = checkNumbers(content, sources); turn.check = { ok: chk.ok, unsupported: chk.unsupported, bare: chk.bare.map((b) => b.full) };
+    if (chk.ok) return '';
+    // the tables of this request, newest first; kept: those that add a value quoted without its interval, else the newest
+    const all = [], seen = new Set(), tables = [], left = new Set(chk.bare.map((b) => b.full));
+    for (const s of [...turn.steps].reverse()) for (const r of [...s.results].reverse()) if (r.table && !seen.has(r.name)) { seen.add(r.name); all.push(r.table); }
+    for (const t of all) { const adds = [...left].filter((f) => t.includes(f)); if (adds.length && tables.length < 2) { tables.push(t); adds.forEach((f) => left.delete(f)); } }
+    if (!tables.length && all.length) tables.push(all[0]);
+    return appendix(chk, tables);
   }
   async function run(turn) {
     if (busy) throw new Error('the assistant is already working');
@@ -381,11 +487,28 @@ export function createAgent(config) {
     /** A new request from the user. Resolves with how the loop ended: 'answered', 'cap', 'stopped' or 'error'. */
     send(text) { const turn = { user: String(text), steps: [], final: null, notes: [] }; turns.push(turn); emit({ type: 'user', text: turn.user }); return run(turn); },
     /** Carry on after the step cap (the "Continue" button). */
-    resume() { const turn = turns[turns.length - 1]; if (!turn) throw new Error('nothing to continue'); turn.capped = false; return run(turn); },
+    resume() { const turn = turns[turns.length - 1]; if (!turn) throw new Error('nothing to continue'); turn.capped = false; turn.halted = null; return run(turn); },
     stop() { if (abort) abort.abort(); },
-    reset() { turns.length = 0; trimmedNote = ''; },
+    reset() { turns.length = 0; trimmedNote = ''; active.clear(); },
+    /** Put back a conversation saved on another page (plain data: the turns as `turns` holds them). */
+    restore(saved) { turns.length = 0; for (const t of saved || []) turns.push({ notes: [], steps: [], ...t }); for (const t of turns) for (const s of t.steps) for (const c of s.calls) { const n = Number(String(c.id).replace('call_', '')); if (n > callSeq) callSeq = n; if (c.name !== 'more_tools' && c.name !== READ_RESULT.name) active.add(c.name); } trimmedNote = ''; },
+    /**
+     * A tool call made by the app itself as a step of the current request (what a page change promised to do on
+     * arrival): it runs, is drawn and is recorded like any other, so the model reads its result at the next step.
+     */
+    async runTool(name, args = {}) {
+      const turn = turns[turns.length - 1]; if (!turn) throw new Error('no request to add a step to');
+      const id = 'call_' + (++callSeq), t1 = Date.now(), step = { content: '', calls: [{ id, name, args }], results: [] };
+      turn.steps.push(step); emit({ type: 'tool_start', id, name, args });
+      const r = await tools.call(name, args, {});
+      step.results.push({ ...storeResult(id, name, r.text, resultCap()), ...(r.table ? { table: cutText(r.table, 2400) } : {}) });
+      emit({ type: 'tool_end', id, name, args, ok: r.ok, denied: false, text: r.text, data: r.data, ms: Date.now() - t1 });
+      return r;
+    },
+    /** Change the tool set (a new page). */
+    setTools(next) { tools = next; },
     configure(patch) { Object.assign(cfg, patch); if (patch.protocol) cap.native = patch.protocol !== 'text'; if (patch.base || patch.model) { cap.native = cfg.protocol !== 'text'; cap.stream = cfg.stream !== false; cap.usage = true; } },
-    info: () => ({ busy, native: cap.native, stream: cap.stream, contextLimit: limit(), known: !!cfg.contextLimit, tools: specs().length, promptTokens: turns.length ? fitPromptQuiet() : 0, usage: lastUsage, resultCap: resultCap() }),
+    info: () => ({ busy, native: cap.native, stream: cap.stream, contextLimit: limit(), known: !!cfg.contextLimit, historyBudget: historyBudget(), tools: specs().length, hidden: tiers().hidden.length, promptTokens: turns.length ? fitPromptQuiet() : 0, usage: lastUsage, resultCap: resultCap() }),
     /** The exact messages the next request would carry (for the panel's "what is sent" view and the tests). */
     preview: () => fitPrompt(),
   };

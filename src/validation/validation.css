@@ -1,9 +1,9 @@
-/* Validation page: a long technical page meant to be read top to bottom. Colour tokens come from src/site/site.css;
+/* The validation part of the Methods page (it was the Validation page): a long technical page meant to be read top to bottom. Colour tokens come from src/site/site.css;
    --s1..--s8 are the categorical series colours used by every chart here (checked for colour-vision separation and
    contrast on --panel). Prose is held to a readable measure; tables and charts may use the full column. */
 #val { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767; --esl: #f2f6ff; --truth: #8491ad;
   --measure: 70ch; font-size: 15px; line-height: 1.62; }
-.page main#val { width: min(1200px, 100%); padding: 36px 24px 80px; }
+.page main#val { width: min(1200px, 100%); padding: 36px max(24px, env(safe-area-inset-right)) calc(88px + env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); }
 html { scroll-behavior: smooth; scroll-padding-top: 14px; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
@@ -30,7 +30,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 14px; }
 .vtoc a:hover, .vtoc a:focus-visible { color: var(--model); text-decoration: underline; }
 @media (min-width: 1120px) {
   .vlayout { grid-template-columns: 216px minmax(0, 1fr); gap: 44px; align-items: start; }
-  .vtoc { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow: auto; border: 0; border-left: 1px solid var(--line2); border-radius: 0; background: none; padding: 2px 0 2px 16px; font-size: 13px; order: 0; }
+  .vtoc { position: sticky; top: 14px; max-height: calc(100vh - 28px); max-height: calc(100dvh - 28px); overflow: auto; border: 0; border-left: 1px solid var(--line2); border-radius: 0; background: none; padding: 2px 0 2px 16px; font-size: 13px; order: 0; }
   .vtoc ol { columns: 1; padding-left: 18px; }
 }
 @media (max-width: 560px) { .vtoc ol { columns: 1; } }
@@ -38,8 +38,8 @@ html { scroll-behavior: smooth; scroll-padding-top: 14px; }
 /* ---- text ---- */
 #val h2 { font-size: 24px; line-height: 1.25; margin: 0 0 10px; padding-top: 30px; border-top: 1px solid var(--line); font-weight: 600; letter-spacing: 0; }
 #val section > section { margin-top: 34px; }
-#sections > section { margin-bottom: 44px; }
-#sections > section:first-child h2 { border-top: 0; padding-top: 0; }
+.vsections > section { margin-bottom: 44px; }
+#val .vsections > section:first-child h2, #val #reproHost > section:first-child h2 { border-top: 0; padding-top: 0; }
 #val h3 { font-size: 18px; line-height: 1.3; margin: 0 0 8px; font-weight: 600; }
 #val h4 { font-size: 15px; margin: 22px 0 6px; font-weight: 600; }
 #val h2 .n, #val h3 .n { color: var(--faint); font-weight: 500; margin-right: .55em; font-variant-numeric: tabular-nums; }
@@ -179,7 +179,7 @@ pre.vcmd { background: var(--panel); border: 1px solid var(--line); border-radiu
 
 @media (max-width: 640px) {
   #val { font-size: 15px; }
-  .page main#val { padding: 22px 16px 60px; }
+  .page main#val { padding: 22px max(16px, env(safe-area-inset-right)) calc(88px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
   #val h1 { font-size: 28px; }
   #val .lead { font-size: 16.5px; }
   #val h2 { font-size: 21px; }
@@ -201,3 +201,16 @@ pre.vcmd { background: var(--panel); border: 1px solid var(--line); border-radiu
 .vstatus .dot { display: inline-block; margin-right: 8px; }
 #val sub { line-height: 0; font-size: .75em; }
 .vt th.l { text-align: left; }
+
+/* ---- fingers: 40 px for what is tapped; a wide table says that it scrolls ---- */
+@media (pointer: coarse), (max-width: 760px) {
+  .vlegend button { min-height: 40px; padding: 3px 4px; }
+  details.vd > summary { min-height: 44px; align-items: center; }
+  .vdbody details.vd > summary { min-height: 40px; }
+  .vtoc li { margin: 0; } .vtoc a { display: inline-block; padding: 9px 0; }
+  .vt tr.pick td { padding-top: 11px; padding-bottom: 11px; }
+  #val .vhonest .ev a, #val a.cite { padding: 6px 0; }
+}
+.vtwrap:not(.stackwrap) { background-image: linear-gradient(to left, var(--panel) 40%, transparent), linear-gradient(to left, #5fd4ff3d, transparent); background-position: right center, right center; background-repeat: no-repeat; background-size: 36px 100%, 14px 100%; background-attachment: local, scroll; }
+/* the deepest heat-map cell (alpha 0.75 of --s1 on the panel) gave 4.44:1 with --text; white gives 5.6:1 */
+.vt td.heat { color: #fff; }

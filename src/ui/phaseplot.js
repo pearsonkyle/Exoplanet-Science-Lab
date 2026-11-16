@@ -8,7 +8,7 @@
 // phasePlotData(), mapPlotData() and temperaturePlotData() build the data objects from model
 // parameters with src/core/phasecurve.js; the render functions themselves do no science.
 
-import { niceTicks, decimals, groupColor } from './lightcurve.js';
+import { niceTicks, decimals, groupColor, fitText, fitItems } from './lightcurve.js';
 import { makePhaseCurve, phaseSummary, temperatureMap, brightnessTemperature } from '../core/phasecurve.js';
 import { eventTimes } from '../core/kepler.js';
 
@@ -24,6 +24,20 @@ export function heatColor(u) {
   return `rgb(${Math.round(a[0] + f * (b[0] - a[0]))},${Math.round(a[1] + f * (b[1] - a[1]))},${Math.round(a[2] + f * (b[2] - a[2]))})`;
 }
 const LUT = Array.from({ length: 256 }, (_, i) => heatColor(i / 255));
+/**
+ * A map (as mapPlotData returns it) as RGBA bytes on the same colour scale, for a texture: { width: nlon, height: nlat,
+ * rgba } with row 0 the southernmost latitude and column 0 longitude -180. Cells with no value (negative brightness) are dark grey.
+ */
+export function mapRGBA(m) {
+  const n = m.nlat * m.nlon, rgba = new Uint8Array(n * 4), span = m.vmax - m.vmin || 1;
+  for (let c = 0; c < n; c++) {
+    const v = m.values[c];
+    if (!Number.isFinite(v)) { rgba.set([42, 49, 66, 255], c * 4); continue; }
+    const u = Math.max(0, Math.min(1, (v - m.vmin) / span)), x = u * (INFERNO.length - 1), i = Math.min(INFERNO.length - 2, Math.floor(x)), f = x - i, a = INFERNO[i], b = INFERNO[i + 1];
+    rgba[c * 4] = Math.round(a[0] + f * (b[0] - a[0])); rgba[c * 4 + 1] = Math.round(a[1] + f * (b[1] - a[1])); rgba[c * 4 + 2] = Math.round(a[2] + f * (b[2] - a[2])); rgba[c * 4 + 3] = 255;
+  }
+  return { width: m.nlon, height: m.nlat, rgba };
+}
 const lut = (v, lo, hi) => (Number.isFinite(v) ? LUT[Math.max(0, Math.min(255, Math.round(((v - lo) / (hi - lo || 1)) * 255)))] : null);
 const NEG = (th) => (th.frame ? '#c8c8c8' : '#2a3142');      // cells where the map is negative (no temperature)
 
@@ -99,7 +113,14 @@ export function renderPhaseCurve(ctx, W, H, d, th, opt = {}) {
   const L = 62 + 14 * k, R = 16, T = opt.title ? 20 + 18 * k : 12 + 12 * k, B = 22 + 16 * k, gapY = 26 + 14 * k, gapX = 58 + 14 * k;
   ctx.font = `${F(11)}px ${th.font}`; ctx.lineWidth = 1;
   if (!d || !d.model || !d.model.x.length) { ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.fillText((d && d.label) || 'No phase curve', W / 2, H / 2); return null; }
-  const hTop = (H - T - B - gapY) * 0.56, hBot = H - T - B - gapY - hTop, yB0 = T + hTop + gapY, wB = (W - L - R - gapX) / 2;
+  // three panels (the orbit, the eclipse, the transit), laid out for the shape of the window: in a row when it is wide and
+  // short, one above the other when it is narrow and tall, otherwise the orbit on top and the two zooms under it
+  const aw = W - L - R, ah = H - T - B, mode = aw > 3.6 * ah ? 'row' : W < 470 && H > 1.15 * W ? 'stack' : 'grid';
+  let mx = L, my = T, mw = aw, mh, ex, ey, ew, eh, tx, ty;
+  if (mode === 'row') { const wz = Math.round((aw - 2 * gapX) * 0.23); mw = aw - 2 * (wz + gapX); mh = ah; ex = L + mw + gapX; ey = T; ew = wz; eh = ah; tx = ex + wz + gapX; ty = T; }
+  else if (mode === 'stack') { const g2 = 18 + 12 * k; mh = (ah - 2 * g2) * 0.42; eh = (ah - 2 * g2 - mh) / 2; ex = L; ey = T + mh + g2; ew = aw; tx = L; ty = ey + eh + g2; }
+  else { mh = (ah - gapY) * 0.56; eh = ah - gapY - mh; ex = L; ey = T + mh + gapY; ew = (aw - gapX) / 2; tx = L + ew + gapX; ty = ey; }
+  const hTop = mh;
   const ppm = (v) => (v - 1) * 1e6, pa = opt.ptAlpha ?? 0.5, ma = opt.modelAlpha ?? 1, has = d.x && d.x.length;
   const col = (g) => (opt.color === false || !d.group ? null : groupColor(th, g));
 
@@ -129,37 +150,51 @@ export function renderPhaseCurve(ctx, W, H, d, th, opt = {}) {
     }
     ctx.restore();
     if (th.frame) { ctx.strokeStyle = th.frame; ctx.lineWidth = 1; ctx.strokeRect(px0 + 0.5, py0 + 0.5, pw - 1, ph - 1); }
-    ctx.fillStyle = th.title; ctx.font = `${F(11)}px ${th.sans}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; if (o.tag) ctx.fillText(o.tag, px0 + 8, py0 + 6);
+    ctx.fillStyle = th.title; ctx.font = `${F(11)}px ${th.sans}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; if (o.tag && ph >= 70) ctx.fillText(o.tag, px0 + 8, py0 + 6);
     return { X, Y };
   };
   // ranges: the top panel follows the planet's light and lets the transit run off the bottom
   let pmax = 0, pmin = Infinity; for (const v of d.planet ? d.planet.y : d.model.y) { pmax = Math.max(pmax, ppm(v)); pmin = Math.min(pmin, ppm(v)); }
   let noise = 0; if (d.bins && d.bins.e.length) noise = 1e6 * d.bins.e.reduce((a, b) => a + b, 0) / d.bins.e.length; else if (has && d.e) noise = 0.15e6 * d.e.reduce((a, b) => a + b, 0) / d.e.length;
   const span = Math.max(pmax, 1e-3), top = [-0.32 * span - 2 * noise, pmax + 0.3 * span + 2.5 * noise];
-  const main = panel(L, T, W - L - R, hTop, [-0.25, 0.75], top, { tag: null });
+  const main = panel(mx, my, mw, mh, [-0.25, 0.75], top, { tag: null });
   // markers for the zoom ranges and the off-scale transit
   ctx.fillStyle = th.text; ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  ctx.fillText('eclipse', main.X(0.5), T + hTop - 5); ctx.fillText('transit ↓', main.X(0), T + hTop - 5);
+  if (hTop >= 80) { ctx.fillText('eclipse', main.X(0.5), T + hTop - 5); ctx.fillText('transit ↓', main.X(0), T + hTop - 5); }
   const ecl = d.eclipse || [0.44, 0.56], tra = d.transit || [-0.06, 0.06];
   let mlo = Infinity; for (let i = 0; i < d.model.x.length; i++) if (d.model.x[i] >= tra[0] && d.model.x[i] <= tra[1]) mlo = Math.min(mlo, ppm(d.model.y[i]));
   if (!Number.isFinite(mlo)) mlo = -1;
   const eTop = (d.depth ? d.depth * 1e6 : pmax) * 1.28 + 3 * noise, eBot = -0.3 * (d.depth ? d.depth * 1e6 : pmax) - 3 * noise;
-  panel(L, yB0, wB, hBot, ecl, [eBot, eTop], { tag: 'Eclipse', errs: !d.bins, big: true });
-  panel(L + wB + gapX, yB0, wB, hBot, tra, [mlo * 1.12, Math.max(pmax * 1.6, -mlo * 0.1)], { tag: 'Transit', big: true, component: false });
+  panel(ex, ey, ew, eh, ecl, [eBot, eTop], { tag: 'Eclipse', errs: !d.bins, big: true });
+  panel(tx, ty, ew, eh, tra, [mlo * 1.12, Math.max(pmax * 1.6, -mlo * 0.1)], { tag: 'Transit', big: true, component: false });
   // labels
   ctx.fillStyle = th.text; ctx.font = `${F(11)}px ${th.font}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText('Orbital phase (0 = mid-transit, 0.5 = mid-eclipse)', L + (W - L - R) / 2, H - 5);
-  ctx.save(); ctx.translate(4 + 8 * k, T + hTop / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Flux above the star (ppm)', 0, 0); ctx.restore();
-  ctx.save(); ctx.translate(4 + 8 * k, yB0 + hBot / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('ppm', 0, 0); ctx.restore();
-  ctx.textAlign = 'left'; ctx.fillStyle = th.title; ctx.font = `${F(opt.title ? 14 : 11.5)}px ${th.sans}`; ctx.fillText(opt.title || d.label || '', L, T - 6);
-  if (d.info && d.info.length) { ctx.font = `${F(11)}px ${th.font}`; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillText(d.info.join('     '), W - R - 8, T + 6); }
-  // legend
-  ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; let lx = L + 10; const ly = T + 12 + 4 * k;
-  const item = (draw, text) => { draw(lx); ctx.fillStyle = th.text; ctx.fillText(text, lx + 28, ly); lx += 40 + ctx.measureText(text).width; };
-  item((x) => { ctx.strokeStyle = th.model; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(x, ly); ctx.lineTo(x + 22, ly); ctx.stroke(); }, 'model');
-  if (d.planet) item((x) => { ctx.strokeStyle = th.model; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(x, ly); ctx.lineTo(x + 22, ly); ctx.stroke(); ctx.setLineDash([]); }, 'planet (phase curve)');
-  if (d.bins && opt.bins !== false) item((x) => { ctx.fillStyle = th.bin; ctx.beginPath(); ctx.arc(x + 11, ly, 3, 0, 6.3); ctx.fill(); }, 'binned data');
-  if (opt.groups && d.group && opt.color !== false) opt.groups.forEach((name, g) => item((x) => { ctx.fillStyle = groupColor(th, g); ctx.beginPath(); ctx.arc(x + 11, ly, 3, 0, 6.3); ctx.fill(); }, name));
+  ctx.fillText(fitText(ctx, aw, 'Orbital phase (0 = mid-transit, 0.5 = mid-eclipse)', 'Orbital phase from mid-transit'), L + aw / 2, H - 5);
+  ctx.save(); ctx.translate(4 + 8 * k, my + mh / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(fitText(ctx, mh, 'Flux above the star (ppm)', 'Planet flux (ppm)', 'ppm'), 0, 0); ctx.restore();
+  if (mode !== 'row') { ctx.save(); ctx.translate(4 + 8 * k, ey + eh / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('ppm', 0, 0); ctx.restore(); }
+  if (mode === 'stack') { ctx.save(); ctx.translate(4 + 8 * k, ty + eh / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('ppm', 0, 0); ctx.restore(); }
+  ctx.textAlign = 'left'; ctx.fillStyle = th.title; ctx.font = `${F(opt.title ? 14 : 11.5)}px ${th.sans}`; const ttl = opt.title || d.label || ''; ctx.fillText(ttl, L, T - 6);
+  const titleW = ctx.measureText(ttl).width;
+  // legend, wrapping inside the orbit panel; the numbers go beside it when there is room, else up beside the title
+  ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const items = [[(x, y) => { ctx.strokeStyle = th.model; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 22, y); ctx.stroke(); }, 'model']];
+  if (d.planet) items.push([(x, y) => { ctx.strokeStyle = th.model; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 22, y); ctx.stroke(); ctx.setLineDash([]); }, mw < 480 ? 'planet' : 'planet (phase curve)']);
+  if (d.bins && opt.bins !== false) items.push([(x, y) => { ctx.fillStyle = th.bin; ctx.beginPath(); ctx.arc(x + 11, y, 3, 0, 6.3); ctx.fill(); }, mw < 480 ? 'binned' : 'binned data']);
+  if (opt.groups && d.group && opt.color !== false) opt.groups.forEach((name, g) => items.push([(x, y) => { ctx.fillStyle = groupColor(th, g); ctx.beginPath(); ctx.arc(x + 11, y, 3, 0, 6.3); ctx.fill(); }, name]));
+  const iw = (t) => 40 + ctx.measureText(t).width, legW = items.reduce((a, it) => a + iw(it[1]), 0);
+  let infoUp = false;
+  if (d.info && d.info.length) {
+    ctx.font = `${F(11)}px ${th.font}`; const infoW = ctx.measureText(d.info.join('     ')).width;
+    infoUp = mh < 90 || L + 10 + Math.min(legW, mw - 20) + 16 > mx + mw - 8 - infoW;
+    ctx.textAlign = 'right';
+    if (infoUp) { ctx.textBaseline = 'alphabetic'; ctx.fillText(fitItems(ctx, d.info, aw - titleW - 24, '     ', false), W - R, T - 6); }
+    else { ctx.textBaseline = 'top'; ctx.fillText(d.info.join('     '), mx + mw - 8, T + 6); }
+    ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  }
+  if (mh < 70) return null;   // no room for a legend over the curve
+  let lx = L + 10, ly = T + 12 + 4 * k;
+  const item = (draw, text) => { if (lx + iw(text) > mx + mw - 6 && lx > L + 10) { if (ly + 14 * k > T + 0.4 * mh) return; lx = L + 10; ly += 14 * k; } draw(lx, ly); ctx.fillStyle = th.text; ctx.fillText(text, lx + 28, ly); lx += iw(text); };
+  for (const [draw, text] of items) item(draw, text);
   return null;
 }
 
@@ -180,8 +215,17 @@ export function renderPlanetMap(ctx, W, H, d, th, opt = {}) {
   const L = 50 + 12 * k, R = 14, T = opt.title ? 20 + 18 * k : 12 + 12 * k, B = 26 + 44 * k;
   ctx.font = `${F(11)}px ${th.font}`;
   if (!d || !d.values) { ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.fillText((d && d.label) || 'No map', W / 2, H / 2); return null; }
-  const barW = 14, barPad = 46 + 20 * k, globeD = Math.min(H - T - B - 16 * k, (W - L - R) * 0.34), gap = 26;
-  const mw = W - L - R - globeD - gap - barW - barPad, mh = Math.min(H - T - B, mw / 2), my = T + (H - T - B - mh) / 2 + 4;
+  const barW = 14, barPad = 46 + 20 * k, gap = 26;
+  // side by side (map, globe, colour bar) when there is width for it; in a narrow, tall panel the globe goes under the map
+  const col = W - L - R < 1.5 * (H - T - B);
+  let globeD, mw, mh, my;
+  if (col) {
+    mw = W - L - R - barW - barPad; mh = Math.min(mw / 2, 0.5 * (H - T - B)); my = T + 4;
+    globeD = Math.max(0, Math.min(H - B - (my + mh + 30 + 26 * k) - 18 * k, 0.75 * mw));
+  } else {
+    globeD = Math.min(H - T - B - 16 * k, (W - L - R) * 0.34);
+    mw = W - L - R - globeD - gap - barW - barPad; mh = Math.min(H - T - B, mw / 2); my = T + (H - T - B - mh) / 2 + 4;
+  }
   // longitude-latitude panel
   const cw = mw / d.nlon, ch = mh / d.nlat;
   for (let i = 0; i < d.nlat; i++) for (let j = 0; j < d.nlon; j++) { ctx.fillStyle = lut(d.values[i * d.nlon + j], d.vmin, d.vmax) || NEG(th); ctx.fillRect(L + j * cw - 0.3, my + mh - (i + 1) * ch - 0.3, cw + 0.6, ch + 0.6); }
@@ -205,20 +249,27 @@ export function renderPlanetMap(ctx, W, H, d, th, opt = {}) {
   if (d.hotspot) { ctx.strokeStyle = th.frame ? '#000' : '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(X(d.hotspot.lon), Y(d.hotspot.lat), 5, 0, 6.3); ctx.stroke(); }
   ctx.strokeStyle = th.frame || th.text; ctx.lineWidth = 1; ctx.strokeRect(L + 0.5, my + 0.5, mw - 1, mh - 1);
   ctx.fillStyle = th.text; ctx.font = `${F(11)}px ${th.font}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  for (let lo = -180; lo <= 180; lo += (mw < 380 ? 90 : 45)) ctx.fillText(`${lo}°`, X(lo), my + mh + 5);
-  ctx.fillText('Longitude east of the substellar point', L + mw / 2, my + mh + 7 + 13 * k);
-  ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; for (let la = -90; la <= 90; la += 30) ctx.fillText(`${la}°`, L - 6, Y(la));
-  ctx.save(); ctx.translate(4 + 8 * k, my + mh / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText('Latitude', 0, 0); ctx.restore();
+  for (let lo = -180; lo <= 180; lo += (mw < 200 ? 180 : mw < 380 ? 90 : 45)) ctx.fillText(`${lo}°`, X(lo), my + mh + 5);
+  ctx.fillText(fitText(ctx, mw + 20, 'Longitude east of the substellar point', 'Longitude east of substellar', 'Longitude'), L + mw / 2, my + mh + 7 + 13 * k);
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; for (let la = -90; la <= 90; la += (mh < 110 ? 90 : mh < 190 ? 45 : 30)) ctx.fillText(`${la}°`, L - 6, Y(la));
+  ctx.save(); ctx.translate(4 + 8 * k, my + mh / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText(fitText(ctx, mh, 'Latitude', 'Lat.'), 0, 0); ctx.restore();
   // globe
-  const gx = L + mw + gap + globeD / 2, gy = my + mh / 2;
-  drawGlobe(ctx, gx, gy, globeD / 2, d, { lon0, lat0 }, th, { substellar: true, night: true, hotspot: d.hotspot, graticule: opt.graticule });
-  ctx.fillStyle = th.text; ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  const gx = col ? L + mw / 2 : L + mw + gap + globeD / 2, gy = col ? my + mh + 30 + 26 * k + globeD / 2 : my + mh / 2;
   const ph = (((0.5 + (d.phase || 0) / 360) % 1) + 1) % 1;
-  ctx.fillText(`as seen at phase ${ph.toFixed(2)}`, gx, gy + globeD / 2 + 6);
+  if (globeD > 30) {
+    drawGlobe(ctx, gx, gy, globeD / 2, d, { lon0, lat0 }, th, { substellar: true, night: true, hotspot: d.hotspot, graticule: opt.graticule });
+    ctx.fillStyle = th.text; ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    // the caption keeps clear of the map's longitude labels and of the right edge
+    const cap = `as seen at phase ${ph.toFixed(2)}`, cw2 = ctx.measureText(cap).width / 2;
+    ctx.fillText(cap, col ? gx : Math.min(W - R - cw2, Math.max(gx, L + mw + 12 + cw2)), gy + globeD / 2 + 6);
+  }
   colorBar(ctx, W - R - barPad - barW + 12 * k, my, barW, mh, d, th, F, null);
-  ctx.fillStyle = th.text; ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText(d.unit ? `${d.quantity || ''} (${d.unit})`.trim() : d.quantity || '', W - R, my - 4);
+  // what the colours are, over the colour bar, in as many words as there is room for
+  ctx.fillStyle = th.text; ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+  { const full = d.unit ? `${d.quantity || ''} (${d.unit})`.trim() : d.quantity || '', room = col ? W - R - L - mw * 0.55 : W - R - (L + mw + gap + globeD / 2 + Math.max(0, Math.sqrt(Math.max(0, (globeD / 2) ** 2 - (mh / 2 + 8) ** 2)))) - 6;
+    ctx.fillText(fitText(ctx, Math.max(room, barW + barPad), full, d.unit ? `T (${d.unit})` : 'Fp/F★', d.unit || ''), W - R, my - 4); }
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = th.title; ctx.font = `${F(opt.title ? 14 : 11.5)}px ${th.sans}`; ctx.fillText(opt.title || d.label || '', L, T - 6);
-  if (d.info && d.info.length) { ctx.fillStyle = th.text; ctx.font = `${F(10.5)}px ${th.font}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(d.info.join('     '), L, H - 5); }
+  if (d.info && d.info.length) { ctx.fillStyle = th.text; ctx.font = `${F(10.5)}px ${th.font}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(fitItems(ctx, d.info, W - L - R + 40, '   '), L - 40, H - 5); }
   return null;
 }
 
@@ -250,10 +301,10 @@ export function renderTemperaturePhase(ctx, W, H, d, th, opt = {}) {
   const xt = niceTicks(x0, x1, Math.max(3, Math.floor((px1 - px0) / (80 * k + 20)))), yt = niceTicks(y0, y1, Math.max(3, Math.floor(ph / 36)));
   ctx.lineWidth = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
   for (const v of xt) { const x = X(v); ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(x, py0); ctx.lineTo(x, py0 + ph); ctx.stroke(); ctx.fillStyle = th.text; ctx.fillText(v.toFixed(decimals(xt.step)), x, py0 + ph + 5); }
-  ctx.fillText('Orbital phase (0 = mid-transit, 0.5 = mid-eclipse)', (px0 + px1) / 2, H - 5 - 11 * k);
+  ctx.fillText(fitText(ctx, px1 - px0, 'Orbital phase (0 = mid-transit, 0.5 = mid-eclipse)', 'Orbital phase from mid-transit', 'Orbital phase'), (px0 + px1) / 2, H - 5 - 11 * k);
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   for (const v of yt) { const y = Y(v); ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(px0, y); ctx.lineTo(px1, y); ctx.stroke(); ctx.fillStyle = th.text; ctx.fillText(v.toFixed(decimals(yt.step)), px0 - 6, y); }
-  ctx.save(); ctx.translate(4 + 8 * k, py0 + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText(`Hemisphere temperature (${d.unit || 'K'})`, 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(4 + 8 * k, py0 + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText(fitText(ctx, ph, `Hemisphere temperature (${d.unit || 'K'})`, `Temperature (${d.unit || 'K'})`, d.unit || 'K'), 0, 0); ctx.restore();
   ctx.save(); ctx.beginPath(); ctx.rect(px0, py0, px1 - px0, ph); ctx.clip();
   for (const m of d.marks || []) { ctx.strokeStyle = th.text; ctx.globalAlpha = 0.5; ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(X(m.x), py0); ctx.lineTo(X(m.x), py0 + ph); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.fillStyle = th.text; ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(m.label, X(m.x) + 5, py0 + ph - 5); }
   if (d.band) { ctx.fillStyle = th.band; ctx.beginPath(); d.band.x.forEach((x, i) => (i ? ctx.lineTo(X(x), Y(d.band.hi[i])) : ctx.moveTo(X(x), Y(d.band.hi[i])))); for (let i = d.band.x.length - 1; i >= 0; i--) ctx.lineTo(X(d.band.x[i]), Y(d.band.lo[i])); ctx.closePath(); ctx.fill(); }
@@ -279,7 +330,7 @@ export function renderTemperaturePhase(ctx, W, H, d, th, opt = {}) {
     colorBar(ctx, px1 + 12, py0, 12, ph, d.map, th, F, null);
   }
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = th.title; ctx.font = `${F(opt.title ? 14 : 11.5)}px ${th.sans}`; ctx.fillText(opt.title || d.label || '', px0, T - 6);
-  if (d.info && d.info.length) { ctx.fillStyle = th.text; ctx.font = `${F(11)}px ${th.font}`; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic'; ctx.fillText(d.info.join('    '), W - 16, T - 6); }
+  if (d.info && d.info.length) { const tw = ctx.measureText(opt.title || d.label || '').width; ctx.fillStyle = th.text; ctx.font = `${F(11)}px ${th.font}`; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic'; ctx.fillText(fitItems(ctx, d.info, W - 16 - px0 - tw - 16, '    ', false), W - 16, T - 6); }
   return null;
 }
 

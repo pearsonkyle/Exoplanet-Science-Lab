@@ -1,4 +1,5 @@
-// The terrain horizon (src/core/horizon.js) against peaks of known position and height seen from three places:
+// The terrain horizon (src/core/horizon.js) against peaks of known position and height seen from three places, and
+// over the whole circle from Kitt Peak and Mauna Kea against an independent Python implementation (see below):
 // Mauna Kea from Hilo, Mount Wrightson from Tucson, Mont Blanc from Geneva. The expected bearing, distance and
 // elevation angle of each summit come from WGS84 geodesy in astropy (test/data/terrain/make_reference.py), not from
 // the tiles. The tiles are fixtures of the real Terrarium tiles (test/data/terrain/, written by make_fixtures.mjs:
@@ -34,7 +35,9 @@ const SECTOR = 3;
   check('sea horizon beyond the march, from 4000 m', Math.abs(hi.alt[0] - wantHi) < 1e-4 && Math.abs(hi.dist[0] - Math.sqrt(2 * Re * 4002)) < 1, `${hi.alt[0].toFixed(4)} deg, closed form ${wantHi.toFixed(4)}; at 150 km the sea is ${H.elevationAngle(4002, 0, 150000).toFixed(3)} deg`);
   // high latitudes use one zoom less, so that the number of tiles does not grow as 1 / cos^2(latitude)
   const nEq = H.tilesNeeded(0.3, 10).length, n46 = H.tilesNeeded(46.2, 6.2).length, n70 = H.tilesNeeded(69.65, 18.96).length;
-  check('tiles for a whole horizon: equator, 46 and 70 degrees', nEq < 40 && n46 < 60 && n70 < 60 && H.bandsFor(59)[0][0] === 12 && H.bandsFor(61)[0][0] === 11 && H.bandsFor(80)[0][0] === 10, `${nEq}, ${n46}, ${n70} tiles`);
+  check('tiles for a whole horizon to 300 km: equator, 46 and 70 degrees', nEq < 50 && n46 < 70 && n70 < 75 && H.bandsFor(59)[0][0] === 13 && H.bandsFor(61)[0][0] === 12 && H.bandsFor(80)[0][0] === 11, `${nEq}, ${n46}, ${n70} tiles; to 150 km: ${H.tilesNeeded(0.3, 10, { maxDist: 150000 }).length}, ${H.tilesNeeded(46.2, 6.2, { maxDist: 150000 }).length}, ${H.tilesNeeded(69.65, 18.96, { maxDist: 150000 }).length}`);
+  // how far the march goes: the sea horizon of the eye plus 100 km, 150 to 300 km
+  check('march length: 150 km from sea level, sea horizon + 100 km from a mountain, 300 km at most', H.radiusFor(2) === 150000 && Math.abs(H.radiusFor(2122) - (Math.sqrt(2 * Re * 2122) + 1e5)) < 1e-6 && H.radiusFor(4207) === 300000, `from 2122 m (Kitt Peak): ${(H.radiusFor(2122) / 1000).toFixed(0)} km; from 4207 m: ${(H.radiusFor(4207) / 1000).toFixed(0)} km`);
   // a synthetic hill on that sea: a Gaussian 1000 m high with sigma 1.5 km, 20 km due north
   const cone = new Map(); const c = H.destination(10, 10, 0, 20000);
   for (const [z, x, y] of H.tilesNeeded(10, 10, { azFrom: -3, azTo: 3 })) {
@@ -66,6 +69,25 @@ for (const s of sites) {
   check(`${s.id}: bearing of the top`, Math.abs(az - r.bearing) <= 0.75, `${(az - r.bearing).toFixed(2)} deg from the summit's bearing (profile step ${p.step} deg)`);
   check(`${s.id}: elevation angle of the top`, Math.abs(p.alt[im] - r.apparent) < 0.15, `${(p.alt[im] - r.apparent >= 0 ? '+' : '') + (p.alt[im] - r.apparent).toFixed(3)} deg against the summit from its coordinates`);
 }
+// --- the whole circle from two observatories against an independent implementation in Python (full/make_reference.py:
+// WGS84 geodesics, Pillow, ECEF vectors, sampling across tile edges), on the same tiles ("same") and on tiles one zoom
+// finer everywhere ("fine": what the coarser zooms of the browser's pyramid lose). Fixtures: full/<site>/.
+{
+  const fdir = new URL('./data/terrain/full/', import.meta.url), fsites = JSON.parse(readFileSync(new URL('sites.json', fdir))).sites;
+  const fref = JSON.parse(readFileSync(new URL('reference.json', fdir))), fjs = JSON.parse(readFileSync(new URL('js_profiles.json', fdir)));
+  const stats = (a, b) => { const d = Array.from(a, (v, i) => v - b[i]), ab = d.map(Math.abs).sort((x, y) => x - y); return { max: ab[ab.length - 1], rms: Math.sqrt(d.reduce((t, v) => t + v * v, 0) / d.length), mean: d.reduce((t, v) => t + v, 0) / d.length, p95: ab[Math.floor(0.95 * ab.length)] }; };
+  const txt = (st) => `rms ${st.rms.toFixed(3)}°, 95% within ${st.p95.toFixed(3)}°, max ${st.max.toFixed(3)}°, mean ${st.mean >= 0 ? '+' : ''}${st.mean.toFixed(3)}°`;
+  for (const s of fsites) {
+    const ft = new Map(); for (const f of readdirSync(new URL(s.id + '/', fdir))) { const m = /^(\d+)-(\d+)-(\d+)\.i16\.gz$/.exec(f); if (m) ft.set(H.tileKey(+m[1], +m[2], +m[3]), unpackTile(readFileSync(new URL(`${s.id}/${f}`, fdir)))); }
+    const p = await H.horizonProfile(s.lat, s.lon, async (z, x, y) => ft.get(H.tileKey(z, x, y)) || null, { eye: s.eye, elev: s.elev, step: s.step });
+    const R2 = fref.sites[s.id], same = stats(p.alt, R2.same.alt), fine = stats(p.alt, R2.fine.alt), v1 = stats(fjs.sites[s.id].v1, R2.fine.alt);
+    check(`${s.name}: whole circle from the fixtures, nothing missing`, p.missing === 0 && p.tilesFailed === 0 && p.n === R2.same.alt.length, `${p.tiles} tiles, march ${(p.maxDist / 1000).toFixed(0)} km (Python: ${(R2.same.maxDist / 1000).toFixed(0)} km), eye at ${(p.ground + p.eye).toFixed(0)} m; horizon ${Math.min(...p.alt).toFixed(2)}° to ${Math.max(...p.alt).toFixed(2)}°`);
+    check(`${s.name}: against the Python reference on the same tiles`, same.rms < 0.04 && same.max < 0.15, txt(same));
+    check(`${s.name}: against the Python reference one zoom finer`, fine.rms < 0.06 && fine.p95 < 0.1, txt(fine));
+    check(`${s.name}: closer to the finer reference than the earlier method (zoom 12 to 6 km, 150 km)`, fine.rms < v1.rms, `earlier: ${txt(v1)}`);
+  }
+}
+
 // --- interpolation and failure
 {
   const prof = { azFrom: 0, step: 90, n: 4, alt: Float32Array.from([0, 2, 4, 2]) };

@@ -7,6 +7,8 @@
 //        long      may take seconds to minutes (a fit)
 //        confirm   a short sentence saying what would be lost: the harness asks the user before running it
 //        where     'browser' | 'mcp' when the tool exists on one side only (default: both)
+//        needs     a method of the api object the tool cannot do without; the tool is left out when the api lacks it
+//        core      kept when the model's context is very small (agent.js)
 // The order is fixed on purpose: a stable tool block stays in the server's prompt cache.
 
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
@@ -27,7 +29,7 @@ export const TOOL_SPECS = [
     description: 'List the worked examples that can be opened with load_example (id, title, kinds of data).',
     parameters: obj({}) },
   { name: 'load_example', group: 'system', confirm: 'Opening an example replaces the system and the data that are loaded now.',
-    description: 'Open a worked example by id (ids: single, hd80606-tess, multi, hd80606-rv, hd80606-joint, toy1873). It opens with its stored posterior; pass fresh=true to open it without a result. Replaces what is loaded.',
+    description: 'Open a worked example by id (ids: single, hd80606-tess, multi, hd80606-rv, hd80606-joint, hd80606-rm, toi1873, toy1873, toi1873-oc, kepler88, ttvpair; list_examples gives all). It opens with its stored posterior; pass fresh=true to open it without a result. Replaces what is loaded.',
     parameters: obj({ id: str('Example id, e.g. "single" for the single-transit example.'), fresh: bool('true: open without the stored result.') }, ['id']) },
   { name: 'search_catalog', group: 'system', readOnly: true,
     description: 'Find planet and host names in the bundled NASA Exoplanet Archive snapshot that match a partial name. Use before lookup_planet when unsure of the spelling.',
@@ -51,8 +53,23 @@ export const TOOL_SPECS = [
     description: 'Turn Kepler mode on or off. On: a/R* follows from the stellar mass and radius, the period and the planet mass (needed for radial velocities and several planets). Off: a/R* is a fixed number you set.',
     parameters: obj({ on: bool('true to derive a/R* from Kepler\'s law.') }, ['on']) },
   { name: 'set_limb_darkening', group: 'system',
-    description: 'Choose the limb-darkening law and, optionally, its coefficients. Laws: uniform, linear (1 coefficient), quadratic (2), kipping (2), sqrt (2), nonlinear (Claret, 4). Coefficients are the parameters ld0..ld3 and can be freed with set_free. Any existing fit result is cleared.',
-    parameters: obj({ law: str('The law.', { enum: ['uniform', 'linear', 'quadratic', 'kipping', 'sqrt', 'nonlinear'] }), coefficients: { type: 'array', items: { type: 'number' }, description: 'Coefficients in the law\'s order. Omit to keep or default them.' } }, ['law']) },
+    description: 'Choose the limb-darkening law and, optionally, its coefficients. Laws: uniform, linear (1 coefficient), quadratic (2), kipping (2), sqrt (2), nonlinear (Claret, 4). Coefficients are the parameters ld0..ld3 and can be freed with set_free. In the web app follow_star makes them follow the star (Teff, [Fe/H]) in a band instead. Any existing fit result is cleared.',
+    parameters: obj({ law: str('The law.', { enum: ['uniform', 'linear', 'quadratic', 'kipping', 'sqrt', 'nonlinear'] }), coefficients: { type: 'array', items: { type: 'number' }, description: 'Coefficients in the law\'s order. Omit to keep or default them.' }, follow_star: bool('true: the coefficients follow the stellar parameters and the band; false: they are parameters.'), band: str('Bandpass name for follow_star, e.g. "TESS", "V", "R" (the analyzer lists its bands in an error when the name is unknown).') }) },
+  { name: 'set_phase_curve', group: 'system',
+    description: 'Give a planet its own light (secondary eclipse and phase curve), or take it away. mode "harmonic": fpfs (planet-to-star flux ratio), contrast, hotspot (degrees), h2c, h2s; mode "map": fpfs and the map coefficients y10, y11, y1m1. The new keys can be freed with set_free. Any existing fit result is cleared.',
+    parameters: obj({ planet: str('Planet letter (default: the first).'), on: bool('false removes the planet\'s own light (default true).'), mode: str('Parametrisation.', { enum: ['harmonic', 'map'] }), lmax: int('Degree of the map, 1 to 3 (map mode).', { minimum: 1, maximum: 3 }), parameters: { type: 'object', description: 'Starting values, e.g. {"fpfs": 0.001, "hotspot": 10}.', additionalProperties: { type: 'number' } } }) },
+  { name: 'set_moon', group: 'system',
+    description: 'Give a planet a moon, or remove it. Keys: rmoon (moon radius / stellar radius), permoon (days), phmoon (orbital phase at mid-transit, 0 to 1), mmoon (moon mass / planet mass), imoon (degrees). They can be freed with set_free. Any existing fit result is cleared.',
+    parameters: obj({ planet: str('Planet letter (default: the first).'), on: bool('false removes the moon (default true).'), parameters: { type: 'object', description: 'Starting values, e.g. {"rmoon": 0.03, "permoon": 2.5}.', additionalProperties: { type: 'number' } } }) },
+  { name: 'set_nbody', group: 'system',
+    description: 'Turn N-body dynamics on or off: mid-transit times and velocities then come from an integration in which the planets pull on each other (needs two planets or more and Kepler mode). The light curve stays Keplerian. An evidence from an N-body fit is not comparable with a Keplerian one.',
+    parameters: obj({ on: bool('true: use N-body dynamics.'), epoch: num('Time (BJD) at which the orbital elements are defined (default: the first planet\'s mid-transit time).'), linear: bool('Fit a straight line in epoch to each planet\'s simulated times inside the likelihood.') }, ['on']) },
+  { name: 'companion_search', group: 'system', long: true, needs: 'companionSearch',
+    description: 'Search the mid-transit times of the planet on show for an unseen companion: N-body simulations on a grid of companion mass and period. Needs at least eight times and the planet\'s mass. Returns the best companion and whether it is significant, as the analyzer reports them. Takes seconds to a minute.',
+    parameters: obj({ options: { type: 'object', description: 'Optional grid settings: phases (starting phases per cell), masses (Jupiter masses to try), ratios (companion period over the planet\'s period to try), refine (true or false). Omit for the defaults.', additionalProperties: true } }) },
+  { name: 'add_companion', group: 'system', needs: 'addCompanion',
+    description: 'Add a companion found by companion_search to the system as a new planet, with N-body dynamics on.',
+    parameters: obj({ candidate: { type: 'object', description: 'The companion as companion_search returned it. Omit to use the last search.', additionalProperties: true } }) },
 
   // ---- data ---------------------------------------------------------------------------------------------------
   { name: 'describe_data', group: 'data', readOnly: true,
@@ -69,10 +86,10 @@ export const TOOL_SPECS = [
     parameters: obj({ ...SOURCE }) },
   { name: 'simulate_light_curve', group: 'data', confirm: 'Simulating replaces the light curve that is loaded now and clears the fit.',
     description: 'Replace the light curve with a simulated observation of the first planet from the current parameters: white noise, optional airmass trend, one or several transits. For teaching, planning and testing a fit set-up.',
-    parameters: obj({ noise_ppm: num('Scatter per point in parts per million (default 500).'), exposure_min: num('Exposure and cadence in minutes (default 2).'), baseline_hr: num('Out-of-transit time on each side, hours (default 2).'), airmass: bool('Add an airmass trend (ground-based night).'), n_epochs: int('Number of transits (default 1).', { minimum: 1, maximum: 50 }), epoch_step: int('Orbits between simulated transits (default 1).', { minimum: 1 }), seed: int('Random seed (default 1).') }) },
+    parameters: obj({ noise_ppm: num('Scatter per point in parts per million (default 500).'), exposure_min: num('Exposure and cadence in minutes (default 2).'), baseline_hr: num('Out-of-transit time on each side, hours (default 2).'), airmass: bool('Add an airmass trend (ground-based night).'), n_epochs: int('Number of transits (default 1).', { minimum: 1, maximum: 50 }), epoch_step: int('Orbits between simulated transits (default 1).', { minimum: 1 }), seed: int('Random seed (default 1).'), mid_transit: { type: ['number', 'string'], description: 'Simulate the transit of a given night: "planned" for the event chosen on the plan page (PROJECT), or its predicted mid-transit time as a BJD_TDB. T mid and its prior are moved there first.' } }) },
   { name: 'edit_data', group: 'data', confirm: 'Removing data cannot be brought back except by undo.',
-    description: 'Small changes to the loaded data: set the exposure time, remove one epoch of the light curve, remove a radial-velocity set, or clear the timing list.',
-    parameters: obj({ exposure_min: num('Exposure time of the light curve in minutes.'), remove_epoch: int('Number (1-based) of the light-curve epoch to remove.', { minimum: 1 }), remove_velocities: str('Name of the radial-velocity set to remove.'), clear_timings: bool('true: empty the timing list.') }) },
+    description: 'Changes to the loaded data: set the exposure time, remove one epoch of the light curve, trim it to a time window, clip outliers against the current model, bin it; remove a radial-velocity set; clear the timing list. After a change to the data, evidences of earlier runs are no longer comparable.',
+    parameters: obj({ exposure_min: num('Exposure time of the light curve in minutes.'), remove_epoch: int('Number (1-based) of the light-curve epoch to remove.', { minimum: 1 }), trim: { type: 'array', items: num('time'), description: 'Keep only the points between two times [t0, t1] (BJD, or days from the time reference).' }, clip_sigma: num('Remove points further than this many robust standard deviations from the current model.', { minimum: 1 }), bin_min: num('Bin the light curve into means over this many minutes.', { minimum: 0 }), remove_velocities: str('Name of the radial-velocity set to remove.'), clear_timings: bool('true: empty the timing list.') }) },
 
   // ---- fit ----------------------------------------------------------------------------------------------------
   { name: 'choose_data', group: 'fit',
@@ -90,6 +107,9 @@ export const TOOL_SPECS = [
   { name: 'run_fit', group: 'fit', long: true,
     description: 'Run nested sampling with the current free parameters, priors and data, wait for it to finish, and return the result: evidence ln Z, convergence, each free parameter as median +/- interval, key derived quantities, warnings. Takes seconds to minutes. At least one parameter must be free.',
     parameters: obj({ label: str('Short name for this run in the comparison table, e.g. "circular".') }) },
+  { name: 'fit_progress', group: 'fit', readOnly: true, needs: 'progress',
+    description: 'How far a running fit is: iterations, likelihood calls, the evidence so far and the fraction that remains.',
+    parameters: obj({}) },
   { name: 'stop_fit', group: 'fit',
     description: 'Stop a fit that is running. The partial posterior is kept but is not converged.',
     parameters: obj({}) },
@@ -101,13 +121,24 @@ export const TOOL_SPECS = [
   { name: 'explain_results', group: 'results', readOnly: true,
     description: 'The current fit explained in plain words by the software: what each main number means (radius ratio, depth in percent, planet radius, inclination and impact parameter, duration in hours, eccentricity, fit quality, evidence), with unit conversions already done, plus the warnings. Use this when the user asks what the results mean, and relay its sentences.',
     parameters: obj({}) },
+  { name: 'get_derived', group: 'results', readOnly: true,
+    description: 'The derived quantities of the system as the software computes them (impact parameter, durations, planet radius and mass, K, a/R*, densities, equilibrium temperature), with intervals when a fit exists. Quote them; never derive a quantity yourself.',
+    parameters: obj({ planet: str('Planet letter (default: all planets).') }) },
+  { name: 'list_runs', group: 'results', readOnly: true,
+    description: 'The fits made so far (the run history): id, label, free parameters, ln Z with its error, whether each converged. restore_run brings one back.',
+    parameters: obj({}) },
+  { name: 'restore_run', group: 'results', needs: 'restoreRun',
+    description: 'Bring an earlier run back: its set-up, values and posterior become the current ones (undo returns to where you were).',
+    parameters: obj({ run: { type: ['integer', 'string'], description: 'Run id from list_runs or compare_runs, e.g. 2.' } }, ['run']) },
   { name: 'compare_runs', group: 'results', readOnly: true,
     description: 'Compare the runs made on the current data: ln Z of each, its difference from the best run, and the reading in words (indistinguishable, weakly / moderately / strongly disfavoured) with the cautions that apply. Report the reading and cautions as returned; do not reinterpret the numbers.',
     parameters: obj({}) },
   { name: 'run_experiment', group: 'results', long: true,
-    description: 'Run a small set of fits one after another on the current data and compare them: "eccentricity" (circular orbit against free e and omega), "limb_darkening" (coefficients fixed against free), "airmass" (with and without the airmass slope), or "custom" with your own variants. Waits for every run, then returns the comparison table, the reading and cautions, and writes a Markdown report file for the user. Use this instead of calling run_fit several times.',
-    parameters: obj({ kind: str('Which experiment.', { enum: ['eccentricity', 'limb_darkening', 'airmass', 'custom'] }),
-      variants: { type: 'array', description: 'For kind "custom": the models to compare, each applied on top of the current set-up.', items: obj({ name: str('Short name, e.g. "free period".'), free: { type: 'array', items: { type: 'string' }, description: 'Keys to free.' }, fixed: { type: 'object', description: 'Keys to hold fixed, with the value to hold each at, e.g. {"ecc": 0}.', additionalProperties: { type: 'number' } } }, ['name']) },
+    description: 'Run a queue of fits one after another on the current data and compare them: "eccentricity" (circular orbit against free e and omega), "limb_darkening" (coefficients fixed against free), "airmass" (with and without the airmass slope), "companion" (without and with one planet of the system), or "custom" with your own variants. Waits for every run, then returns the comparison table, the reading and cautions as the analyzer computes them, and writes a Markdown report file. Use this instead of calling run_fit several times.',
+    parameters: obj({ kind: str('Which experiment.', { enum: ['eccentricity', 'limb_darkening', 'airmass', 'companion', 'custom'] }),
+      planet: str('For kind "companion": letter of the planet to fit with and without (default: the last one).'),
+      variants: { type: 'array', description: 'For kind "custom": the models to compare, each applied on top of the current set-up.', items: obj({ name: str('Short name, e.g. "free period".'), free: { type: 'array', items: { type: 'string' }, description: 'Keys to free.' }, fixed: { type: 'object', description: 'Keys to hold fixed, with the value to hold each at, e.g. {"ecc": 0}.', additionalProperties: { type: 'number' } },
+        setup: { type: 'array', description: 'Other changes that make this variant, as tool calls run before its fit, e.g. [{"tool": "set_limb_darkening", "args": {"law": "linear"}}]. Allowed: set_parameters, set_prior, set_kepler, set_limb_darkening, add_planet, remove_planet, set_phase_curve, set_moon, set_nbody, choose_data.', items: obj({ tool: str('Tool name.'), args: { type: 'object', description: 'Its arguments.', additionalProperties: true } }, ['tool']) } }, ['name']) },
       report: str('File name of the report (default "experiment_report.md").') }, ['kind']) },
 
   // ---- timing -------------------------------------------------------------------------------------------------
@@ -128,9 +159,12 @@ export const TOOL_SPECS = [
   { name: 'export_file', group: 'export',
     description: 'Write one or several result files and give them to the user: session (the whole analysis as JSON, reloadable), report (Markdown: system, data, priors, results), python (a script that reproduces the fit), latex (tables), results_csv (fitted and derived values), samples_csv (posterior draws), light_curve_csv, velocities_csv, timing_csv.',
     parameters: obj({ kinds: { type: 'array', description: 'Every file to write in this call, e.g. ["report", "session"].', items: { type: 'string', enum: ['session', 'report', 'python', 'latex', 'results_csv', 'samples_csv', 'light_curve_csv', 'velocities_csv', 'timing_csv'] } }, name: str('File name, only when a single file is written (a sensible default is used when omitted).') }, ['kinds']) },
+  { name: 'write_report', group: 'export', where: 'browser',
+    description: 'Write the standard project report and give it to the user: one Markdown file with, always in this order, a summary of the headline numbers, the target and observation (from the observing project), the data reduction (from the photometry page), the system, data, fit set-up and result, the comparison of the runs made in this conversation, a methods paragraph with citations, the figures, how to reproduce it, and the references; with it a BibTeX file, the session file, and the light-curve and corner figures. Call it at the end of an analysis, after run_fit (and run_experiment when models were compared).',
+    parameters: obj({ title: str('Report title (default: the project or system name).'), author: str('Author line, only if the user gave a name.'), figures: bool('Also write the figures (default true).') }) },
   { name: 'get_figure', group: 'export', where: 'browser',
-    description: 'Save a figure of the page as a PNG for the user: light_curve, corner (posterior), oc (timing O - C), periodogram, limb_darkening. The figure must be on screen: open its tab first (corner needs a fit result).',
-    parameters: obj({ which: str('Which figure.', { enum: ['light_curve', 'corner', 'oc', 'periodogram', 'limb_darkening'] }), name: str('File name (default: <which>.png).') }, ['which']) },
+    description: 'Make a figure of the analysis as a PNG: it is shown in the chat and listed with the files for download. Figures: light_curve (with model and residuals), residuals, rv (radial velocities), corner (posterior; needs a fit), oc (timing O - C), phase (phase curve), map (brightness map), moon, system (the 3D view), periodogram and limb_darkening (these two must be on screen).',
+    parameters: obj({ which: str('Which figure.', { enum: ['light_curve', 'residuals', 'rv', 'corner', 'oc', 'phase', 'map', 'moon', 'system', 'periodogram', 'limb_darkening'] }), name: str('File name (default: <which>.png).'), dark: bool('true: dark background (default: white, as for print).') }, ['which']) },
   { name: 'import_session', group: 'export', confirm: 'Opening a session file replaces everything that is loaded now.',
     description: 'Open an ESL session file (JSON written by export_file kind "session" or by the analyzer\'s Save) from the attached files. Replaces everything loaded, and restores the stored result if the file has one.',
     parameters: obj({ file: str('Name of the attached session file.') }, ['file']) },
@@ -187,6 +221,7 @@ function checkValue(v, schema, path, errors, set) {
     const want = [].concat(schema.type);
     if (typeof v === 'string' && (want.includes('number') || want.includes('integer')) && v.trim() !== '' && Number.isFinite(Number(v))) { v = Number(v); set(v); }
     else if (typeof v === 'string' && want.includes('boolean') && /^(true|false)$/i.test(v)) { v = /^true$/i.test(v); set(v); }
+    else if (want.includes('null') && typeof v === 'string' && /^(null|none|)$/i.test(v.trim())) { v = null; set(v); return; }
     else if (want.includes('array') && typeof v === 'string') { v = [v]; set(v); }
     else if (want.includes('integer') && typeof v === 'number' && Number.isFinite(v)) { v = Math.round(v); set(v); }
     else if (want.includes('string') && typeof v === 'number') { v = String(v); set(v); }

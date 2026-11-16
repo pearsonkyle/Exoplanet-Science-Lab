@@ -8,6 +8,7 @@
 // test/make_photometry_reference.py).
 
 import { erfc } from './stats.js';
+import { ensembleWeights } from './detrend.js';
 
 // ---------------------------------------------------------------------------------------------------------
 // Exact overlap of a circle with a pixel (the algorithm of photutils.geometry.circular_overlap_grid, 'exact')
@@ -760,17 +761,21 @@ export function optimise(M, opts = {}) {
   const time = M.time.subarray(0, nF), amOK = M.airmass.subarray(0, nF).every(Number.isFinite), fitOpts = { ...(opts.fit || {}), airmass: amOK ? M.airmass.subarray(0, nF) : null };
   const fitter = opts.fitter || null, onRow = opts.onRow || null;
   const T = new Float64Array(nF), C = new Float64Array(nF), R = new Float64Array(nF), tmp = new Float64Array(nF);
-  const comps = [-1]; for (let j = 1; j <= nC; j++) comps.push(j); if (ensemble && nC > 1) comps.push(0);   // -1 none, j star j, 0 all summed
+  // -1 none, j star j, 0 all summed, 'w' the inverse-variance weighted ensemble (detrend.js ensembleWeights)
+  const comps = [-1]; for (let j = 1; j <= nC; j++) comps.push(j); if (ensemble && nC > 1) comps.push(0); if (ensemble && nC > 1 && opts.weighted !== false) comps.push('w');
   const tried = []; let best = -1, bestVal = Infinity;
   const fill = (kind, a, n, comp) => {       // target flux in T, comparison in C, ratio in R
     seriesOf(M, kind, 0, a, n, T);
-    if (comp < 0) C.fill(1); else if (comp > 0) seriesOf(M, kind, comp, a, n, C); else { C.fill(0); for (let j = 1; j <= nC; j++) { seriesOf(M, kind, j, a, n, tmp); for (let f = 0; f < nF; f++) C[f] += tmp[f]; } }
+    if (comp === 'w') { const W = weightedComparison(M, kind, a, n, T); C.set(W.comparison); W.weights.forEach((w, j) => { wts[j] = w; }); }
+    else if (comp < 0) C.fill(1); else if (comp > 0) seriesOf(M, kind, comp, a, n, C); else { C.fill(0); for (let j = 1; j <= nC; j++) { seriesOf(M, kind, j, a, n, tmp); for (let f = 0; f < nF; f++) C[f] += tmp[f]; } }
     for (let f = 0; f < nF; f++) R[f] = T[f] / C[f];
   };
+  const wts = new Array(nC).fill(0);
   const tryOne = (kind, a, n, comp) => {
     fill(kind, a, n, comp);
     const fit = fitter ? fitter(time, R, { airmass: fitOpts.airmass, target: T, comp: C, noComp: comp < 0 }) : quickFit(time, R, fitOpts), val = metric === 'robust' ? fit.robust : fit.scatter, ap = kind === 'aperture' || kind === 'ellipse';
     const row = { method: kind, aperture: ap ? M.apertures[a] : 0, annulus: ap ? M.annuli[n] : 0, ia: a, in: n, comp, scatter: fit.scatter, robust: fit.robust, n: fit.n, depth: fit.depth };
+    if (comp === 'w') row.weights = wts.slice();
     if (fit.params) row.params = fit.params;
     tried.push(row);
     if (Number.isFinite(val) && fit.n >= 0.5 * nF && val < bestVal) { bestVal = val; best = tried.length - 1; }
@@ -796,6 +801,18 @@ export function optimise(M, opts = {}) {
   return { tried, best, lc: lightCurveFor(M, tried[best], fitOpts, fitter), fitOpts };
 }
 
+/**
+ * The comparison stars of a stack combined with inverse-variance weights (ensembleWeights in detrend.js: each star's
+ * white noise from the pairwise flux ratios, the target included as one of the series). Frames where any star has no
+ * flux are left out of the noise estimate. @returns { comparison (median 1), weights, sigma, medians, series }
+ */
+export function weightedComparison(M, kind, a, n, target) {
+  const nC = M.nS - 1, series = []; for (let j = 1; j <= nC; j++) series.push(seriesOf(M, kind, j, a, n));
+  const keep = Uint8Array.from({ length: M.count }, (_, f) => (Number.isFinite(target[f]) && target[f] > 0 && series.every((s) => Number.isFinite(s[f]) && s[f] > 0) ? 1 : 0));
+  const W = ensembleWeights(series, target, { keep });
+  return { ...W, medians: series.map((s) => median(Array.from(s).filter((v, f) => keep[f]))), series };
+}
+
 /** Number of pixels a method effectively sums (for noise estimates): the aperture area, or 4 pi sx sy for a Gaussian profile. */
 function effectivePixels(M, row, f, s) {
   const k = f * M.nS + s;
@@ -816,7 +833,8 @@ export function lightCurveFor(M, row, fitOpts = {}, fitter = null) {
   const nF = M.count, nC = M.nS - 1, T = new Float64Array(nF), C = new Float64Array(nF), R = new Float64Array(nF), tmp = new Float64Array(nF);
   const ap = row.method === 'aperture' || row.method === 'ellipse', ia = ap ? row.ia : M.nA - 1, inn = ap ? row.in : M.nN - 1;
   seriesOf(M, row.method, 0, row.ia, row.in, T);
-  if (row.comp < 0) C.fill(1); else if (row.comp > 0) seriesOf(M, row.method, row.comp, row.ia, row.in, C); else { for (let j = 1; j <= nC; j++) { seriesOf(M, row.method, j, row.ia, row.in, tmp); for (let f = 0; f < nF; f++) C[f] += tmp[f]; } }
+  const W = row.comp === 'w' ? weightedComparison(M, row.method, row.ia, row.in, T) : null;
+  if (W) C.set(W.comparison); else if (row.comp < 0) C.fill(1); else if (row.comp > 0) seriesOf(M, row.method, row.comp, row.ia, row.in, C); else { for (let j = 1; j <= nC; j++) { seriesOf(M, row.method, j, row.ia, row.in, tmp); for (let f = 0; f < nF; f++) C[f] += tmp[f]; } }
   for (let f = 0; f < nF; f++) R[f] = T[f] / C[f];
   const time = M.time.slice(0, nF), fit = fitter ? fitter(time, R, { airmass: fitOpts.airmass, target: T, comp: C, noComp: row.comp < 0, full: true }) : quickFit(time, R, fitOpts);
   // normalised by the baseline's median; the uncertainty is the robust scatter of the residuals (EXOTIC also
@@ -830,12 +848,13 @@ export function lightCurveFor(M, row, fitOpts = {}, fitter = null) {
     let vT = 0, vT0 = 0, vC = 0, vC0 = 0;
     const one = (s, flux) => { const np = effectivePixels(M, row, f, s), sd = M.bgStd[((f * M.nS + s) * M.nA + ia) * M.nN + inn]; return [flux / gain, np * sd * sd * (1 + np / nsky)]; };
     { const [p, q] = one(0, T[f]); vT0 = p; vT = p + q; }
-    if (row.comp > 0) { const [p, q] = one(row.comp, C[f]); vC0 = p; vC = p + q; } else if (row.comp === 0) for (let j = 1; j <= nC; j++) { const [p, q] = one(j, seriesOf(M, row.method, j, row.ia, row.in, tmp)[f]); vC0 += p; vC += p + q; }
+    if (W) for (let j = 1; j <= nC; j++) { const Fj = W.series[j - 1][f], [p, q] = one(j, Fj), sc = (W.weights[j - 1] / W.medians[j - 1]) ** 2; vC0 += sc * p; vC += sc * (p + q); }   // var(sum w_j F_j / med_j)
+    else if (row.comp > 0) { const [p, q] = one(row.comp, C[f]); vC0 = p; vC = p + q; } else if (row.comp === 0) for (let j = 1; j <= nC; j++) { const [p, q] = one(j, seriesOf(M, row.method, j, row.ia, row.in, tmp)[f]); vC0 += p; vC += p + q; }
     const cc = row.comp < 0 ? 0 : 1 / (C[f] * C[f]);
     photErr[f] = Math.sqrt(Math.max(0, vT) / (T[f] * T[f]) + Math.max(0, vC) * cc); photErrStar[f] = Math.sqrt(Math.max(0, vT0) / (T[f] * T[f]) + Math.max(0, vC0) * cc);
   }
   const pick = (a, s = 0) => Float64Array.from({ length: nF }, (_, f) => a[f * M.nS + s]);
-  return { time, flux: R, norm, normErr, photErr, photErrStar, model: fit.model.map((v) => v / b0), baseline: fit.baseline.map((v) => v / b0), resid: fit.resid.map((v) => v / b0), keep: fit.keep, target: T, comparison: C, fit, background: bg,
+  return { time, flux: R, norm, normErr, photErr, photErrStar, weights: W ? W.weights : null, compSeries: W ? W.series : null, model: fit.model.map((v) => v / b0), baseline: fit.baseline.map((v) => v / b0), resid: fit.resid.map((v) => v / b0), keep: fit.keep, target: T, comparison: C, fit, background: bg,
     airmass: M.airmass.slice(0, nF), exptime: M.exptime.slice(0, nF), x: pick(M.x), y: pick(M.y), fwhm: pick(M.fwhm), rot: M.rot.slice(0, nF) };
 }
 
@@ -861,20 +880,31 @@ export function pipelineMask(tpf) {
   return any ? m : null;
 }
 
-/** Median image over cadences (every `step`-th good cadence), for display and for threshold masks. */
-export function tpfMedianImage(tpf, step = 0) {
+/**
+ * Median image over cadences (every `step`-th cadence whose QUALITY has none of the bits of `qmask` set; default any
+ * flag), for display and for threshold masks. NaN pixels are ignored and an even count takes the mean of the two middle
+ * values (numpy nanmedian, as lightkurve's median image when step = 1 and qmask is its quality bitmask).
+ */
+export function tpfMedianImage(tpf, step = 0, qmask = 0x7fffffff) {
   const { nx, ny, ncad } = tpf, np = nx * ny, st = step || Math.max(1, Math.floor(ncad / 200)), out = new Float32Array(np), buf = new Float64Array(Math.ceil(ncad / st));
-  for (let p = 0; p < np; p++) { let m = 0; for (let c = 0; c < ncad; c += st) { const v = tpf.flux[c * np + p]; if (v === v && !tpf.quality[c]) buf[m++] = v; } if (!m) { out[p] = NaN; continue; } const a = buf.subarray(0, m); a.sort(); out[p] = a[m >> 1]; }
+  for (let p = 0; p < np; p++) { let m = 0; for (let c = 0; c < ncad; c += st) { const v = tpf.flux[c * np + p]; if (v === v && !(tpf.quality[c] & qmask)) buf[m++] = v; } if (!m) { out[p] = NaN; continue; } const a = buf.subarray(0, m); a.sort(); out[p] = m & 1 ? a[m >> 1] : 0.5 * (a[m / 2 - 1] + a[m / 2]); }
   return out;
 }
 
-/** Pixels brighter than median + nsigma * (1.4826 MAD) of the median image, connected to (x0, y0) (lightkurve's 'threshold' mask). */
-export function thresholdMask(img, nx, ny, nsigma, x0, y0) {
-  const fin = Float64Array.from(img).filter((v) => v === v).sort(), med = fin[fin.length >> 1], mad = 1.4826 * median(fin.map((v) => Math.abs(v - med)));
-  const above = new Uint8Array(nx * ny); for (let i = 0; i < above.length; i++) above[i] = img[i] > med + nsigma * mad ? 1 : 0;
+/**
+ * Pixels brighter than median + nsigma × 1.4826 MAD of the median image, connected (4-neighbours) to the target
+ * (lightkurve's 'threshold' mask). Default: the region starts from the above-threshold pixel nearest (x0, y0) if it is
+ * within 2.5 px (else the mask is empty). opts.lightkurve: exactly create_threshold_mask(nsigma, reference_pixel), i.e.
+ * pixels >= the cut (NaN as 0), the region whose pixel is nearest (x0, y0) however far, with x0, y0 = nx/2, ny/2 for
+ * its 'center'.
+ */
+export function thresholdMask(img, nx, ny, nsigma, x0, y0, opts = {}) {
+  const fin = Float64Array.from(img).filter((v) => v === v).sort(), mid = (a) => (a.length & 1 ? a[a.length >> 1] : 0.5 * (a[a.length / 2 - 1] + a[a.length / 2]));
+  const med = opts.lightkurve ? mid(fin) : fin[fin.length >> 1], dev = fin.map((v) => Math.abs(v - med)).sort(), mad = 1.4826 * (opts.lightkurve ? mid(dev) : median(dev)), cut = med + nsigma * mad;
+  const above = new Uint8Array(nx * ny); for (let i = 0; i < above.length; i++) above[i] = opts.lightkurve ? ((img[i] === img[i] ? img[i] : 0) >= cut ? 1 : 0) : img[i] > cut ? 1 : 0;
   // start from the above-threshold pixel nearest the requested position, then flood fill
   let start = -1, bd = Infinity; for (let i = 0; i < above.length; i++) if (above[i]) { const d = Math.hypot((i % nx) - x0, Math.floor(i / nx) - y0); if (d < bd) { bd = d; start = i; } }
-  const m = new Uint8Array(nx * ny); if (start < 0 || bd > 2.5) return m;
+  const m = new Uint8Array(nx * ny); if (start < 0 || (!opts.lightkurve && bd > 2.5)) return m;
   const stack = [start]; m[start] = 1;
   while (stack.length) { const i = stack.pop(), x = i % nx, y = (i - x) / nx; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= nx || yy >= ny) continue; const j = yy * nx + xx; if (above[j] && !m[j]) { m[j] = 1; stack.push(j); } } }
   return m;
@@ -890,30 +920,31 @@ export function circleMask(nx, ny, x0, y0, r) { const m = new Uint8Array(nx * ny
  * pixel in the mask have ok = 0.
  * When the file's fluxes are not background-subtracted (TESScut cutouts), the background per cadence is the
  * sigma-clipped median of the pixels outside the mask grown by two pixels, and it is subtracted.
- * @param opts { quality: bitmask of flags to reject (default all), subtract: 'auto' | true | false }
- * @returns { time (BJD_TDB), flux, err, bkg (per pixel), x, y (pixel coordinates in the cutout), ok, npix }
+ * Also the noise-pixel parameter β = (Σf)² / Σf² over the mask (the PSF-width proxy the owner's TOI extraction records).
+ * @param opts { quality: bitmask of flags to reject (default all; the page uses lightkurve's 'default'), subtract: 'auto' | true | false }
+ * @returns { time (BJD_TDB), flux, err, bkg (per pixel), x, y (pixel coordinates in the cutout), beta, ok, npix }
  */
 export function tpfLightCurve(tpf, mask, opts = {}) {
   const { nx, ny, ncad } = tpf, np = nx * ny, qmask = opts.quality ?? 0x7fffffff;
   const sub = opts.subtract === 'auto' || opts.subtract == null ? !tpf.bkgSubtracted : !!opts.subtract;
   const idx = []; for (let i = 0; i < np; i++) if (mask[i]) idx.push(i);
   const sky = []; if (sub) { const grown = dilateMask(mask, nx, ny, 2); for (let i = 0; i < np; i++) if (!grown[i]) sky.push(i); }
-  const time = new Float64Array(ncad), flux = new Float64Array(ncad), err = new Float64Array(ncad), bkg = new Float64Array(ncad), xs = new Float64Array(ncad), ys = new Float64Array(ncad), ok = new Uint8Array(ncad);
+  const time = new Float64Array(ncad), flux = new Float64Array(ncad), err = new Float64Array(ncad), bkg = new Float64Array(ncad), xs = new Float64Array(ncad), ys = new Float64Array(ncad), beta = new Float64Array(ncad), ok = new Uint8Array(ncad);
   const buf = scratch(np);
   for (let c = 0; c < ncad; c++) {
-    const o = c * np; let s = 0, e2 = 0, sx = 0, sy = 0, bad = false, b = 0;
+    const o = c * np; let s = 0, e2 = 0, sx = 0, sy = 0, s2 = 0, bad = false, b = 0;
     if (sub) { let m = 0; for (const i of sky) { const v = tpf.flux[o + i]; if (v === v) buf[m++] = v; } b = m ? sigmaClippedStats(buf, m, 3, 5)[0] : NaN; }
     else if (tpf.fluxBkg) { let bs = 0; for (const i of idx) bs += tpf.fluxBkg[o + i]; b = bs / idx.length; }
     for (const i of idx) {
       const v = tpf.flux[o + i] - (sub ? b : 0);
       if (v !== v) { bad = true; break; }
-      s += v; sx += v * (i % nx); sy += v * ((i / nx) | 0);
+      s += v; s2 += v * v; sx += v * (i % nx); sy += v * ((i / nx) | 0);
       if (tpf.fluxErr) { const e = tpf.fluxErr[o + i]; e2 += e * e; }
     }
-    time[c] = tpf.time[c] + tpf.bjdRef; flux[c] = bad ? NaN : s; err[c] = bad ? NaN : Math.sqrt(e2); bkg[c] = b; xs[c] = bad ? NaN : sx / s; ys[c] = bad ? NaN : sy / s;
+    time[c] = tpf.time[c] + tpf.bjdRef; flux[c] = bad ? NaN : s; err[c] = bad ? NaN : Math.sqrt(e2); bkg[c] = b; xs[c] = bad ? NaN : sx / s; ys[c] = bad ? NaN : sy / s; beta[c] = bad || !s2 ? NaN : s * s / s2;
     ok[c] = !bad && Number.isFinite(tpf.time[c]) && !(tpf.quality[c] & qmask) && idx.length > 0 ? 1 : 0;
   }
-  return { time, flux, err, bkg, x: xs, y: ys, ok, npix: idx.length };
+  return { time, flux, err, bkg, x: xs, y: ys, beta, ok, npix: idx.length };
 }
 
 /**

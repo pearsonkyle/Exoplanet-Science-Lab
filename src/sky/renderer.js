@@ -159,7 +159,7 @@ void main() {
   if (c < CULL || aSize <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
   vColor = aColor; vHalf = aSize * uPx; gl_PointSize = 2.0 * vHalf;
 }`;
-// uStyle 0: soft dot, 1: ring (host stars), 2: Sun (disc and glow), 3: Moon (lit by uLight)
+// uStyle 0: soft dot, 1: ring (host stars; dashed for candidates), 2: Sun (disc and glow), 3: Moon (lit by uLight)
 const POINT_FS = /* glsl */`
 uniform float uStyle, uPx, uDark; uniform vec3 uLight;
 varying vec4 vColor; varying float vHalf;
@@ -167,7 +167,9 @@ void main() {
   vec2 uv = (gl_PointCoord - 0.5) * 2.0; uv.y = -uv.y;
   float r = length(uv), px = r * vHalf;
   if (uStyle < 0.5) { gl_FragColor = vec4(vColor.rgb, vColor.a * (1.0 - smoothstep(vHalf * 0.45, vHalf, px))); }
-  else if (uStyle < 1.5) { float w = 0.9 * uPx; gl_FragColor = vec4(vColor.rgb, vColor.a * (1.0 - smoothstep(w * 0.5, w * 1.4, abs(px - (vHalf - 1.6 * uPx))))); }
+  else if (uStyle < 1.5) {     // a ring; dashed (eight dashes) when the alpha is below 0.925: the TESS candidates
+    float w = 0.9 * uPx, dash = vColor.a < 0.925 ? smoothstep(-0.25, 0.25, sin(atan(uv.y, uv.x) * 8.0)) : 1.0;
+    gl_FragColor = vec4(vColor.rgb, vColor.a * dash * (1.0 - smoothstep(w * 0.5, w * 1.4, abs(px - (vHalf - 1.6 * uPx))))); }
   else if (uStyle < 2.5) {     // the disc fills a quarter of the sprite, the rest is glow
     float disc = 1.0 - smoothstep(0.25 - 1.0 / vHalf, 0.25 + 1.0 / vHalf, r);
     float glow = 0.55 * exp(-(r - 0.25) * 7.0) * (1.0 - smoothstep(0.7, 1.0, r));
@@ -245,6 +247,7 @@ export function createSkyRenderer(canvas) {
   const azGrid = add(new LineSegments(graticule(10, 15, toAzAlt), lineMat(0x4f8f6a)), 10);
   const eqGrid = add(new LineSegments(graticule(10, 15, toEq), lineMat(0x4a7fc0)), 11);
   let conLines = null, stars = null, hosts = null, track = null, horizonTex = null;
+  const lines = new Map();
 
   const starMat = (frame) => mat(STAR_VS, STAR_FS, { uFrame: { value: m3(frame) }, uMagLimit: { value: 6 }, uRefract: { value: 0 }, uExtinct: { value: 0 }, uSize: { value: 1 } }, AdditiveBlending);
   const pointMat = (style) => mat(POINT_VS, POINT_FS, { uFrame: { value: m3() }, uRefract: { value: 0 }, uStyle: { value: style }, uDark: { value: 1 }, uLight: { value: new Vector3(0, 0, 1) } });
@@ -317,6 +320,19 @@ export function createSkyRenderer(canvas) {
     /** In perspective mode under WebXR: the rotation about the vertical (radians) from the world frame to the reference space. */
     setHeading(yaw) { const c = Math.cos(yaw), s = Math.sin(yaw); shared.uView.value.set(c, 0, s, 0, 1, 0, -s, 0, c); },
     setPointScale(v) { shared.uPx.value = v; },
+    /** Under WebXR, where setView() is not called: pixels per radian at the centre of an eye, in the units of setPointScale. */
+    setPixelFocal(v) { if (v > 0) P = v; },
+    /**
+     * A named polyline of world directions (the 30 degree ring, the part of the track during the transit); null removes it.
+     * These are GL lines, so they are drawn in the flat view and, once per eye, in a headset.
+     */
+    setLine(name, dirs, { color = 0x5fd4ff, alpha = 0.9, order = 46 } = {}) {
+      const old = lines.get(name);
+      if (old) { scene.remove(old); old.geometry.dispose(); materials.splice(materials.indexOf(old.material), 1); old.material.dispose(); lines.delete(name); }
+      if (!dirs || dirs.length < 2) return;
+      const pairs = []; for (let i = 0; i + 1 < dirs.length; i++) pairs.push(dirs[i], dirs[i + 1]);
+      const l = add(new LineSegments(lineGeometry(pairs), lineMat(color)), order); l.material.uniforms.uAlpha.value = alpha; lines.set(name, l);
+    },
     /** The apparent horizon as altitudes in degrees at equal steps of azimuth from north through east, or null for a flat one. */
     setHorizon(altDeg) {
       if (horizonTex) { horizonTex.dispose(); horizonTex = null; }

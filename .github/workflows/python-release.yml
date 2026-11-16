@@ -1,0 +1,29 @@
+# Publishes the Python package to PyPI when a tag py-vX.Y.Z is pushed, through PyPI's trusted publishing
+# (no token stored here). One-time set-up on pypi.org: see docs/guide/development.md, "Publishing the Python package".
+name: Python release
+on:
+  push:
+    tags: ['py-v*']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: npm ci && npm run build:python
+      - run: pip install build && cd python && python -m build
+      - run: cd python && pip install "dist/$(ls dist | grep whl | head -1)[test]" && pytest -q -m "not slow and not exotic"
+      - uses: actions/upload-artifact@v4
+        with: { name: dist, path: python/dist }
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions: { id-token: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist }
+      - uses: pypa/gh-action-pypi-publish@release/v1

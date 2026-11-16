@@ -31,7 +31,7 @@ check('cut-outs: 48 Rice-compressed frames decode to the window size, headers in
 
 // ---- 2. this code on the cut-outs, with EXOTIC's star positions, apertures and annuli ----------------------
 const o0 = R.offsets[0];
-const cfg = { stars: R.stars.map(([x, y]) => ({ x: x - o0[0], y: y - o0[1] })), timeAt: 'exotic', target: { ra: P.ra, dec: P.dec }, site: R.site, apertures: R.apers, annuli: R.annuli, score: 'transit', planet };
+const cfg = { stars: R.stars.map(([x, y]) => ({ x: x - o0[0], y: y - o0[1] })), timeAt: 'exotic', target: { ra: P.ra, dec: P.dec }, site: R.site, apertures: R.apers, annuli: R.annuli, score: 'transit', planet, weighted: false };   // the weighted ensemble: detrend.test.mjs
 const t0 = performance.now(), res = await runStack(sources, cfg), M = res.M, secs = (performance.now() - t0) / 1000;
 check('all 48 frames measured', M.count === 48, `${secs.toFixed(1)} s including ${res.opt.tried.length} transit-model fits; field re-found by asterism ${res.relocated} times (the window steps by 8 px, the mount drifts 272 px over the night)`);
 {

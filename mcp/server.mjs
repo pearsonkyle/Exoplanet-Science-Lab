@@ -4,6 +4,7 @@
 //
 //   node mcp/server.mjs --workspace /path/to/folder            stdio (Claude Desktop, IDE agents)
 //   node mcp/server.mjs --workspace /path/to/folder --http 8765  streamable HTTP on 127.0.0.1:8765/mcp
+//     --allow-origin https://exoplanet.science   also let that site's pages call it (the docs' Try it panels)
 //   options: --session file.json  open this session at start (a path inside the workspace)
 //
 // Files: every path a tool reads or writes is resolved inside the workspace folder given at start-up and
@@ -87,10 +88,12 @@ The server holds ONE analysis (an ESL session) in memory; every tool acts on it.
 1. Start: lookup_planet (catalogue values and wide priors), load_example, import_session (a session file in the workspace) or new_session.
 2. Data: list_files, then load_light_curve / load_radial_velocities / set_timings with a file name from the workspace. Data are never returned as arrays, only described.
 3. Set up: set_free, set_prior, choose_data, set_sampler. a/R* (ars) is never fitted; with Kepler mode on it follows from M*, R*, P and the planet mass.
-4. run_fit (seconds to minutes; progress notifications are sent), then get_results, compare_runs, or run_experiment for a small model comparison with a written report.
+4. run_fit (seconds to minutes; progress notifications are sent), then get_results, get_derived, list_runs, compare_runs. run_experiment runs a queue of variants one after another (circular against eccentric, with and without a planet, or your own variants with set-up steps) and returns the comparison table with a written report.
+   Optional models: set_phase_curve (the planet's own light), set_moon, set_nbody (two planets or more).
 5. Timing: fit_ephemeris and timing_periodogram. Files: export_file (session JSON, Markdown report, Python script, CSV), write_file.
 Keys: rprs, ars, inc, per, tmid, ecc, omega, mplanet, ld0..ld3, a2, rvlin, rvquad, jit@rv1, mstar, rstar, teff, feh; later planets carry their letter (per@c). Times are days (BJD when dated).
-Report numbers exactly as returned; for model comparison relay the "reading", "verdict" and "cautions" fields rather than interpreting ln Z yourself.`;
+Report numbers exactly as returned, each with the uncertainty it came with; never convert or compute one. For model comparison relay the "reading", "verdict" and "cautions" fields rather than interpreting ln Z yourself.
+Results that hold a table also carry it as a second text block (Markdown), ready to show as it is.`;
 
 /** Build the server on a workspace folder. Returns { server, tools, api, files }. */
 export function createEslServer({ workspace, session } = {}) {
@@ -112,7 +115,8 @@ export function createEslServer({ workspace, session } = {}) {
       extra.sendNotification({ method: 'notifications/progress', params: { progressToken: token, progress: Math.round(done * 100), total: 100, message: `${p.variant ? p.variant + ': ' : ''}iteration ${p.it}, ${p.ncalls} likelihood calls, ln Z ${Number(p.logZ).toFixed(2)}, ${(p.elapsed || 0).toFixed(0)} s` } }).catch(() => {});
     };
     const r = await tools.call(name, args || {}, { signal: extra.signal, onProgress });
-    return { content: [{ type: 'text', text: r.text }], isError: !r.ok };
+    // the result as JSON for the model, and its table (when it has one) as Markdown the client can show verbatim
+    return { content: [{ type: 'text', text: r.text }, ...(r.ok && r.table ? [{ type: 'text', text: r.table }] : [])], isError: !r.ok };
   });
   return { server, tools, api, files };
 }
@@ -120,7 +124,7 @@ export function createEslServer({ workspace, session } = {}) {
 // ---- command line ----------------------------------------------------------------------------------------------
 async function main() {
   const argv = process.argv.slice(2), opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
-  if (argv.includes('--help') || argv.includes('-h')) { process.stdout.write('usage: node mcp/server.mjs --workspace <folder> [--session file.json] [--http <port>]\n'); return; }
+  if (argv.includes('--help') || argv.includes('-h')) { process.stdout.write('usage: node mcp/server.mjs --workspace <folder> [--session file.json] [--http <port> [--allow-origin <https://site>]...]\n'); return; }
   const workspace = resolve(opt('--workspace', process.env.ESL_WORKSPACE || process.cwd()));
   if (!existsSync(workspace) || !statSync(workspace).isDirectory()) { log(`workspace folder not found: ${workspace}`); process.exit(2); }
   let session; const sf = opt('--session');
@@ -136,10 +140,24 @@ async function main() {
   const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
   const { createServer } = await import('node:http'), { randomUUID } = await import('node:crypto');
   const sessions = new Map(), host = '127.0.0.1', allowed = new Set([`${host}:${port}`, `localhost:${port}`]);
+  // Web pages may call this server only from this machine's own pages, or from an origin named with --allow-origin
+  // (repeatable; e.g. the documentation site, whose "Try it" panels talk to your server). The server still listens on
+  // 127.0.0.1 only and still refuses a foreign Host header, so nothing on the network can reach it.
+  const extra = argv.flatMap((a, i) => (a === '--allow-origin' && argv[i + 1] ? [argv[i + 1].replace(/\/+$/, '')] : []));
+  const originOk = (o) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o) || extra.includes(o);
   createServer(async (req, res) => {
     try {
       if (!allowed.has(req.headers.host || '')) { res.writeHead(403).end('forbidden host'); return; }   // DNS-rebinding guard
-      if (req.headers.origin && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.origin)) { res.writeHead(403).end('forbidden origin'); return; }
+      const origin = req.headers.origin;
+      if (origin && !originOk(origin)) { res.writeHead(403).end('forbidden origin: start the server with --allow-origin ' + origin); return; }
+      if (origin) {
+        // CORS for the allowed page, and Chrome's local-network preflight (a public page calling 127.0.0.1)
+        res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Headers', 'content-type, accept, mcp-session-id, mcp-protocol-version, last-event-id');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS'); res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id, mcp-protocol-version');
+        if (req.headers['access-control-request-private-network']) res.setHeader('Access-Control-Allow-Private-Network', 'true');
+        if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
+      }
       if (!(req.url || '').startsWith('/mcp')) { res.writeHead(404).end('use /mcp'); return; }
       const sid = req.headers['mcp-session-id'];
       let t = sid && sessions.get(sid);
@@ -151,6 +169,6 @@ async function main() {
       }
       await t.handleRequest(req, res);
     } catch (err) { log('http error', err.message); if (!res.headersSent) res.writeHead(500).end('error'); }
-  }).listen(Number(port), host, () => log(`ready on http://${host}:${port}/mcp · workspace ${workspace}`));
+  }).listen(Number(port), host, () => log(`ready on http://${host}:${port}/mcp · workspace ${workspace}${extra.length ? ` · pages allowed: ${extra.join(', ')}` : ''}`));
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((err) => { log(err.stack || err.message); process.exit(1); });

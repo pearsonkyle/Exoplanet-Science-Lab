@@ -1,0 +1,54 @@
+#
+#   VizieR Astronomical Server vizier.cfa.harvard.edu
+#    Date: 2026-11-16T17:49:11 [V7.6.1]
+#   In case of problem, please report to:	cds-question@unistra.fr
+#
+#
+#Coosys	J2000:	eq_FK5 J2000
+#INFO	service_protocol=ASU	  IVOID of the protocol through which the data was retrieved
+#INFO	request_date=2026-11-16T17:49:11	  Query execution date
+#INFO	request=https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=J/ApJS/225/9/table2&KOI=142.01&-out.all&-out.max=500	  Full request URL
+#INFO	contact=cds-question@unistra.fr	  Email or URL to contact publisher
+#INFO	server_software=VizieR/7.6.1	  Software version
+#INFO	publisher=CDS	  Data centre that produced the VOTable
+
+#RESOURCE=yCat_22250009
+#Name: J/ApJS/225/9
+#Title: Kepler TTVs. IX. The full long-cadence data set (Holczer+, 2016)
+#INFO	ivoid=ivo://cds.vizier/j/apjs/225/9	    IVOID of underlying data collection
+#INFO	data_ivoid=ivo://cds.vizier/j/apjs/225/9	    IVOID of underlying data collection
+#INFO	creator=Holczer T.	    First author or institution
+#INFO	cites=bibcode:2016ApJS..225....9H	    Article or Data origin sources
+#INFO	journal=ApJS	    Journal name
+#INFO	original_date=2016	    Year of the article publication
+#INFO	reference_url=https://cdsarc.cds.unistra.fr/viz-bin/cat/J/ApJS/225/9	    Dataset landing page
+#INFO	citation=doi:10.26093/cds/vizier.22250009	    Dataset identifier that can be used for citation
+#INFO	publication_date=2017-10-18	    Date of first publication in the data centre
+#INFO	rights_uri=https://cds.unistra.fr/vizier-org/licences_vizier.html	    Licence URI
+#Table	J_ApJS_225_9_table2:
+#Name: J/ApJS/225/9/table2
+#Title: KOI transits: linear ephemerides, duration and depth
+#Column	recno	(I8)	Record number assigned by the VizieR team. Should Not be used for identification.	[ucd=meta.record]
+#Column	KIC	(I8)	KIC number of the host star (added from http://exoplanetarchive.ipac.caltech.edu/)	[ucd=meta.id.parent]
+#Column	KOI	(F7.2)	[1.01/5970.01] Kepler Object of Interest number	[ucd=meta.id;meta.main]
+#Column	Nt	(I4)	Number of transits (table 3)	[ucd=meta.number]
+#Column	T0	(F11.6)	Time of corrected transit center; BJD-2454900	[ucd=time.epoch]
+#Column	e_T0	(F9.6)	[0/10]? Uncertainty in T0	[ucd=stat.error]
+#Column	Per	(F12.8)	[0.5/299] Average interval between transits	[ucd=time.period]
+#Column	e_Per	(F11.8)	[0/10]? Uncertainty in Period	[ucd=stat.error]
+#Column	V	(A1)	V indicates KOIs with significant times of transit variations (table 5)	[ucd=meta.ref.url]
+#Column	Dur	(F7.4)	[1/84.1] Transit Duration; t4-t1	[ucd=time.duration]
+#Column	Depth	(I5)	[27/97317] Transit Depth (in units of out of transit intensity)	[ucd=src.var.amplitude]
+#Column	SNR	(F6.1)	[1/2016] Median single-transit signal-to-Noise	[ucd=em.wl.central;stat.median]
+#Column	SRatio	(F5.2)	[0.4/33.6] Scatter ratio of the residuals inside to outside the transit	[ucd=stat.fit.omc]
+#Column	p	(I4)	Link to statistical parameters (table 4) if any; see section 3	[ucd=meta.ref.url]
+#Column	P0	(I4)	Simbad column added by the CDS	[ucd=meta.ref.url]
+#Column	pP	(I4)	Display data from Paper I and VII (Ford+, 2011, J/ApJS/197/2 and Mazeh+, 2013, J/ApJS/208/16)	[ucd=meta.ref.url]
+#Column	Simbad	(a6)	Simbad column added by the CDS	[ucd=meta.ref.url]
+#Column	_RA	(F9.5)	Positions from NASA exoplanet archive (right ascension part)	[ucd=pos.eq.ra;meta.main]
+#Column	_DE	(F9.5)	Positions from NASA exoplanet archive (declination part)	[ucd=pos.eq.dec;meta.main]
+recno	KIC	KOI	Nt	T0	e_T0	Per	e_Per	V	Dur	Depth	SNR	SRatio	p	P0	pP	Simbad	_RA	_DE
+ 	 	 	 	d	d	d	d	 	h	ppm	 	 	 	 	 	 	deg	deg
+--------	--------	-------	----	-----------	---------	------------	-----------	-	-------	-----	------	-----	----	----	----	------	---------	---------
+      83	 5446285	 142.01	 121	  54.675215	 0.059117	 10.95307834	 0.00006657	V	 3.7285	 1487	  39.2	 1.25	   1	   1	   2	Simbad	291.14808	+40.66939
+

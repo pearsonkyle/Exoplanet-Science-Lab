@@ -1,0 +1,22 @@
+{
+ "about": "Two observatories for the whole-circle horizon check (test/horizon.test.mjs). Kitt Peak: the planner's default site with its elevation (src/plan/sites.js, from the astropy site registry: 31.96333 N, 111.6 W, 2120 m; the tiles' ground there is 2059 m, so the eye is put at 2120 + 2 m, as the planner does); Mauna Kea: the summit ridge near the UH 2.2 m telescope (19.8230 N, 155.4694 W), the eye 2 m above the tiles' ground.",
+ "sites": [
+  {
+   "id": "kpno",
+   "name": "Kitt Peak National Observatory",
+   "lat": 31.96333,
+   "lon": -111.6,
+   "eye": 2,
+   "step": 1,
+   "elev": 2120
+  },
+  {
+   "id": "maunakea",
+   "name": "Mauna Kea summit ridge",
+   "lat": 19.823,
+   "lon": -155.4694,
+   "eye": 2,
+   "step": 1
+  }
+ ]
+}

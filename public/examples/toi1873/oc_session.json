@@ -1,0 +1,512 @@
+{
+"format": "esl-session",
+"version": 1,
+"software": {
+"name": "exoplanet-science-lab",
+"version": "0.2.0",
+"commit": null
+},
+"created": "2026-11-16T00:00:00Z",
+"name": "TOI-1873",
+"title": "TOI-1873: linear ephemerides and O \u2212 C from 50 TESS mid-transit times",
+"notes": "Real data: the mid-transit times of EXOTIC\u2019s per-transit fits of the TESS light curves (examples/toi-3planet): 39 of b, 8 of c, 3 of the candidate d (at its 128.598 d alias; three points leave one degree of freedom).",
+"star": {
+"teff": 5605,
+"teffErr": 45,
+"logg": 4.471,
+"loggErr": 0.05,
+"feh": 0.0,
+"fehErr": 0.1,
+"rstar": 0.974,
+"rstarErr": 0.019,
+"mstar": 1.02,
+"mstarErr": 0.044
+},
+"limb_darkening": {
+"law": "kipping",
+"mode": "coeffs",
+"band": "TESS (approx.)",
+"coefficients": [
+0.4994,
+0.114
+]
+},
+"planets": [
+{
+"letter": "b",
+"parameters": {
+"rprs": 0.0268254,
+"inc": 88.91,
+"per": 7.0057545,
+"tmid": 2459583.714874,
+"ecc": 0.0,
+"omega": 0.0,
+"mplanet": 0.028537448
+}
+},
+{
+"letter": "c",
+"parameters": {
+"rprs": 0.0397857,
+"inc": 89.72,
+"per": 24.933974,
+"tmid": 2459753.677844,
+"ecc": 0.0,
+"omega": 0.0,
+"mplanet": 0.087122595
+}
+},
+{
+"letter": "d",
+"parameters": {
+"rprs": 0.0401378,
+"inc": 89.654,
+"per": 128.59836,
+"tmid": 2459748.836842,
+"ecc": 0.0,
+"omega": 0.0,
+"mplanet": 0.031463559
+}
+}
+],
+"kepler": true,
+"time_reference": 2459500.0,
+"data": {
+"light_curve": null,
+"radial_velocity": [],
+"timing": [
+{
+"planet": "b",
+"kind": "transit",
+"time": 2458848.11069,
+"err": 0.011068,
+"source": "TESS S20"
+},
+{
+"planet": "d",
+"kind": "transit",
+"time": 2458848.639078,
+"err": 0.005682,
+"source": "TESS S20"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2458862.127519,
+"err": 0.008923,
+"source": "TESS S20"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2458876.142573,
+"err": 0.008437,
+"source": "TESS S21"
+},
+{
+"planet": "c",
+"kind": "transit",
+"time": 2458880.988389,
+"err": 0.003114,
+"source": "TESS S21"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2458883.129296,
+"err": 0.012206,
+"source": "TESS S21"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2458890.150371,
+"err": 0.009248,
+"source": "TESS S21"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2458897.160774,
+"err": 0.014914,
+"source": "TESS S21"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459394.566928,
+"err": 0.008437,
+"source": "TESS S40"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459401.571421,
+"err": 0.007536,
+"source": "TESS S40"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459408.580239,
+"err": 0.009703,
+"source": "TESS S40"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459415.578908,
+"err": 0.008869,
+"source": "TESS S40"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459422.575533,
+"err": 0.011732,
+"source": "TESS S41"
+},
+{
+"planet": "c",
+"kind": "transit",
+"time": 2459429.533071,
+"err": 0.002999,
+"source": "TESS S41"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459429.573783,
+"err": 0.010237,
+"source": "TESS S41"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459436.601346,
+"err": 0.015076,
+"source": "TESS S41"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459443.561973,
+"err": 0.016118,
+"source": "TESS S41"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459583.712249,
+"err": 0.014663,
+"source": "TESS S47"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459590.710707,
+"err": 0.005817,
+"source": "TESS S47"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459597.743928,
+"err": 0.007121,
+"source": "TESS S47"
+},
+{
+"planet": "c",
+"kind": "transit",
+"time": 2459604.077764,
+"err": 0.002609,
+"source": "TESS S47"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459604.729351,
+"err": 0.006523,
+"source": "TESS S47"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459723.804464,
+"err": 0.010995,
+"source": "TESS S52"
+},
+{
+"planet": "c",
+"kind": "transit",
+"time": 2459728.743342,
+"err": 0.006053,
+"source": "TESS S52"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459737.868518,
+"err": 0.01829,
+"source": "TESS S52"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459744.844938,
+"err": 0.004687,
+"source": "TESS S53"
+},
+{
+"planet": "d",
+"kind": "transit",
+"time": 2459748.839913,
+"err": 0.004602,
+"source": "TESS S53"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459751.846788,
+"err": 0.014942,
+"source": "TESS S53"
+},
+{
+"planet": "c",
+"kind": "transit",
+"time": 2459753.674279,
+"err": 0.0035,
+"source": "TESS S53"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459758.866364,
+"err": 0.004479,
+"source": "TESS S53"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459765.83869,
+"err": 0.007392,
+"source": "TESS S53"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459912.98302,
+"err": 0.003995,
+"source": "TESS S59"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459919.986293,
+"err": 0.01207,
+"source": "TESS S59"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459926.98045,
+"err": 0.01588,
+"source": "TESS S59"
+},
+{
+"planet": "c",
+"kind": "transit",
+"time": 2459928.225159,
+"err": 0.005083,
+"source": "TESS S59"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459934.008872,
+"err": 0.008114,
+"source": "TESS S59"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459941.014977,
+"err": 0.006093,
+"source": "TESS S60"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459948.005155,
+"err": 0.009806,
+"source": "TESS S60"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2459962.023451,
+"err": 0.013084,
+"source": "TESS S60"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2460291.295418,
+"err": 0.014643,
+"source": "TESS S73"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2460298.300496,
+"err": 0.004707,
+"source": "TESS S73"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2460312.306986,
+"err": 0.013723,
+"source": "TESS S73"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2460326.328166,
+"err": 0.014738,
+"source": "TESS S74"
+},
+{
+"planet": "c",
+"kind": "transit",
+"time": 2460327.157891,
+"err": 0.002268,
+"source": "TESS S74"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2460333.324297,
+"err": 0.011371,
+"source": "TESS S74"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2460466.434071,
+"err": 0.00913,
+"source": "TESS S79"
+},
+{
+"planet": "c",
+"kind": "transit",
+"time": 2460476.763328,
+"err": 0.002736,
+"source": "TESS S79"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2460648.596517,
+"err": 0.004178,
+"source": "TESS S86"
+},
+{
+"planet": "d",
+"kind": "transit",
+"time": 2460649.030769,
+"err": 0.004544,
+"source": "TESS S86"
+},
+{
+"planet": "b",
+"kind": "transit",
+"time": 2460662.600701,
+"err": 0.006368,
+"source": "TESS S86"
+}
+]
+},
+"fit": {
+"use": {
+"lc": false,
+"rv": false,
+"timing": true
+},
+"free": [
+{
+"key": "per",
+"label": "P",
+"unit": "d",
+"prior": {
+"type": "uniform",
+"a": 7.0053545,
+"b": 7.0061545
+}
+},
+{
+"key": "tmid",
+"label": "T mid",
+"unit": "d",
+"prior": {
+"type": "uniform",
+"a": 2459583.694874,
+"b": 2459583.734874
+}
+},
+{
+"key": "per@c",
+"label": "P \u00b7 c",
+"unit": "d",
+"prior": {
+"type": "uniform",
+"a": 24.932974,
+"b": 24.934974
+}
+},
+{
+"key": "tmid@c",
+"label": "T mid \u00b7 c",
+"unit": "d",
+"prior": {
+"type": "uniform",
+"a": 2459753.657844,
+"b": 2459753.697844
+}
+},
+{
+"key": "per@d",
+"label": "P \u00b7 d",
+"unit": "d",
+"prior": {
+"type": "uniform",
+"a": 128.58836,
+"b": 128.60836
+}
+},
+{
+"key": "tmid@d",
+"label": "T mid \u00b7 d",
+"unit": "d",
+"prior": {
+"type": "uniform",
+"a": 2459748.816842,
+"b": 2459748.856842
+}
+}
+],
+"fixed": {},
+"timing_noise": 0,
+"sampler": {
+"nlive": 400,
+"fracRemain": 0.01,
+"seed": 42,
+"maxCalls": 1000000
+}
+},
+"result": null,
+"ui": {
+"tab": "timing",
+"timing_order": 1
+}
+}

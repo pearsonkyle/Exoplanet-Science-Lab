@@ -24,9 +24,8 @@
 //    Everything downstream is unchanged: exposure averaging calls fluxes[p](t) per sub-sample,
 //    a1 (and per-epoch a1_s) is still integrated out, airmass still multiplies. pc(t) is the
 //    system flux relative to the star alone, so a1 is the stellar flux, not the out-of-eclipse level.
-//    With several planets model.js multiplies the planets' curves; the cross term it adds is
-//    (planet flux of b) x (transit depth of c), below 1e-5 of the flux for any known system. If
-//    that matters use pc.star(t) and pc.planet(t): flux = prod_p star_p(t) + sum_p planet_p(t).
+//    With several planets model.js uses pc.two(t): flux = prod_p star_p(t) + sum_p planet_p(t), so the
+//    star's light is counted once and no planet's light is dimmed by another planet's transit of the star.
 //    Light-travel time is off unless spec.phaseOpts = { ltt: true }; it needs R* in solar radii, which
 //    toPhaseParams copies from v.rstar (without it the delay is zero).
 //
@@ -298,6 +297,63 @@ export function mapIntensity(y, latDeg, lonDeg) {
   return polyAt(mt, cl * Math.sin(lo), Math.sin(la), cl * Math.cos(lo));
 }
 
+// eigenvalues and eigenvectors of a symmetric 3 x 3 matrix (cyclic Jacobi): { val: [3], vec: [3][3] (vec[k] = k-th eigenvector) }
+function eigSym3(Q) {
+  const A = [[Q[0], Q[1], Q[2]], [Q[3], Q[4], Q[5]], [Q[6], Q[7], Q[8]]], V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let sweep = 0; sweep < 50; sweep++) {
+    const off = A[0][1] ** 2 + A[0][2] ** 2 + A[1][2] ** 2; if (off < 1e-30) break;
+    for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
+      if (Math.abs(A[p][q]) < 1e-300) continue;
+      const th = 0.5 * Math.atan2(2 * A[p][q], A[q][q] - A[p][p]), c = Math.cos(th), sn = Math.sin(th);
+      for (let k = 0; k < 3; k++) { const akp = A[k][p], akq = A[k][q]; A[k][p] = c * akp - sn * akq; A[k][q] = sn * akp + c * akq; }
+      for (let k = 0; k < 3; k++) { const apk = A[p][k], aqk = A[q][k]; A[p][k] = c * apk - sn * aqk; A[q][k] = sn * apk + c * aqk; }
+      for (let k = 0; k < 3; k++) { const vkp = V[k][p], vkq = V[k][q]; V[k][p] = c * vkp - sn * vkq; V[k][q] = sn * vkp + c * vkq; }
+    }
+  }
+  const ord = [0, 1, 2].sort((i, j) => A[i][i] - A[j][j]);
+  return { val: ord.map((i) => A[i][i]), vec: ord.map((i) => [V[0][i], V[1][i], V[2][i]]) };
+}
+
+/**
+ * Smallest brightness of a map over the whole sphere, relative to its uniform term (negative: the map is unphysical).
+ * Degree 1: 1 - |v| exactly. Degree 2: min of 1 + v.b + b.Q.b on |b| = 1, a trust-region problem solved exactly: with
+ * Q = sum q_k e_k e_k^T (q ascending) and w_k = e_k.v, the minimiser is b = -sum w_k e_k / (2 (q_k - mu)) with the
+ * multiplier mu < q_1 the root of sum w_k^2 / (4 (q_k - mu)^2) = 1 (bisection), or, when w_1 is too small for a root
+ * (the "hard case"), that point plus the multiple of e_1 that puts it on the sphere. Degree 3: a 5 degree grid and a
+ * pattern search from its lowest point. The whole sphere is tested, including the polar cap an inclined orbit never
+ * turns toward the observer (latitudes beyond i from the visible pole: under 3 degrees for a transiting planet).
+ */
+export function mapMinimum(y) {
+  const mt = y && y.v ? y : mapTensors(y), v = mt.v;
+  if (mt.lmax <= 1) return 1 - Math.hypot(v[0], v[1], v[2]);
+  if (mt.lmax === 2) {
+    const { val: q, vec: E } = eigSym3(mt.Q), w = E.map((e) => e[0] * v[0] + e[1] * v[1] + e[2] * v[2]);
+    const vn = Math.hypot(v[0], v[1], v[2]), at = (bk) => { let f = 1; for (let k = 0; k < 3; k++) f += q[k] * bk[k] * bk[k] + w[k] * bk[k]; return f; };
+    if (vn === 0) return 1 + q[0];
+    const phi = (t) => { let s = 0; for (let k = 0; k < 3; k++) { const d = q[k] - q[0] + t; s += (w[k] * w[k]) / (4 * d * d); } return s; };   // mu = q_1 - t, t > 0
+    let best = Infinity;
+    // regular case: phi(t) falls from +inf (t -> 0, w_1 != 0) to phi(vn / 2) <= 1
+    let lo = 0, hi = vn / 2 + 1e-300;
+    if (phi(1e-15 * (1 + vn)) > 1) {
+      for (let it = 0; it < 200; it++) { const mid = 0.5 * (lo + hi); if (phi(mid) > 1) lo = mid; else hi = mid; }
+      const t = 0.5 * (lo + hi), bk = q.map((qk, k) => -w[k] / (2 * (qk - q[0] + t)));
+      best = at(bk);
+    }
+    // hard case (and a guard near it): mu = q_1, components along the other eigenvectors fixed, the rest along e_1
+    const bk = [0, 0, 0]; let r2 = 0;
+    for (let k = 1; k < 3; k++) { const d = q[k] - q[0]; bk[k] = d > 1e-14 ? -w[k] / (2 * d) : 0; r2 += bk[k] * bk[k]; }
+    if (r2 <= 1) { const tau = Math.sqrt(1 - r2); bk[0] = tau; const f1 = at(bk); bk[0] = -tau; best = Math.min(best, f1, at(bk)); }
+    return best;
+  }
+  let minI = Infinity, bla = 0, blo = 0;
+  for (let i = 0; i <= 36; i++) { const la = -PI / 2 + (i * PI) / 36, cl = Math.cos(la), sl = Math.sin(la); for (let j = 0; j < (i === 0 || i === 36 ? 1 : 72); j++) { const lo = (j * PI) / 36, I = polyAt(mt, cl * Math.sin(lo), sl, cl * Math.cos(lo)); if (I < minI) { minI = I; bla = la; blo = lo; } } }
+  for (let step = PI / 72; step > 1e-6; step /= 2) for (let rep = 0; rep < 3; rep++) for (const [da, db] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+    const la = Math.max(-PI / 2, Math.min(PI / 2, bla + da * step)), lo = blo + (db * step) / Math.max(0.05, Math.cos(bla)), cl = Math.cos(la), I = polyAt(mt, cl * Math.sin(lo), Math.sin(la), cl * Math.cos(lo));
+    if (I < minI) { minI = I; bla = la; blo = lo; }
+  }
+  return minI;
+}
+
 /**
  * y10 and y11 that give a first-order phase curve with this contrast and hot-spot offset at inclination inc (deg):
  * 1 + a cos(phi + hotspot), a = C / (2 - C). A map of degree 1 is non-negative only for C <= 0.8 at 90 deg.
@@ -348,6 +404,7 @@ function mapPhase(mt, ox, oy, oz) {
  * Returns a function flux(t) with properties:
  *   star(t)     transit x stellar terms            planet(t)   planet flux reaching the observer
  *   parts(t)    { star, planet, visible (0..1), phase (rad from mid-eclipse) }
+ *   two(t, out) the same two numbers without an allocation: out[0] = star, out[1] = planet
  *   phaseFlux(phi)  unocculted planet flux at phase phi (rad), for a circular orbit at this inclination
  *   depth       fpfs rprs^2                        tecl        mid-eclipse time (with the delay when ltt)
  *   lttDelay    days the eclipse is late           mode        'harmonic' | 'map'
@@ -387,19 +444,15 @@ export function makePhaseCurve(params, opts = {}) {
   // diagnostics: smallest flux over the orbit (a trigonometric polynomial of degree <= 2: 72 samples and a parabola
   // through the lowest three), smallest brightness over the sphere (closed form for degree 1, else a 15 degree grid
   // refined by a pattern search)
+  // (the nightside, phi = 180 deg, is one of these phases: a curve that is non-negative everywhere has a non-negative nightside)
   let minFlux = Infinity, iMin = 0; const NPH = 72, fl = new Float64Array(NPH);
   for (let i = 0; i < NPH; i++) { fl[i] = phaseFlux((2 * PI * i) / NPH); if (fl[i] < minFlux) { minFlux = fl[i]; iMin = i; } }
-  { const a = fl[(iMin + NPH - 1) % NPH], c = fl[(iMin + 1) % NPH], den = a - 2 * minFlux + c; if (den > 0) minFlux -= ((a - c) * (a - c)) / (8 * den); }
-  let minIntensity;
-  if (mt.lmax <= 1) minIntensity = 1 - Math.hypot(mt.v[0], mt.v[1], mt.v[2]);
-  else {
-    minIntensity = Infinity; let bla = 0, blo = 0;
-    for (let i = 0; i <= 12; i++) { const la = -PI / 2 + (i * PI) / 12, cl = Math.cos(la), sl = Math.sin(la); for (let j = 0; j < (i === 0 || i === 12 ? 1 : 24); j++) { const lo = (j * PI) / 12, I = polyAt(mt, cl * Math.sin(lo), sl, cl * Math.cos(lo)); if (I < minIntensity) { minIntensity = I; bla = la; blo = lo; } } }
-    for (let step = PI / 24; step > 1e-4; step /= 2) for (const [da, db] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const la = Math.max(-PI / 2, Math.min(PI / 2, bla + da * step)), lo = blo + (db * step) / Math.max(0.2, Math.cos(bla)), cl = Math.cos(la), I = polyAt(mt, cl * Math.sin(lo), Math.sin(la), cl * Math.cos(lo));
-      if (I < minIntensity) { minIntensity = I; bla = la; blo = lo; }
-    }
+  { // golden-section search between the neighbours of the lowest sample (the curve is smooth on that scale)
+    let a = (2 * PI * (iMin - 1)) / NPH, b = (2 * PI * (iMin + 1)) / NPH;
+    for (let it = 0; it < 40; it++) { const m1 = a + 0.381966 * (b - a), m2 = a + 0.618034 * (b - a); if (phaseFlux(m1) < phaseFlux(m2)) b = m2; else a = m1; }
+    minFlux = Math.min(minFlux, phaseFlux(0.5 * (a + b)));
   }
+  const minIntensity = mapMinimum(mt);
   if (!(Ge > 0)) minFlux = -Infinity;
   const negative = minFlux < -1e-15 * Math.max(D, 1e-300) || !(Ge > 0), negativeMap = minIntensity < -1e-12;
 
@@ -477,6 +530,8 @@ export function makePhaseCurve(params, opts = {}) {
   flux.star = (t) => { evalAt(t); return stS; };
   flux.planet = (t) => { evalAt(t); return stP; };
   flux.parts = (t) => { evalAt(t); return { star: stS, planet: stP, visible: stV, phase: stPhi }; };
+  // both parts in one evaluation, for the sum over several planets in model.js: out[0] = star, out[1] = planet
+  flux.two = (t, out) => { evalAt(t); out[0] = stS; out[1] = stP; return out; };
   flux.phaseFlux = phaseFlux;
   flux.depth = D; flux.tecl = tecl0 + lttDelay; flux.lttDelay = lttDelay; flux.mode = mapMode ? 'map' : 'harmonic';
   flux.minFlux = minFlux; flux.minIntensity = minIntensity; flux.negative = negative; flux.negativeMap = negativeMap;
@@ -739,7 +794,10 @@ export function temperatureMap(params, opts = {}) {
  *   temp: Float64Array | null (disc-integrated brightness temperature the observer sees at each phase),
  *   tday, tnight, tmaxPhase, tminPhase,  T0, teq, bondAlbedo, epsilon (heatRedistribution),
  *   map: temperatureMap(...) (hotspot.lon / .lat is the brightest point of the map, which differs from hotspotOffset),
- *   lttDelay (days), mode, negative, negativeMap, minIntensity }
+ *   lttDelay (days), mode, negative, negativeMap, minIntensity,
+ *   physical (flux >= 0 at every phase, and in map mode brightness >= 0 everywhere) }
+ * opts.requirePositive: true -> the derived temperatures, albedo, redistribution and hot-spot numbers are NaN when the model is
+ *   not physical; 'map' -> also when the degree-1 map equivalent of a harmonic curve is negative somewhere.
  */
 export function phaseSummary(params, opts = {}) {
   const pc = makePhaseCurve(params, opts), n = opts.nphase || 361, p2 = params.rprs * params.rprs;
@@ -762,6 +820,14 @@ export function phaseSummary(params, opts = {}) {
     out.tday = brightnessTemperature(Math.max(fday, 0) / p2, opts.tstar, opts.band); out.tnight = brightnessTemperature(Math.max(fnight, 0) / p2, opts.tstar, opts.band);
     out.tmaxPhase = brightnessTemperature(Math.max(fmax, 0) / p2, opts.tstar, opts.band); out.tminPhase = brightnessTemperature(Math.max(fmin, 0) / p2, opts.tstar, opts.band);
     Object.assign(out, heatRedistribution({ tday: out.tday, tnight: out.tnight, tstar: opts.tstar, ars: params.ars }));
+  }
+  // physical: the planet's flux is non-negative at every phase and (map mode, or the degree-1 map of a first-order curve)
+  // its surface brightness is non-negative everywhere. opts.requirePositive: derived quantities of an unphysical model are
+  // NaN (temperatures, albedo, redistribution, hot-spot offset), so posterior summaries are taken over physical draws only.
+  out.physical = !pc.negative && !(pc.mode === 'map' && pc.negativeMap);
+  if (opts.requirePositive && !(out.physical && (opts.requirePositive !== 'map' || !pc.negativeMap))) {
+    for (const k of ['tday', 'tnight', 'tmaxPhase', 'tminPhase', 'bondAlbedo', 'epsilon', 'fDay', 'hotspotOffset', 'phaseOfMax']) if (k in out) out[k] = NaN;
+    if (out.map && out.map.hotspot) out.map.hotspot = { lat: NaN, lon: NaN, ratio: NaN, temp: NaN };
   }
   return out;
 }

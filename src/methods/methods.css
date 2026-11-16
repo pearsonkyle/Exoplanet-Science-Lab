@@ -1,0 +1,65 @@
+/* The Methods page: five tabs (methods, validation, reproducibility, references, how to cite). It uses the validation
+   part's typography and tables (src/validation/validation.css; main has id="val"); this adds the tab row, equations,
+   the per-section blocks and the citation tool. */
+#val.methods { --measure: 78ch; }
+#val.methods h3 { font-size: 16px; margin: 22px 0 8px; }
+#val.methods #msections > section { margin-bottom: 30px; }
+.nw { white-space: nowrap; }
+.mintro { max-width: 820px; color: var(--dim); }
+.mcode { color: var(--faint); font-size: 12.5px; margin: -4px 0 14px !important; max-width: none !important; }
+.mstub { border: 1px dashed var(--line2); border-radius: 8px; padding: 10px 14px; color: var(--warn); background: #ffb4540d; }
+.meq { overflow-x: auto; overflow-y: hidden; padding: 10px 2px; margin: 4px 0 12px; max-width: 100%; }
+.meq math { font-size: 1.12em; }
+#val.methods math { font-family: "STIX Two Math", "Cambria Math", "Latin Modern Math", "Libertinus Math", math, serif; }
+#val.methods p math, #val.methods li math, #val.methods td math { font-size: 1.04em; }
+code.mtex { white-space: pre-wrap; }
+.mchecks li, .mlimits li { margin: 7px 0; }
+.mchecks { list-style: none; padding-left: 0; }
+.mchecks li { padding-left: 14px; border-left: 2px solid #6fe3a566; }
+.mlimits { list-style: none; padding-left: 0; }
+.mlimits li { padding-left: 14px; border-left: 2px solid #ffb45466; }
+.msrc { display: block; color: var(--faint); font-size: 12.5px; margin-top: 2px; }
+.mrefs { color: var(--dim); font-size: 13px; max-width: 90ch !important; }
+#val.methods .vt td.l { white-space: normal; vertical-align: top; }
+#val.methods .vt td.l:first-child { min-width: 150px; }
+.mrows { margin: 0; padding-left: 16px; }
+.mrows li { margin: 3px 0; }
+.mrows li.warn, dd.warn { color: var(--warn); }
+.mex { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 6px; margin: 14px 0; background: #0b0f1880; }
+.mex.bad { border-color: #ffb45466; }
+.mex h4 { margin: 0 0 8px !important; }
+.mex dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0 0 6px; font-size: 13.5px; }
+.mex dt { color: var(--dim); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding-top: 2px; }
+.mex dd { margin: 0; overflow-wrap: anywhere; }
+.pill.bad { white-space: nowrap; }
+#citeTool { border: 1px solid var(--line2); border-radius: 10px; background: var(--panel); padding: 14px 16px; margin: 12px 0 18px; }
+#citeTool .vrow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
+#citeTool label { color: var(--dim); font-size: 13px; }
+#citeTool select, #citeTool input[type=file] { max-width: 100%; min-width: 0; }
+.mout { margin: 12px 0; }
+.mouthead { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; }
+.mout textarea { width: 100%; background: var(--bg); border: 1px solid var(--line2); border-radius: 8px; padding: 10px 12px; font: 13.5px/1.55 var(--sans); color: var(--text); resize: vertical; }
+#citeBib { font: 12px/1.45 var(--mono); white-space: pre; }
+.mnotes-h { margin: 10px 0 2px !important; }
+.mnotes li { color: var(--dim); font-size: 13px; overflow-wrap: anywhere; }
+.vrefs code.rkey { color: var(--faint); font-size: 11px; }
+@media (max-width: 760px) { .mex dl { grid-template-columns: 1fr; gap: 0; } .mex dt { padding-top: 8px; } .meq math { font-size: 1em; } }
+
+/* ---- the tab row: one row of links, sticky under the top of the window; it scrolls sideways on a phone ---- */
+.mtabs { position: sticky; top: 0; z-index: 5; display: flex; gap: 2px; margin: 0 0 22px; padding: 0 2px; background: var(--bg); border-bottom: 1px solid var(--line2); overflow-x: auto; scrollbar-width: none; }
+.mtabs::-webkit-scrollbar { display: none; }
+.mtabs a { flex: none; display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; color: var(--dim) !important; text-decoration: none !important; font-size: 14px; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.mtabs a:hover { color: #fff !important; }
+.mtabs a.on { color: #e9f8ff !important; border-bottom-color: var(--model); font-weight: 600; }
+.mtabs a:focus-visible { outline-offset: -3px; }
+.mpanel[hidden] { display: none !important; }
+html { scroll-padding-top: 54px; }
+@media (min-width: 1120px) { .mpanel .vtoc { top: 56px; max-height: calc(100vh - 70px); max-height: calc(100dvh - 70px); } }
+.vintro { max-width: 820px; margin-bottom: 22px; }
+.vintro > p:first-child { font-size: 16px; line-height: 1.6; }
+.vtocmore { margin: 10px 0 0 !important; font-size: 12.5px; color: var(--dim); }
+.vtocmore a { color: var(--text); }
+.mvlink > a:first-child { font-weight: 600; }
+.mwide { max-width: 1000px; }
+/* a phone: the five tabs wrap onto a second row rather than hide one off the edge */
+@media (max-width: 560px) { .mtabs { flex-wrap: wrap; overflow: visible; } .mtabs a { padding: 0 9px; font-size: 13.5px; min-height: 40px; } html { scroll-padding-top: 96px; } }

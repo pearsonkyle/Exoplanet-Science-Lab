@@ -1,0 +1,81 @@
+#
+#   VizieR Astronomical Server vizier.cfa.harvard.edu
+#    Date: 2026-11-16T05:38:04 [V7.6.1]
+#   In case of problem, please report to:	cds-question@unistra.fr
+#
+#
+#Coosys	J2000:	eq_FK5 J2000
+#INFO	service_protocol=ASU	  IVOID of the protocol through which the data was retrieved
+#INFO	request_date=2026-11-16T05:38:04	  Query execution date
+#INFO	request=https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=J/AJ/153/208/table1&Name=HD217014&-out=Name,BJD,RV,e_RV&-out.max=unlimited	  Full request URL
+#INFO	contact=cds-question@unistra.fr	  Email or URL to contact publisher
+#INFO	server_software=VizieR/7.6.1	  Software version
+#INFO	publisher=CDS	  Data centre that produced the VOTable
+
+#RESOURCE=yCat_51530208
+#Name: J/AJ/153/208
+#Title: LCES HIRES/Keck radial velocity Exoplanet Survey (Butler+, 2017)
+#INFO	ivoid=ivo://cds.vizier/j/aj/153/208	    IVOID of underlying data collection
+#INFO	data_ivoid=ivo://cds.vizier/j/aj/153/208	    IVOID of underlying data collection
+#INFO	creator=Butler R.P.	    First author or institution
+#INFO	cites=bibcode:2017AJ....153..208B	    Article or Data origin sources
+#INFO	journal=AJ	    Journal name
+#INFO	original_date=2017	    Year of the article publication
+#INFO	reference_url=https://cdsarc.cds.unistra.fr/viz-bin/cat/J/AJ/153/208	    Dataset landing page
+#INFO	citation=doi:10.26093/cds/vizier.51530208	    Dataset identifier that can be used for citation
+#INFO	publication_date=2019-02-07	    Date of first publication in the data centre
+#INFO	rights_uri=https://cds.unistra.fr/vizier-org/licences_vizier.html	    Licence URI
+#Table	J_AJ_153_208_table1:
+#Name: J/AJ/153/208/table1
+#Title: Radial velocities and chromospheric activity indices of all program stars (corrected velocities in Tal-Or et al, 2019, Cat. J/MNRAS/484/L8)
+#Column	Name	(a14)	Target identifier	[ucd=meta.id;meta.main]
+#Column	BJD	(F13.5)	Barycentric Julian Date	[ucd=time.epoch]
+#Column	RV	(F9.2)	[-39874.3/42363.6] Radial velocity	[ucd=phys.veloc;pos.heliocentric]
+#Column	e_RV	(F6.2)	[0.01/252.9] 1{sigma} uncertainty in RV	[ucd=stat.error]
+Name	BJD	RV	e_RV
+ 	d	m/s	m/s
+--------------	-------------	---------	------
+HD217014      	2453927.05042	    40.54	  0.97
+HD217014      	2453927.05119	    43.65	  0.96
+HD217014      	2453927.05193	    44.63	  0.94
+HD217014      	2453982.84764	     2.21	  0.94
+HD217014      	2453982.84838	     1.17	  1.04
+HD217014      	2453982.84911	     1.02	  1.12
+HD217014      	2454085.79536	   -72.53	  1.10
+HD217014      	2454085.79753	   -71.59	  1.11
+HD217014      	2454085.79838	   -74.79	  1.03
+HD217014      	2454337.09242	    31.91	  1.17
+HD217014      	2454398.85734	   -73.58	  1.19
+HD217014      	2454806.76933	    33.55	  1.17
+HD217014      	2454838.73284	   -75.22	  1.28
+HD217014      	2454964.13091	    21.52	  1.16
+HD217014      	2454984.10000	    16.37	  1.16
+HD217014      	2454985.11823	    33.46	  1.04
+HD217014      	2455015.05197	    10.16	  1.06
+HD217014      	2455016.06613	   -59.96	  1.04
+HD217014      	2455019.01926	    31.43	  1.11
+HD217014      	2455041.92598	   -67.48	  1.21
+HD217014      	2455078.07733	    33.52	  1.23
+HD217014      	2455106.75970	    13.81	  1.30
+HD217014      	2455135.72270	   -31.37	  1.28
+HD217014      	2455189.68934	   -73.86	  1.15
+HD217014      	2455190.69359	   -38.07	  1.25
+HD217014      	2455192.68814	    10.64	  1.21
+HD217014      	2455379.09473	    -2.82	  1.02
+HD217014      	2455404.92659	   -43.54	  1.13
+HD217014      	2455435.04209	   -66.83	  1.18
+HD217014      	2455704.08260	    37.47	  1.11
+HD217014      	2455722.10830	   -28.39	  1.04
+HD217014      	2455729.11002	    37.32	  1.03
+HD217014      	2455732.02669	   -51.46	  0.99
+HD217014      	2455732.02990	   -51.14	  1.05
+HD217014      	2455753.07133	   -61.00	  1.13
+HD217014      	2455782.85598	   -48.62	  1.28
+HD217014      	2455841.77766	   -65.39	  1.15
+HD217014      	2456077.13053	     0.00	  1.11
+HD217014      	2456477.10257	   -13.16	  1.28
+HD217014      	2456529.88022	    -3.16	  1.18
+HD217014      	2456584.73613	     6.53	  1.30
+HD217014      	2456639.68183	     9.25	  1.13
+HD217014      	2456676.74500	    35.80	  1.20
+

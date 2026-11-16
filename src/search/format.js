@@ -44,17 +44,32 @@ export function shown(field, units = 'earth') {
     case 'insol': return [1, 'S⊕', 1];
     case 'rstar': return [1, 'R☉', 2];
     case 'mstar': return [1, 'M☉', 2];
-    case 'logg': return [1, '', 2];
+    case 'logg': return [1, 'cgs', 2];
     case 'feh': return [1, 'dex', 2];
     case 'lum': return [1, 'L☉', 3];
     case 'ra': case 'dec': return [1, '°', 4];
     case 'dist': return [1, 'pc', 1];
     case 'year': return [1, '', 0];
-    case 'vmag': case 'gmag': case 'tmag': case 'jmag': case 'kmag': case 'mag': return [1, '', 2];
+    case 'vmag': case 'gmag': case 'tmag': case 'jmag': case 'kmag': case 'mag': return [1, 'mag', 2];
     default: return [1, '', 2];
   }
 }
 export const unitOf = (field, units) => (field === 'drift' ? '' : shown(field, units)[1]);
+/** What a unit label means, for tooltips. */
+export const UNIT_NAMES = {
+  d: 'days', h: 'hours', min: 'minutes', BJD: 'Julian date (BJD_TDB as the catalogues give it, a few HJD/BJD_UTC)', ppt: 'parts per thousand of the stellar flux',
+  'R⊕': 'Earth radii (6378 km)', RJ: 'Jupiter radii (71 492 km)', 'M⊕': 'Earth masses', MJ: 'Jupiter masses', '°': 'degrees', au: 'astronomical units', 'm/s': 'metres per second',
+  K: 'kelvin', 'S⊕': 'the insolation of the Earth', 'R☉': 'solar radii', 'M☉': 'solar masses', cgs: 'log10 of g in cm/s²', dex: 'dex (log10 relative to the Sun)', 'L☉': 'solar luminosities',
+  pc: 'parsecs', mag: 'magnitudes',
+};
+/** "Unit: R⊕ (Earth radii)" or "Dimensionless" (or the drift's own note), for a header's tooltip. */
+export function unitText(field, units) {
+  if (field === 'drift') return 'Unit: shown in each cell (min, h or d).';
+  if (['name', 'host', 'status', 'method', 'facility', 'sptype', 'cats', 'massKind', 'transit'].includes(field)) return '';
+  const u = unitOf(field, units);
+  if (field === 'year') return 'Calendar year.';
+  return u ? `Unit: ${u} (${UNIT_NAMES[u] || u}).` : 'Dimensionless.';
+}
 export function display(field, value, units) {
   if (!fin(value)) return '';
   if (field === 'drift') return minutes(value);

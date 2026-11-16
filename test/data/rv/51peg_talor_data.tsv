@@ -1,0 +1,84 @@
+#
+#   VizieR Astronomical Server vizier.cfa.harvard.edu
+#    Date: 2026-11-16T05:38:04 [V7.6.1]
+#   In case of problem, please report to:	cds-question@unistra.fr
+#
+#
+#Coosys	J2000:	eq_FK5 J2000
+#INFO	service_protocol=ASU	  IVOID of the protocol through which the data was retrieved
+#INFO	request_date=2026-11-16T05:38:04	  Query execution date
+#INFO	request=https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=J/MNRAS/484/L8/table1&Name=HD217014&-out=Name,BJD,RVcor,e_RVcor&-out.max=unlimited	  Full request URL
+#INFO	contact=cds-question@unistra.fr	  Email or URL to contact publisher
+#INFO	server_software=VizieR/7.6.1	  Software version
+#INFO	publisher=CDS	  Data centre that produced the VOTable
+
+#RESOURCE=yCat_74849008
+#Name: J/MNRAS/484/L8
+#Title: Correcting HIRES/Keck RVs for systematic errors (Tal-Or+, 2019)
+#INFO	ivoid=ivo://cds.vizier/j/mnras/484/l8	    IVOID of underlying data collection
+#INFO	data_ivoid=ivo://cds.vizier/j/mnras/484/l8	    IVOID of underlying data collection
+#INFO	creator=Tal-Or L.	    First author or institution
+#INFO	cites=bibcode:2019MNRAS.484L...8T	    Article or Data origin sources
+#INFO	journal=MNRA	    Journal name
+#INFO	original_date=2019	    Year of the article publication
+#INFO	reference_url=https://cdsarc.cds.unistra.fr/viz-bin/cat/J/MNRAS/484/L8	    Dataset landing page
+#INFO	citation=doi:10.26093/cds/vizier.74849008	    Dataset identifier that can be used for citation
+#INFO	publication_date=2024-08-19	    Date of first publication in the data centre
+#INFO	rights_uri=https://cds.unistra.fr/vizier-org/licences_vizier.html	    Licence URI
+#Table	J_MNRAS_484_L8_table1:
+#Name: J/MNRAS/484/L8/table1
+#Title: Radial velocities of 1699 stars from Butler et al., 2017, J/AJ/153/208, corrected for small systematic errors
+#Column	Name	(a14)	Target identifier	[ucd=meta.id;meta.main]
+#Column	BJD	(F13.5)	Barycentric Julian Date	[ucd=time.epoch]
+#Column	RVcor	(F10.3)	[-39874/42364] Corrected radial velocity	[ucd=phys.veloc;pos.heliocentric]
+#Column	e_RVcor	(F7.3)	[0.01/374] 1{sigma} uncertainty in RVel	[ucd=stat.error]
+Name	BJD	RVcor	e_RVcor
+ 	d	m/s	m/s
+--------------	-------------	----------	-------
+HD217014      	2453927.05042	    39.999	  0.998
+HD217014      	2453927.05119	    43.228	  1.008
+HD217014      	2453927.05193	    44.097	  1.008
+HD217014      	2453982.84764	     1.414	  0.965
+HD217014      	2453982.84838	     0.283	  1.024
+HD217014      	2453982.84911	     0.332	  1.102
+HD217014      	2454085.79536	   -72.773	  1.165
+HD217014      	2454085.79753	   -71.906	  1.193
+HD217014      	2454085.79838	   -75.057	  1.108
+HD217014      	2454337.09242	    31.261	  1.201
+HD217014      	2454398.85734	   -73.667	  1.257
+HD217014      	2454806.76933	    32.779	  1.178
+HD217014      	2454838.73284	   -76.588	  1.303
+HD217014      	2454964.13091	    20.919	  1.205
+HD217014      	2454984.10000	    15.675	  1.190
+HD217014      	2454985.11823	    32.893	  1.115
+HD217014      	2455015.05197	    10.230	  1.075
+HD217014      	2455016.06613	   -59.918	  1.065
+HD217014      	2455019.01926	    31.744	  1.148
+HD217014      	2455041.92598	   -66.946	  1.203
+HD217014      	2455078.07733	    33.523	  1.233
+HD217014      	2455106.75970	    14.037	  1.330
+HD217014      	2455135.72270	   -30.241	  1.277
+HD217014      	2455189.68934	   -72.760	  1.172
+HD217014      	2455190.69359	   -37.185	  1.271
+HD217014      	2455192.68814	    11.670	  1.242
+HD217014      	2455379.09473	    -2.778	  1.087
+HD217014      	2455404.92659	   -43.474	  1.166
+HD217014      	2455435.04209	   -66.829	  1.202
+HD217014      	2455704.08260	    37.055	  1.157
+HD217014      	2455722.10830	   -28.672	  1.049
+HD217014      	2455729.11002	    36.879	  1.081
+HD217014      	2455732.02669	   -51.727	  1.014
+HD217014      	2455732.02990	   -51.621	  1.093
+HD217014      	2455753.07133	   -60.906	  1.144
+HD217014      	2455782.85598	   -48.208	  1.283
+HD217014      	2455841.77766	   -65.088	  1.167
+HD217014      	2456077.13053	     0.732	  1.231
+HD217014      	2456477.10257	   -12.640	  1.320
+HD217014      	2456529.88022	    -2.736	  1.162
+HD217014      	2456584.73613	     7.085	  1.353
+HD217014      	2456639.68183	     9.466	  1.189
+HD217014      	2456676.74500	    35.736	  1.315
+HD217014      	2456847.92332	   -65.561	  1.058
+HD217014      	2456911.76859	   -78.306	  1.186
+HD217014      	2456913.74889	    32.367	  1.209
+

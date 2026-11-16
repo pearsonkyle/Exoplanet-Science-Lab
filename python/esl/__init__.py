@@ -21,12 +21,12 @@ from ._runtime import CoreError, RuntimeUnavailable, available_runtimes, runtime
 from ._version import __version__
 from .functions import (CatalogSystem, EphemerisFit, LimbDarkeningCoefficients, Periodogram, TimingPeriodogram, bands, catalog_location, core, derive, events,
                         fit_ephemeris, limb_darkening, lookup, mass_from_k, periodogram, radial_velocity, read_light_curve, read_rv, search, semi_amplitude, transit)
-from .models import (FORMAT, FORMAT_VERSION, Chi2Parts, Data, FitSettings, FreeParameter, LightCurve, LightCurveEpoch, LightCurveModel, Likelihood, LimbDarkening,
+from .models import (FORMAT, FORMAT_VERSION, Chi2Parts, Data, Detrend, FitSettings, FreeParameter, LightCurve, LightCurveEpoch, LightCurveModel, Likelihood, LimbDarkening,
                      ModelEvaluation, ParameterSummary, Planet, PlanetParameters, Prior, Progress, Quantity, RadialVelocity, Result, RVModel, RVZeroPoint, Sampler,
                      Samples, Session, Software, Star, TimingModel, TimingPoint, Use)
 
 __all__ = [
-    "__version__", "Session", "Star", "LimbDarkening", "Planet", "PlanetParameters", "Data", "LightCurve", "LightCurveEpoch", "RadialVelocity", "TimingPoint",
+    "__version__", "Session", "Star", "LimbDarkening", "Planet", "PlanetParameters", "Data", "LightCurve", "LightCurveEpoch", "Detrend", "RadialVelocity", "TimingPoint",
     "FitSettings", "FreeParameter", "Prior", "Use", "Sampler", "Result", "ParameterSummary", "Quantity", "Chi2Parts", "RVZeroPoint", "Samples", "Software",
     "ModelEvaluation", "LightCurveModel", "RVModel", "TimingModel", "Likelihood", "Progress", "FORMAT", "FORMAT_VERSION",
     "transit", "radial_velocity", "semi_amplitude", "mass_from_k", "limb_darkening", "bands", "fit_ephemeris", "periodogram", "derive", "events",

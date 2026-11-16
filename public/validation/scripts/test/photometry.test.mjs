@@ -118,9 +118,9 @@ const im = readImage(await openFits(load('syn_i16.fits'))), { data, width: w, he
   }
   check('stars are followed through drift and a 4.7 px jump', worstTrack < 0.15 && lost === 0, `largest centroid error ${worstTrack.toFixed(3)} px over ${nF} frames x ${base.length} stars; tolerance 0.15 px`);
   const res = optimise(M), best = res.tried[res.best], lc = res.lc;
-  const nCand = (7 * 3 + 1) * (1 + 3 + 1);
+  const nCand = (7 * 3 + 1) * (1 + 3 + 1 + 1);       // none, each of 3 stars, all summed, inverse-variance weighted
   check('every aperture, annulus and comparison choice is tried and reported', res.tried.length === nCand && res.tried.every((r) => Number.isFinite(r.scatter)), `${res.tried.length} candidates`);
-  check('the optimiser prefers a comparison star to none', best.comp >= 0, `best: ${best.method}, aperture ${best.aperture.toFixed(2)} px, annulus ${best.annulus.toFixed(2)} px, comparison ${best.comp === 0 ? 'all' : best.comp}, scatter ${(100 * best.scatter).toFixed(3)}%`);
+  check('the optimiser prefers a comparison star to none', best.comp !== -1, `best: ${best.method}, aperture ${best.aperture.toFixed(2)} px, annulus ${best.annulus.toFixed(2)} px, comparison ${best.comp === 0 ? 'all' : best.comp === 'w' ? 'weighted ensemble' : best.comp}, scatter ${(100 * best.scatter).toFixed(3)}%; best summed ${(100 * Math.min(...res.tried.filter((r) => r.comp === 0).map((r) => r.scatter))).toFixed(3)}%`);
   const none = res.tried.filter((r) => r.comp < 0).reduce((a, b) => (b.scatter < a.scatter ? b : a));
   // photon + sky noise expected for the best aperture with the ensemble: about 0.3% per point here
   check('residual scatter is at the photon-noise level', best.scatter < 0.0045 && best.scatter > 0.0015, `${(100 * best.scatter).toFixed(3)}% (best without a comparison star ${(100 * none.scatter).toFixed(3)}%)`);

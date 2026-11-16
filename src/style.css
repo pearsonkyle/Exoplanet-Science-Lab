@@ -10,11 +10,15 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 button, input, select, textarea { font: inherit; color: inherit; }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-#app { display: grid; height: 100vh; min-height: 620px;
-  grid-template-columns: minmax(0, 1fr) var(--panelw, 430px); grid-template-rows: var(--sitebar-h, 34px) 44px minmax(0, 1fr) 290px;
+/* The page fills the window and never scrolls as a whole: the side panel scrolls inside itself. The sizes of the
+   3D view, the plot and the panel are variables, so folding one away (classes no-stage, no-lc, no-panel on #app)
+   and the narrow layouts further down only change numbers. */
+#app { display: grid; height: 100vh; height: 100dvh; min-height: 400px;
+  --stage-h: minmax(0, 1fr); --lc-h: var(--lch-side, clamp(170px, 34vh, 290px)); --left: minmax(0, 1fr); --right: min(var(--panelw, 430px), 52vw);
+  grid-template-columns: var(--left) var(--right); grid-template-rows: var(--sitebar-h, 34px) auto var(--stage-h) var(--lc-h);
   grid-template-areas: "site site" "top top" "stage panel" "lc panel"; }
 #sitebar { grid-area: site; }
-#topbar { grid-area: top; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+#topbar { grid-area: top; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .brand h1 { margin: 0; font-size: 15px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; }
 .brand-sub { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -62,9 +66,9 @@ input[type=number]::-webkit-inner-spin-button { opacity: .35; }
 
 #panel { grid-area: panel; border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; position: relative; min-width: 0; }
 .tabs { display: flex; border-bottom: 1px solid var(--line); flex: none; }
-.tabs button { flex: 1; background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 10px 4px 8px; cursor: pointer; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; font-size: 11.5px; }
-.tabs button.on { color: #fff; border-bottom-color: var(--model); }
-.tabs button .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--post); margin-left: 5px; vertical-align: 1px; }
+.tabs button[data-tab] { flex: 1; background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 10px 4px 8px; cursor: pointer; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; font-size: 11.5px; }
+.tabs button[data-tab].on { color: #fff; border-bottom-color: var(--model); }
+.tabs button[data-tab] .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--post); margin-left: 5px; vertical-align: 1px; }
 .tabpane { display: none; overflow: auto; padding: 12px 14px 20px; flex: 1; min-height: 0; }
 .tabpane.on { display: block; }
 h3 { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin: 16px 0 8px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -103,6 +107,9 @@ table.pri td.nm { white-space: nowrap; }
 table.pri select { width: 100%; padding: 3px 4px; }
 table.pri .args { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 table.pri .args input { padding: 3px 5px; font-size: 11.5px; }
+/* no spin arrows on the prior bounds: they took a fifth of a 96 px field and cut values such as -0.0260734 short */
+table.pri .args input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+table.pri .args input[type=number]::-webkit-inner-spin-button, table.pri .args input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 table.pri .err { color: var(--bad); font-size: 11px; }
 .progress { height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; border: 1px solid var(--line); }
 .progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--post), var(--model)); transition: width .15s; }
@@ -136,8 +143,16 @@ table.res tr.sec td { font: 600 10px var(--sans); letter-spacing: .12em; text-tr
 table.res tr.derived td:nth-child(2) { color: #c9b8f5; }
 table.res tr.fixed td:nth-child(2), table.res tr.input td:nth-child(2) { color: var(--dim); }
 table.res.cmp td:first-child { white-space: normal; }
+/* archive velocity search (Data tab): the set names read left to right; the source rows wrap */
+table.res.rvarch td:first-child { width: 22px; }
+table.res.rvarch td:nth-child(2) { text-align: left; font-family: var(--sans); white-space: normal; }
+table.res.rvarch tr.sec td { white-space: normal; letter-spacing: .06em; line-height: 1.35; }
+table.res.rvarch tr.sec a { text-transform: none; letter-spacing: 0; }
+table.res .rvsrc { color: var(--faint); font-size: 10px; }
+.rvfind { margin: 4px 0 8px; }
 .lbl.hz { color: #8ff0b8cc; }
 .lctools { position: absolute; right: 12px; top: 3px; display: flex; gap: 8px; align-items: center; }
+.lcrow { display: contents; }   /* wide plot: the buttons are laid out by .lctools; narrow plot: .lcrow becomes a strip that scrolls sideways */
 .lchint { color: var(--faint); font-size: 10.5px; }
 .lcmenu { top: 24px; right: 0; left: auto; width: 130px; padding: 4px; }
 .lcmenu button { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
@@ -152,6 +167,15 @@ details p.note:first-of-type { margin-top: 8px; }
 #grip::after { content: ""; position: absolute; left: 3px; top: 50%; width: 3px; height: 44px; margin-top: -22px; border-radius: 2px; background: var(--line2); }
 #grip:hover::after, #grip:focus-visible::after, body.resizing #grip::after { background: var(--model); }
 body.resizing { cursor: col-resize; user-select: none; }
+/* the edge between the 3D view and the plot: a strip across the top of the plot, with a short bar to show it can be held */
+#lcgrip { position: absolute; left: 0; right: 0; top: -5px; height: 10px; cursor: row-resize; z-index: 7; touch-action: none; }
+#lcgrip::after { content: ""; position: absolute; left: 50%; top: 3px; width: 44px; height: 4px; margin-left: -22px; border-radius: 2px; background: var(--line2); opacity: .8; }
+#lcgrip:hover::after, #lcgrip:focus-visible::after, body.resizing-v #lcgrip::after, body.resizing-v #grip::after { background: var(--model); opacity: 1; }
+#lcgrip:focus-visible { outline: 2px solid var(--model); outline-offset: -4px; }
+#app.no-stage #lcgrip { display: none; }
+body.resizing-v { cursor: row-resize; user-select: none; }
+body.resizing-v #lccanvas, body.resizing #lccanvas, body.resizing-v #viz, body.resizing #viz { pointer-events: none; }
+#speedval { min-width: 52px; color: #cfe; font-size: 11px; text-align: right; }
 .rangebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 0 8px; color: var(--dim); font-size: 12px; }
 .seg.small button { padding: 3px 9px; font-size: 11.5px; }
 .seg button:disabled { opacity: .4; cursor: default; }
@@ -170,35 +194,13 @@ table.res tr.estimated td:nth-child(2) { color: var(--dim); }
 table.pri { table-layout: auto; }
 table.pri .args input { min-width: 0; width: 100%; }
 
-@media (max-width: 900px) {
-  #grip { display: none; }
-  .topright #flash { display: none; }
-  .lctools { top: 2px; right: 6px; }
-  .wide { display: none; }
-  .brand h1 { overflow: hidden; text-overflow: ellipsis; max-width: 26vw; }
-  .topright { gap: 5px; }
-  .preset select { max-width: 44vw; }
-  #topbar { padding: 0 8px; }
-  #rec { order: 5; }
-  #app { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--sitebar-h, 34px) 44px 54vh 300px auto; grid-template-areas: "site" "top" "stage" "lc" "panel"; }
-  #panel { border-left: 0; border-top: 1px solid var(--line); }
-  .tabpane { overflow: visible; }
-  .brand-sub { display: none; }
-  .brand h1 { font-size: 12px; letter-spacing: .08em; white-space: nowrap; }
-  .preset { font-size: 0; } .preset select { font-size: 12px; max-width: 58vw; }
-  .hud-tr { display: none; }
-  .inset-frame { width: 120px; height: 120px; bottom: 92px; }
-  .hud-b { justify-content: center; }
-  .speed input { width: 60px; }
-  #clock { min-width: 0; }
-}
 table.pri td:nth-child(3) { width: 92px; }
 table.pri td.nm { font-size: 12px; }
 table.pri .args { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 #occanvas { width: 100%; height: 250px; display: block; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; margin-top: 8px; }
 table.res.timing td:last-child { width: 28px; }
 table.res.timing td .chip { padding: 0 5px; }
-.tabs button { letter-spacing: .06em; }
+.tabs button[data-tab] { letter-spacing: .06em; }
 .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
 .rangebar.planets { gap: 8px; flex-wrap: wrap; }
 .viewpop { right: 96px; width: 230px; padding: 10px 12px; }
@@ -211,7 +213,6 @@ table.res.timing td .chip { padding: 0 5px; }
 .brand h1 { white-space: nowrap; }
 .brand h1 .short { display: none; }
 @media (max-width: 1180px) { .brand h1 .full { display: none; } .brand h1 .short { display: inline; letter-spacing: .2em; } .brand-sub { display: none; } }
-@media (max-width: 900px) { .brand h1 { max-width: none; } }
 
 /* ---- notes that explain what was loaded ---- */
 p.note.callout { border-left: 2px solid var(--model); background: #5fd4ff0d; padding: 6px 9px; border-radius: 0 5px 5px 0; color: var(--text); margin-top: 0; }
@@ -307,13 +308,6 @@ table.res.cmp td.warn { color: var(--warn); } table.res.cmp td.bad { color: var(
 details.cautions { border-left: 2px solid var(--warn); background: #ffb4540f; padding: 6px 9px; border-radius: 0 5px 5px 0; margin: 8px 0; }
 details.cautions summary { cursor: pointer; color: var(--text); font-size: 12px; }
 
-/* ---- folding the plot and the side panel away ---- */
-#app.no-lc #lc { display: none; }
-#app.no-panel #panel { display: none; }
-@media (min-width: 901px) {
-  #app.no-lc { grid-template-rows: var(--sitebar-h, 34px) 44px minmax(0, 1fr) 0; }
-  #app.no-panel { grid-template-columns: minmax(0, 1fr) 0; }
-}
 #layoutseg button { padding: 2px 8px; font-size: 11px; }
 
 /* ---- guided tour ---- */
@@ -330,3 +324,179 @@ details.cautions summary { cursor: pointer; color: var(--text); font-size: 12px;
 #mooncanvas { width: 100%; height: 260px; display: block; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; }
 
 .dyncanvas { width: 100%; display: block; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; }
+
+
+/* =====================================================================================================================
+   Layout at every size, touch, focus. Three arrangements:
+     side by side   a window at least 901 px wide, or a phone or tablet held sideways (at least 640 px wide):
+                    3D view over the plot on the left, the panel on the right;
+     stacked        a tablet held upright, or any phone-width window: 3D view, plot, panel, top to bottom, each with
+                    a share of the height; the panel scrolls inside itself and the ⤢ button beside the tabs gives it
+                    the whole screen.
+   The 3D / Plot / Panel buttons in the top bar fold each part away in both.
+   ===================================================================================================================== */
+:root { --tool-h: 30px; }
+#topbar { flex-wrap: wrap; }
+.topright { flex-wrap: wrap; justify-content: flex-end; row-gap: 4px; }
+#stage, #lc, #panel { min-width: 0; }
+#app.no-stage #stage, #app.no-lc #lc, #app.no-panel #panel { display: none; }
+#lc { container: lc / inline-size; z-index: 2; }
+.tabs { overflow-x: auto; scrollbar-width: none; align-items: stretch; }
+.tabs::-webkit-scrollbar, .lcrow::-webkit-scrollbar, .hud-b::-webkit-scrollbar { display: none; }
+.tabs button[data-tab] { flex: 1 0 auto; padding-left: 10px; padding-right: 10px; white-space: nowrap; }
+#panelmax { display: none; flex: none; align-self: center; margin: 0 6px 0 4px; font-size: 15px; line-height: 1; }
+.tabpane { padding-bottom: calc(20px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+.empty { border: 1px dashed var(--line2); border-radius: 8px; margin: 10px 0; }
+.btnrow .note, .btnrow .toast { min-width: 0; }
+.preset select { max-width: min(46vw, 360px); text-overflow: ellipsis; }
+
+/* keyboard focus is always visible, whatever the control */
+:is(button, summary, a, [tabindex], input[type=checkbox], input[type=radio], input[type=range], input[type=file]):focus-visible { outline: 2px solid var(--model); outline-offset: 1px; }
+.seg button:focus-visible, .tabs button:focus-visible { outline-offset: -2px; }
+table.res tr:focus-visible { outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- side by side ---- */
+@media (min-width: 901px), (min-width: 640px) and (orientation: landscape) {
+  #app.no-lc { --lc-h: 0px; }
+  #app.no-stage { --stage-h: 0px; --lc-h: minmax(0, 1fr); }
+  #app.no-panel { --right: 0px; }
+  #app.no-stage.no-lc { --left: 0px; --right: minmax(0, 1fr); }   /* nothing on the left: the panel has the window */
+  #app.no-stage.no-lc #grip { display: none; }
+}
+/* a short window (a phone on its side, a small laptop): tighter bars, a smaller Earth inset */
+@media (max-height: 560px) and (min-width: 640px) and (orientation: landscape) {
+  #app { --right: min(var(--panelw, 430px), 48vw); --lc-h: var(--lch-side, clamp(130px, 40vh, 220px)); }
+  #topbar { min-height: 38px; padding: 0 8px; }
+  .brand-sub, .hud-tr { display: none; }
+  .inset-frame { width: 96px; height: 96px; bottom: 56px; }
+}
+
+/* ---- stacked ---- */
+@media (max-width: 900px) and (orientation: portrait), (max-width: 639px) {
+  #app { --stage-h: var(--stageh-stack, clamp(170px, 25dvh, 440px)); --lc-h: var(--lch-stack, clamp(190px, 28dvh, 400px));
+    grid-template-columns: minmax(0, 1fr); --panel-h: minmax(0, 1fr); grid-template-rows: var(--sitebar-h, 44px) auto var(--stage-h) var(--lc-h) var(--panel-h);
+    grid-template-areas: "site" "top" "stage" "lc" "panel"; }
+  #app.no-panel { --panel-h: 0px; --stage-h: minmax(0, 1fr); --lc-h: var(--lch-stack, clamp(190px, 36dvh, 480px)); }   /* no panel: the 3D view takes its room */
+  #app.no-stage { --stage-h: 0px; --lc-h: var(--lch-stack, clamp(190px, 38dvh, 500px)); }
+  #app.no-lc { --lc-h: 0px; }
+  #app.no-stage.no-panel { --lc-h: minmax(0, 1fr); }
+  /* the panel's grip becomes a handle along its top edge: drag it to share the height between the plot and the panel */
+  #grip { position: relative; left: auto; top: auto; bottom: auto; width: 100%; height: 16px; flex: none; cursor: row-resize; background: var(--panel); }
+  #grip::after { left: 50%; top: 6px; width: 48px; height: 4px; margin: 0 0 0 -24px; }
+  #app.no-stage.no-lc #grip { display: none; }
+  #panel { border-left: 0; border-top: 1px solid var(--line); }
+  #panelmax { display: inline-block; }
+  /* top bar: the page's actions on one line, then what is shown and which system */
+  #topbar { padding: 4px 8px; }
+  .brand.apptitle, .topright #flash { display: none; }
+  .topright { width: 100%; gap: 4px 5px; justify-content: flex-start; }
+  .wide { display: none; }
+  #startbtn .wide { display: inline; }   /* "☰" alone does not say where it goes; the row has room for the word */
+  #layoutseg { order: 5; }
+  .preset { order: 6; flex: 1 1 150px; min-width: 0; }
+  .preset span { display: none; }
+  .preset select { width: 100%; max-width: none; }
+  /* the 3D view: camera buttons on top, the transport as one strip along the bottom that scrolls sideways */
+  .hud-tl { left: 8px; top: 8px; right: 8px; }
+  .hud-tr { display: none; }
+  .hud-b { left: 0; right: 0; bottom: 0; padding: 14px 8px 6px; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; background: linear-gradient(transparent, #000c 55%); }
+  .hud-b > * { flex: none; }
+  .speed input { width: 84px; }
+  #clock { min-width: 0; }
+  .inset-frame { width: 92px; height: 92px; left: 8px; bottom: calc(var(--tool-h) + 22px); }
+  .viz-note { max-width: none; right: 8px; top: 56px; left: 8px; }
+  /* the Look options open as a sheet over the page, not inside the short 3D view */
+  #lookpanel { position: fixed; left: 8px; right: 8px; top: auto; bottom: calc(8px + env(safe-area-inset-bottom)); width: auto; max-height: 72dvh; overflow: auto; z-index: 60; box-shadow: 0 -8px 40px #000c; }
+}
+/* the Earth inset needs room under the camera buttons: a phone-width 3D view has none (From Earth shows the same) */
+@media (max-width: 520px) { .inset-frame { display: none; } }
+
+/* ---- the plot's tools: a strip above the plot when the plot is narrow (a phone, or a wide panel beside it) ---- */
+@container lc (max-width: 820px) {
+  .lctools { left: 0; right: 0; top: 0; display: block; height: var(--tool-h); }
+  .lcrow { display: flex; gap: 6px; align-items: center; height: 100%; padding: 0 8px; overflow-x: auto; scrollbar-width: none; white-space: nowrap;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); }
+  .lcrow > * { flex: none; }
+  .lcrow::after { content: ""; flex: none; width: 14px; height: 1px; }
+  .lchint { display: none; }
+  #lccanvas { top: var(--tool-h); height: calc(100% - var(--tool-h)); }
+  .lcmenu { top: calc(var(--tool-h) + 2px); right: 8px; }
+  .viewpop { right: 8px; }
+}
+
+/* ---- fingers: 40 px targets, sliders with a thumb one can hold, text that does not make iOS zoom ---- */
+@media (pointer: coarse), (max-width: 900px) {
+  :root { --tool-h: 48px; }
+  #lcgrip { top: -8px; height: 16px; }
+  #lcgrip::after { top: 6px; width: 56px; height: 5px; margin-left: -28px; }
+  .chip, .btn, .seg button, select, .tabs button[data-tab], .lcmenu button, summary { min-height: 40px; }
+  .chip.small, .seg.small button, #viewsel button, #layoutseg button { padding: 6px 11px; font-size: 12.5px; min-width: 40px; }
+  table.res.timing td .chip { min-width: 36px; padding: 0 8px; }
+  details.group > summary, details > summary { display: flex; align-items: center; }
+  input[type=number], input[type=text], select, textarea { font-size: 16px; min-height: 40px; }
+  .hud select, .lctools select { font-size: 13px; }
+  .tog, label.chk { min-height: 40px; display: flex; align-items: center; gap: 8px; }
+  input[type=checkbox], input[type=radio] { width: 20px; height: 20px; flex: none; accent-color: var(--model); }
+  .row { grid-template-columns: 62px minmax(0, 1fr) 98px; gap: 6px; margin: 2px 0; }
+  .row label { white-space: normal; line-height: 1.15; }
+  .field { grid-template-columns: 104px minmax(0, 1fr); }
+  .field3 { grid-template-columns: 78px minmax(0, 1fr) 12px minmax(0, 1fr); }
+  .speed { padding: 0 8px; min-height: 40px; }
+  #clock { min-height: 40px; display: inline-flex; align-items: center; }
+  .pop .grid2 { grid-template-columns: 1fr 1fr; gap: 0 10px; }
+  /* sliders: the whole 40 px band takes the finger; sideways moves the value, up and down scrolls the panel */
+  input[type=range] { -webkit-appearance: none; appearance: none; height: 40px; background: transparent; touch-action: pan-y; --acc: var(--star); margin: 0; }
+  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--line2); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 28px; height: 28px; margin-top: -11px; border-radius: 50%; background: var(--acc); border: 3px solid #05070c; box-shadow: 0 0 0 1px var(--acc); }
+  input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--line2); }
+  input[type=range]::-moz-range-thumb { width: 24px; height: 24px; border-radius: 50%; background: var(--acc); border: 3px solid #05070c; box-shadow: 0 0 0 1px var(--acc); }
+  .row input[type=range].limited { --acc: var(--post); }
+  .speed input, .viewpop input[type=range] { --acc: var(--model); }
+  input[type=range]:disabled { opacity: .4; }
+  /* priors: one block per parameter instead of a four-column table; a parameter that is held shows no prior boxes */
+  table.pri, table.pri tbody { display: block; }
+  table.pri thead { display: none; }
+  table.pri tr { display: grid; grid-template-columns: 30px minmax(0, 1fr) 124px; grid-template-areas: "cb nm sel" "args args args"; gap: 2px 6px; align-items: center; padding: 3px 0; border-top: 1px solid var(--line); }
+  table.pri td { display: block; border: 0; padding: 0; min-width: 0; }
+  table.pri td:nth-child(1) { grid-area: cb; display: flex; align-items: center; min-height: 40px; }
+  table.pri td:nth-child(2) { grid-area: nm; white-space: normal; }
+  table.pri td:nth-child(3) { grid-area: sel; width: auto; }
+  table.pri td:nth-child(4) { grid-area: args; padding: 0 0 4px 36px; }
+  table.pri tr.off td:nth-child(3), table.pri tr.off td:nth-child(4) { display: none; }
+  table.pri tr.off { grid-template-areas: "cb nm nm"; }
+  table.pri .args input { font-size: 15px; padding: 4px 6px; }
+  .copyset { flex-wrap: wrap; justify-content: flex-end; }
+  h3 { flex-wrap: wrap; }
+  .tour-card .chip { min-height: 40px; }
+}
+/* ---- a phone: nothing under 11 px; the panel's last control can scroll clear of the assistant's bubble ---- */
+@media (max-width: 640px) {
+  h3, .pop h4, details.group > summary { font-size: 12px; letter-spacing: .1em; }
+  .tabs button[data-tab] { font-size: 12.5px; letter-spacing: .05em; }
+  .kv span, table.pri th, .tour-step, .alarm { font-size: 11.5px; }
+  table.pri .arg span, table.res td sup, table.res td sub, table.res small, .src, table.res .rvsrc, table.res .infodot { font-size: 11px; }
+  details.group > summary small { font-size: 12px; }
+  table.res, ul.checks, table.res tr.how td { font-size: 12.5px; }
+  table.res.prov small.why { font-size: 11.5px; }
+  .kv div[title] span::after { font-size: 11px; }
+  body:has(#esl-ai-launch) .tabpane { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+}
+
+/* ---- the Timing tab's figures take a height that follows the panel's width (a wide panel gets a proportionate plot,
+   not a letterbox); the plots are drawn again at the new size when the panel is resized ---- */
+#occanvas { height: auto; aspect-ratio: 16 / 10; min-height: 220px; max-height: 460px; }
+#pgcanvas { height: auto; aspect-ratio: 2 / 1; min-height: 200px; max-height: 400px; }
+
+/* ---- what a worked example teaches (src/learn/explain.js), floating over the 3D view ---- */
+.ex-explain { background: #0b0f18ee; border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px; color: var(--text); font-size: 12.5px; line-height: 1.45; box-shadow: 0 10px 30px #000a; }
+.ex-float { position: absolute; z-index: 6; left: 12px; top: 56px; width: min(380px, calc(100% - 24px)); max-height: calc(100% - 120px); overflow: auto; }
+.ex-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--star); }
+.ex-x { background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 14px; padding: 2px 6px; }
+.ex-see { margin: 0 0 8px; }
+.ex-try { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 4px; }
+.ex-k { color: var(--dim); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin-right: 2px; }
+.ex-msg { margin: 2px 0 6px; color: var(--dim); font-size: 12px; min-height: 0; } .ex-msg:empty { display: none; }
+.ex-more summary { cursor: pointer; color: var(--model); font-size: 12px; margin-top: 2px; }
+.ex-more p { margin: 6px 0; } .ex-more ul { margin: 4px 0 6px; padding-left: 18px; } .ex-more a { color: var(--model); font-size: 12px; }
+@media (max-width: 760px) { .ex-float { position: static; width: auto; max-height: none; margin: 8px; } .ex-x { min-width: 40px; min-height: 40px; } .ex-try .chip { min-height: 40px; } }

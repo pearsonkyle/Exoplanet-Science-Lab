@@ -200,6 +200,50 @@ check('intersectIntervals', JSON.stringify(O.intersectIntervals([[0, 2], [3, 6]]
   check('planner: with no baseline wanted the region of interest is the transit', O.findObservableTransits(targets, site, { ...opts, baseline: 0 }).length === O.findObservableTransits(targets, site, { ...opts, baseline: 0, include: 'transit' }).length);
 }
 
+// --- secondary eclipses and phase windows. Reference: test/eclipse_reference.json from test/make_eclipse_reference.py:
+// 240 random orbits (e up to 0.9), mid-eclipse from batman's get_t_secondary, transit and eclipse durations from a
+// brute-force contact search on a scipy Kepler solve.
+{
+  const E = JSON.parse(readFileSync(new URL('./eclipse_reference.json', import.meta.url)));
+  const dOff = E.cases.map((c) => (O.eclipsePhase(c.ecc, c.omega) * c.per - c.offset) * 86400);
+  const s = st(dOff), ecc = E.cases.filter((c) => c.ecc > 0).length;
+  check('eclipse: time from transit to eclipse matches batman get_t_secondary', s.max < 0.01, `${E.cases.length} orbits (${ecc} eccentric, e up to ${Math.max(...E.cases.map((c) => c.ecc)).toFixed(2)}): ${show(s, 's', 5)}; batman ${E.made_with.batman}`);
+  const rat = E.cases.map((c) => O.eclipseDurationRatio(c) * c.t14 / c.e14 - 1), lowE = E.cases.filter((c) => c.ecc <= 0.3).map((c) => O.eclipseDurationRatio(c) * c.t14 / c.e14 - 1);
+  const rs = st(rat), rl = st(lowE);
+  check('eclipse: duration from the transit duration (Winn 2010 eqs. 14, 16) against brute-force contacts: 0.5% for e <= 0.3, 10% up to e = 0.9', rl.max < 0.005 && rs.max < 0.10, `e <= 0.3 (${lowE.length}): worst ${(100 * rl.max).toFixed(2)}%, rms ${(100 * rl.rms).toFixed(3)}%; all: worst ${(100 * rs.max).toFixed(2)}%, rms ${(100 * rs.rms).toFixed(2)}%`);
+  const circ = E.cases.filter((c) => c.ecc === 0);
+  check('eclipse: circular orbits at phase 0.5 with the transit duration', circ.length > 20 && circ.every((c) => O.eclipsePhase(0, c.omega) === 0.5 && Math.abs(c.offset - c.per / 2) < 1e-6 && Math.abs(c.e14 / c.t14 - 1) < 1e-6 && O.eclipseDurationRatio(c) === 1), `${circ.length} circular orbits`);
+  // light time across the orbit: 2a/c for a circular edge-on orbit (a = 0.0225 au: 22.4 s)
+  const lt = O.eclipseLightDelay(0.0225) * 86400;
+  check('eclipse: light-travel delay 2a/c', Math.abs(lt - 2 * 0.0225 * 149597870.7 / 299792.458) < 1e-6, `${lt.toFixed(2)} s for a = 0.0225 au`);
+  // timing uncertainty against a Monte Carlo draw of T0, P, e, omega (uncorrelated normal errors)
+  const tg = { per: 5.6334729, tmid: 2455288.84923, perErr: 6.1e-6, tmidErr: 3.8e-4, t14: 0.1787, ecc: 0.5172, eccErr: 0.0019, omega: 188.01, omegaErr: 0.2 };
+  const g = O.eventGeometry(tg, 'eclipse'), n = 800, gauss = (() => { let x = 7; const u = () => (x = (x * 1103515245 + 12345) % 2147483648) / 2147483648; return () => Math.sqrt(-2 * Math.log(u() + 1e-12)) * Math.cos(2 * Math.PI * u()); })();
+  const draws = Array.from({ length: 20000 }, () => { const P = tg.per + gauss() * tg.perErr; return tg.tmid + gauss() * tg.tmidErr + (n + O.eclipsePhase(tg.ecc + gauss() * tg.eccErr, tg.omega + gauss() * tg.omegaErr)) * P; });
+  const mean = draws.reduce((a, b) => a + b, 0) / draws.length, sd = Math.sqrt(draws.reduce((a, b) => a + (b - mean) ** 2, 0) / (draws.length - 1));
+  check('eclipse: timing uncertainty from T0, P, e and omega matches a Monte Carlo draw', Math.abs(g.sigma(n) / sd - 1) < 0.03, `HAT-P-2 b-like orbit, ${n} orbits on: ${(g.sigma(n) * 1440).toFixed(2)} min vs ${(sd * 1440).toFixed(2)} min (20000 draws); eclipse at phase ${g.phase.toFixed(4)}`);
+  const noE = O.eventGeometry({ ...tg, ecc: NaN, omega: NaN }, 'eclipse');
+  check('eclipse: no catalogued eccentricity means circular, and says so', noE.phase === 0.5 && /circular/.test(noE.assumed) && noE.before === tg.t14 / 2);
+  check('phase windows: span around the eclipse, a period limit, custom phases wrap through the transit',
+    O.eventGeometry({ ...tg, per: 1.2 }, 'phase', { span: 0.5, maxPer: 2 }).before === 0.3 && O.eventGeometry(tg, 'phase', { maxPer: 2 }) === null &&
+    Math.abs(O.eventGeometry({ per: 2, tmid: 0, t14: 0.1 }, 'custom', { from: 0.9, to: 0.1 }).phase - 1) < 1e-12 && Math.abs(O.eventGeometry({ per: 2, tmid: 0, t14: 0.1 }, 'custom', { from: 0.9, to: 0.1 }).before - 0.2) < 1e-12);
+  // the planner with eclipses: every eclipse it calls observable is, by brute force, and its centre is T0 + (n + phase) P
+  const site = ref.sites[0], jd0 = 2461360.5, jd1 = jd0 + 5, rnd = (() => { let x = 999; return () => (x = (x * 1103515245 + 12345) % 2147483648) / 2147483648; })();
+  const targets = Array.from({ length: 300 }, (_, i) => ({ name: 'E' + i, ra: 360 * rnd(), dec: -60 + 140 * rnd(), per: 0.8 + 6 * rnd(), tmid: 2459000 + 10 * rnd(), perErr: 1e-6, tmidErr: 2e-4, t14: (1 + 3 * rnd()) / 24, ecc: i % 3 ? 0 : 0.4 * rnd(), omega: 360 * rnd() }));
+  const opts = { jd0, jd1, minAlt: 30, sunLimit: -18, baseline: 1 / 24, kinds: ['transit', 'eclipse'] };
+  const evs = O.findObservableEvents(targets, site, opts), ecl = evs.filter((e) => e.kind === 'eclipse');
+  let bad = 0;
+  for (const ev of ecl) for (let k = 0; k <= 30; k++) { const t = ev.roiStart + (ev.roiEnd - ev.roiStart) * k / 30; if (!(O.altAz(ev.target.ra, ev.target.dec, t, site).alt >= 29.98 && O.sunAltAz(t, site).alt <= -17.98)) bad++; }
+  const badT = ecl.filter((e) => Math.abs(e.bjd - (e.target.tmid + (e.epoch + O.eclipsePhase(e.target.ecc, e.target.omega)) * e.target.per)) > 1e-9).length;
+  const tr = O.findObservableTransits(targets, site, opts);
+  check('planner: eclipses and transits together; observable eclipses are dark and high over their region of interest', ecl.length > 5 && bad === 0 && badT === 0 && evs.filter((e) => e.kind === 'transit').length === tr.length && evs.every((e, i) => i === 0 || e.mid >= evs[i - 1].mid),
+    `${ecl.length} observable eclipses and ${tr.length} transits of 300 targets in 5 nights; ${bad} violations, ${badT} wrong centres`);
+  const pad = O.findObservableEvents(targets, site, { ...opts, padSigma: true });
+  check('planner: padding by the timing uncertainty widens the region of interest by 1 sigma each side', pad.length <= evs.length && pad.every((e) => Math.abs(e.roiStart - (e.ingress - 1 / 24 - e.sigma)) < 1e-12 && e.pad === e.sigma));
+  const ph = O.findObservableEvents(targets, site, { ...opts, kinds: ['phase'], phase: { span: 0.25, maxPer: 1.5 }, include: 'partial' });
+  check('planner: phase windows have no baseline and are as long as asked', ph.length > 0 && ph.every((e) => e.roiStart === e.ingress && Math.abs(e.egress - e.ingress - 0.25 * e.target.per) < 1e-9 && e.target.per <= 1.5), `${ph.length} quarter-orbit windows (partial included)`);
+}
+
 // --- the Swarthmore transit finder: its own output for Kitt Peak, 2026-11-16 + 7 nights (tools/compare_swarthmore.mjs
 // says how it was fetched), recomputed here from the ephemerides it lists. It prints JD to 0.001 d and angles to 1 deg.
 {
@@ -208,5 +252,31 @@ check('intersectIntervals', JSON.stringify(O.intersectIntervals([[0, 2], [3, 6]]
   check('Swarthmore finder, same ephemerides: mid-times within its 0.001 d rounding', C.length >= 30 && dm < 0.75, `${C.length} events, worst ${dm.toFixed(2)} min`);
   check('... elevations and azimuths within its 1 deg rounding', de < 0.55 && da < 0.55, `elevation worst ${de.toFixed(2)} deg, azimuth worst ${da.toFixed(2)} deg on the sky`);
   check('... Moon illumination within 2 points and distance within 1 deg', dp < 2 && dd < 1, `illumination worst ${dp.toFixed(1)} points, distance worst ${dd.toFixed(1)} deg`);
+}
+
+// --- a terrain horizon: the up intervals against brute force every 5 s (altAz + refraction against the skyline)
+{
+  const site = { lat: 31.96333, lon: -111.6, elev: 2120 }, jd0 = 2461360.5, jd1 = jd0 + 1.2;
+  // a skyline with a 25-degree wall from azimuth 60 to 120 and a 12-degree hill around 250, flat elsewhere at 2 degrees
+  const hz = (az) => (az >= 60 && az <= 120 ? 25 : 2 + 10 * Math.max(0, 1 - Math.abs(az - 250) / 15)); hz.max = 25;
+  let worst = 0, nEdges = 0, nStars = 0, same = true;
+  for (const [ra, dec] of [[10, 5], [80, 20], [150, -10], [220, 40], [300, 0], [30, 60], [120, -30]]) {
+    for (const minAlt of [0, 10, 30]) {
+      const got = O.upIntervalsHorizon(ra, dec, jd0, jd1, site, minAlt, hz); nStars++;
+      // brute force
+      const want = []; let st = null;
+      for (let t = jd0; t <= jd1 + 1e-9; t += 5 / 86400) { const h = O.altAz(ra, dec, t, site), up = h.alt >= minAlt && h.alt + O.refraction(h.alt) > hz(h.az); if (up && st == null) st = t; if (!up && st != null) { want.push([st, t]); st = null; } }
+      if (st != null) want.push([st, jd1]);
+      if (got.length !== want.length) { same = false; continue; }
+      for (let i = 0; i < got.length; i++) { worst = Math.max(worst, Math.abs(got[i][0] - want[i][0]), Math.abs(got[i][1] - want[i][1])); nEdges += 2; }
+    }
+  }
+  check('terrain horizon: up intervals = brute force every 5 s', same && worst * 86400 < 6, `${nStars} star and limit pairs, ${nEdges} edges, worst ${(worst * 86400).toFixed(1)} s`);
+  const flat = (az) => -1; flat.max = -1;
+  check('a skyline below the altitude limit changes nothing', JSON.stringify(O.upIntervalsHorizon(80, 20, jd0, jd1, site, 30, flat)) === JSON.stringify(O.upIntervals(80, 20, jd0, jd1, site, 30)));
+  // in the planner: a transit hidden by the wall is lost to "altitude"
+  const tg = { name: 'test', ra: 80, dec: 20, per: 1.3, tmid: 2461360.9, t14: 0.1, perErr: 0, tmidErr: 0 };
+  const a = O.findObservableEvents([tg], site, { jd0, jd1: jd0 + 8, minAlt: 10, sunLimit: 90, baseline: 0, include: 'partial', minCoverage: 0 }), b = O.findObservableEvents([tg], site, { jd0, jd1: jd0 + 8, minAlt: 10, sunLimit: 90, baseline: 0, include: 'partial', minCoverage: 0, horizon: hz });
+  check('findObservableEvents with a horizon: never more observable than without', a.length >= b.length && b.every((e) => { const f = a.find((x) => x.epoch === e.epoch); return f && e.coverage <= f.coverage + 1e-9; }), `${a.length} transits without the terrain, ${b.length} with it`);
 }
 process.exit(ok ? 0 : 1);

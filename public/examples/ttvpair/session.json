@@ -1,0 +1,930 @@
+{
+ "format": "esl-session",
+ "version": 1,
+ "software": {
+  "name": "exoplanet-science-lab",
+  "version": "0.2.0",
+  "commit": null
+ },
+ "created": "2026-11-16T00:00:00Z",
+ "name": "Simulated TTV pair",
+ "title": "Simulated: two transiting planets near the 2:1 resonance, masses from timing alone",
+ "notes": "Simulated (public/examples/ttvpair/make_example.mjs): every transit of two warm Saturns at 19.2 and 39.3 days over four years, 1.5 to 4 minute errors, no velocities. Injected masses 0.14 and 0.09 M Jup.",
+ "star": {
+  "teff": 5780,
+  "teffErr": 100,
+  "logg": 4.44,
+  "loggErr": 0.1,
+  "feh": 0,
+  "fehErr": 0.1,
+  "rstar": 1,
+  "rstarErr": 0.02,
+  "mstar": 1,
+  "mstarErr": 0.04
+ },
+ "limb_darkening": {
+  "law": "quadratic",
+  "mode": "coeffs",
+  "band": "Kepler (approx.)",
+  "coefficients": [
+   0.4,
+   0.26
+  ]
+ },
+ "planets": [
+  {
+   "letter": "b",
+   "parameters": {
+    "rprs": 0.08,
+    "inc": 89.2,
+    "per": 19.2413384,
+    "tmid": 2455003.10948,
+    "ecc": 0,
+    "omega": 0,
+    "mplanet": 0.05
+   }
+  },
+  {
+   "letter": "c",
+   "parameters": {
+    "rprs": 0.077,
+    "inc": 89.4,
+    "per": 39.2448966,
+    "tmid": 2455011.69106,
+    "ecc": 0,
+    "omega": 0,
+    "mplanet": 0.05
+   }
+  }
+ ],
+ "nbody": {
+  "epoch": 2455000,
+  "linear": true,
+  "stepsPerOrbit": 30
+ },
+ "physical": {
+  "crossing": true,
+  "hill": true
+ },
+ "kepler": true,
+ "time_reference": 2455000,
+ "data": {
+  "light_curve": null,
+  "radial_velocity": [],
+  "timing": [
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455003.098581,
+    "err": 0.002025,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455011.699616,
+    "err": 0.001821,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455022.341954,
+    "err": 0.001362,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455041.58746,
+    "err": 0.00105,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455050.941718,
+    "err": 0.002561,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455060.830423,
+    "err": 0.001155,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455080.077861,
+    "err": 0.001908,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455090.177688,
+    "err": 0.001781,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455099.319827,
+    "err": 0.001518,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455118.564327,
+    "err": 0.001301,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455129.415328,
+    "err": 0.001399,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455137.804839,
+    "err": 0.002026,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455157.052324,
+    "err": 0.001683,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455168.65836,
+    "err": 0.002057,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455176.293711,
+    "err": 0.001435,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455195.539739,
+    "err": 0.001408,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455207.895959,
+    "err": 0.002305,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455214.780899,
+    "err": 0.00124,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455234.023088,
+    "err": 0.001485,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455247.140088,
+    "err": 0.002428,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455253.26415,
+    "err": 0.002042,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455272.510282,
+    "err": 0.001133,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455286.381983,
+    "err": 0.002072,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455291.748222,
+    "err": 0.001482,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455310.989177,
+    "err": 0.001989,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455325.627154,
+    "err": 0.002032,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455330.233621,
+    "err": 0.001602,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455349.473126,
+    "err": 0.001794,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455364.879099,
+    "err": 0.002096,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455368.710614,
+    "err": 0.002083,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455387.95137,
+    "err": 0.001218,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455404.12593,
+    "err": 0.001468,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455407.193628,
+    "err": 0.00201,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455426.43258,
+    "err": 0.001835,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455443.375913,
+    "err": 0.00224,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455445.668139,
+    "err": 0.001657,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455464.908415,
+    "err": 0.001127,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455482.626855,
+    "err": 0.001678,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455484.149953,
+    "err": 0.001644,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455503.387327,
+    "err": 0.001337,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455521.878205,
+    "err": 0.002609,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455522.626614,
+    "err": 0.001314,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455541.86222,
+    "err": 0.002021,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455561.101549,
+    "err": 0.001572,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455561.133079,
+    "err": 0.002295,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455580.341237,
+    "err": 0.001823,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455599.577607,
+    "err": 0.002056,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455600.383199,
+    "err": 0.001611,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455618.819358,
+    "err": 0.001324,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455638.056385,
+    "err": 0.001258,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455639.630661,
+    "err": 0.002588,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455657.295953,
+    "err": 0.001658,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455676.533435,
+    "err": 0.001213,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455678.880979,
+    "err": 0.002149,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455695.774137,
+    "err": 0.002072,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455715.014632,
+    "err": 0.001489,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455718.130633,
+    "err": 0.002104,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455734.251708,
+    "err": 0.001725,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455753.496228,
+    "err": 0.001747,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455757.377585,
+    "err": 0.0024,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455772.736042,
+    "err": 0.001344,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455791.976727,
+    "err": 0.001251,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455796.621592,
+    "err": 0.001834,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455811.21589,
+    "err": 0.001858,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455830.459553,
+    "err": 0.00153,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455835.863337,
+    "err": 0.001514,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455849.703017,
+    "err": 0.001476,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455868.9448,
+    "err": 0.00113,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455875.109175,
+    "err": 0.002406,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455888.186856,
+    "err": 0.001376,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455907.432076,
+    "err": 0.001047,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455914.34515,
+    "err": 0.002211,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455926.672624,
+    "err": 0.001617,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455945.923299,
+    "err": 0.001857,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455953.591797,
+    "err": 0.002621,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455965.158052,
+    "err": 0.001805,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2455984.406326,
+    "err": 0.002008,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2455992.822365,
+    "err": 0.002734,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456003.648254,
+    "err": 0.00164,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456022.891741,
+    "err": 0.001896,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456032.064394,
+    "err": 0.002666,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456042.137612,
+    "err": 0.001342,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456061.385707,
+    "err": 0.001547,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456071.301095,
+    "err": 0.001928,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456080.625369,
+    "err": 0.001888,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456099.874426,
+    "err": 0.001745,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456110.539505,
+    "err": 0.002713,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456119.114807,
+    "err": 0.001757,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456138.357951,
+    "err": 0.001706,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456149.780797,
+    "err": 0.002389,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456157.598064,
+    "err": 0.001181,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456176.845646,
+    "err": 0.001082,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456189.021827,
+    "err": 0.002057,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456196.085251,
+    "err": 0.001409,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456215.328213,
+    "err": 0.001656,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456228.261027,
+    "err": 0.002749,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456234.569737,
+    "err": 0.002071,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456253.813146,
+    "err": 0.001246,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456267.508973,
+    "err": 0.002468,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456273.058943,
+    "err": 0.002081,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456292.296783,
+    "err": 0.001521,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456306.751922,
+    "err": 0.00188,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456311.538258,
+    "err": 0.002014,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456330.780484,
+    "err": 0.001863,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456345.997497,
+    "err": 0.002685,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456350.021809,
+    "err": 0.001737,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456369.259565,
+    "err": 0.001132,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456385.247286,
+    "err": 0.001507,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456388.499619,
+    "err": 0.00143,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456407.7411,
+    "err": 0.002045,
+    "source": "simulated"
+   },
+   {
+    "planet": "c",
+    "kind": "transit",
+    "time": 2456424.49765,
+    "err": 0.001616,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456426.97897,
+    "err": 0.001108,
+    "source": "simulated"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2456446.212532,
+    "err": 0.002048,
+    "source": "simulated"
+   }
+  ]
+ },
+ "fit": {
+  "use": {
+   "lc": false,
+   "rv": false,
+   "timing": true
+  },
+  "free": [
+   {
+    "key": "mplanet",
+    "label": "Mp",
+    "unit": "M Jup",
+    "prior": {
+     "type": "uniform",
+     "a": 0,
+     "b": 0.6
+    }
+   },
+   {
+    "key": "mplanet@c",
+    "label": "Mp · c",
+    "unit": "M Jup",
+    "prior": {
+     "type": "uniform",
+     "a": 0,
+     "b": 0.6
+    }
+   },
+   {
+    "key": "per@c",
+    "label": "P · c",
+    "unit": "d",
+    "prior": {
+     "type": "uniform",
+     "a": 39.04867,
+     "b": 39.44112
+    }
+   },
+   {
+    "key": "tmid@c",
+    "label": "T mid · c",
+    "unit": "d",
+    "prior": {
+     "type": "uniform",
+     "a": 2455011.39106,
+     "b": 2455011.99106
+    }
+   }
+  ],
+  "fixed": {},
+  "timing_noise": 0,
+  "sampler": {
+   "nlive": 400,
+   "fracRemain": 0.01,
+   "seed": 42,
+   "maxCalls": 1000000
+  }
+ },
+ "ui": {
+  "tab": "timing",
+  "timing_order": 1
+ },
+ "result": null
+}

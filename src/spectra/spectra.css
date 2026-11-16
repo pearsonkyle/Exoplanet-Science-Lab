@@ -1,0 +1,31 @@
+/* Spectroscopy page. Shares the photometry page's layout classes (photometry.css) and the site tokens. */
+.specpage .sysc { padding: 12px 14px; margin-bottom: 14px; }
+.specpage .sysc h2, .specpage .ctl h2 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; font-weight: 600; }
+.specpage .res > h2 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 22px 0 8px; font-weight: 600; }
+.sysgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 10px; margin-top: 10px; font-size: 12px; }
+.sysgrid label, .grid4 label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); min-width: 0; }
+.sysgrid input, .grid4 input, .grid4 select { width: 100%; min-width: 0; }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 10px; font-size: 12px; }
+.specpage .ctl { padding: 12px 14px; margin-top: 12px; }
+.specpage .pad6 { padding: 6px; }
+.specpage .pad6 canvas, .specpage .plots canvas { display: block; width: 100%; }
+.specpage .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); }
+.specpage .tblc { padding: 10px 12px; }
+.specpage .tblc td:first-child, .specpage .tblc th:first-child { color: var(--dim); }
+.specpage .how { margin-top: 22px; padding: 12px 16px; font-size: 12.5px; color: var(--lab); }
+.specpage .how summary { cursor: pointer; color: var(--text); }
+.specpage .how p { max-width: 900px; margin: 8px 0; }
+.specpage .src label { min-width: 0; }
+.specpage .row select { max-width: 100%; }
+.specpage .res .row { margin-bottom: 6px; }
+@media (max-width: 980px) {
+  .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .specpage .plots.two { grid-template-columns: 1fr; }
+  .specpage .tried .scroll { overflow-x: auto; }
+  .specpage .phead { display: block; }
+}
+/* fingers: the "How this is computed" fold is a 40 px target; section titles not under 12 px on a phone */
+@media (pointer: coarse), (max-width: 760px) {
+  .specpage .how summary { padding: 10px 0; margin: -10px 0; }
+  .specpage .sysc h2, .specpage .ctl h2, .specpage .res > h2 { font-size: 12px; }
+}

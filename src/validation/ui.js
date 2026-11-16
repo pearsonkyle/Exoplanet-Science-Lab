@@ -40,13 +40,15 @@ export function details(parent, summary, fill, { open = false, id = '' } = {}) {
 }
 
 /** The number to remember: value, unit, what it means, and whether it was computed in this browser or stored. */
-export const keyNumber = (value, unit, means, live = true) => `<div class="vkey"><div class="vkv"><b>${value}</b> <span class="u">${unit}</span></div><p>${means}</p><span class="src ${live ? 'live' : 'stored'}" title="${live ? 'Computed in this browser when the page loaded' : 'From a stored run; see “Reproduce it”'}">${live ? 'recomputed now' : 'stored run'}</span></div>`;
+export const keyNumber = (value, unit, means, live = true) => `<div class="vkey"><div class="vkv"><b>${value}</b> <span class="u">${unit}</span></div><p>${means}</p><span class="src ${live ? 'live' : 'stored'}" title="${live ? 'Computed in this browser when the page loaded' : 'From a stored run; see the Reproducibility tab'}">${live ? 'recomputed now' : 'stored run'}</span></div>`;
 
 /** Inline citation linking to the reference list; several keys give "A 2015; B 2016". */
 export function cite(...keys) { return keys.map((k) => { if (!REFS[k]) throw new Error('unknown reference: ' + k); return `<a class="cite" href="#ref-${k}">${esc(REFS[k].short)}</a>`; }).join('; '); }
 /** A code's name linked to its repository. */
 export function code(k, label) { const c = CODES[k]; if (!c) throw new Error('unknown code: ' + k); return `<a class="ext" href="${c.repo}" rel="noopener">${esc(label || c.name)}</a>`; }
 export const ext = (href, text) => `<a class="ext" href="${href}" rel="noopener">${text}</a>`;
+/** Address of a stored file of the validation (public/validation/, served as validation/ under the site root). Browser only. */
+export const vdata = (p) => new URL('validation/' + p, new URL((document.querySelector('meta[name=esl-root]') || { content: './' }).content || './', document.baseURI)).href;
 
 /** One entry of the reference list. */
 export function refEntry(k) {

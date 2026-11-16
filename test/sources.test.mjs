@@ -2,7 +2,7 @@
 // The hand-made cases test the rules; the snapshots under public/ (skipped with a FAIL if they have not been built)
 // give the numbers quoted in the README: how many planets match, at which stage, and what is left over.
 import { readFileSync, existsSync } from 'node:fs';
-import { SOURCES, loadSources, buildTable, makeRow, findRow, disagreement, fillGaps, FIELDS } from '../src/core/sources/index.js';
+import { SOURCES, loadSources, buildTable, makeRow, findRow, disagreement, fillGaps, FIELDS, timingSigma, rowEphemerides, chooseEphemeris } from '../src/core/sources/index.js';
 import { matchCatalogues, planetLetter, hostOfName, nameKeys, hostKeys, separation } from '../src/core/sources/match.js';
 import { readSnapshot, newRecord } from '../src/core/sources/snapshot.js';
 import * as R from '../src/core/relations.js';
@@ -148,6 +148,39 @@ else {
     const hp = L.nea.records.find((r) => r.name === 'HAT-P-32 b').info.ephemerides, comp = E.filter((r) => r.info.ephemerides.best.kind === 'composite');
     check('NEA ephemerides: references, time systems and the composite fallback', hp.best.ref === 'Kokori et al. 2023' && hp.default.ref === 'Wang et al. 2019' && hp.best.tsys === 'BJD-TDB' && !hp.best.mixed && comp.every((r) => r.info.ephemerides.default.kind !== 'best'),
       `HAT-P-32 b: best ${hp.best.ref} (${(sg(hp.best) * 1440).toFixed(2)} min today), default ${hp.default.ref} (${(sg(hp.default) * 1440).toFixed(2)} min); ${comp.length} planets fall back to the composite values, ${comp.filter((r) => r.info.ephemerides.best.mixed).length} of them mixing two references`);
+  }
+  // --- the timing uncertainty today, recomputed by hand on archive rows: sigma(T_N) = sqrt(sigma_T0^2 + (N sigma_P)^2),
+  // N = round((now - T0) / P), the errors the mean of the archive's + and - errors, P and T0 of one reference
+  {
+    const now = 2461360, T2 = buildTable(L, { now, eph: 'best' }), by = new Map(T2.rows.map((r) => [r.name, r]));
+    const hand = (P, sP, T0, sT0) => Math.sqrt(sT0 ** 2 + (Math.round((now - T0) / P) * sP) ** 2) * 1440;
+    const S = readSnapshot(JSON.parse(readFileSync(new URL('catalog-table/nea.json', root)))), col = (row, c) => S.q(row, c), m = (q) => ((q.lo ?? q.hi) + (q.hi ?? q.lo)) / 2;
+    let n = 0, worst = 0; const shown = [];
+    for (const row of S.rows) {
+      const name = S.n(row, 'pl_name'), p = col(row, 'eph_per'), t = col(row, 'eph_tmid'), r = by.get(name);
+      if (!r || !p || !t || !(m(p) > 0) || !(m(t) > 0) || !r.ephemerides.best || r.ephemerides.best.kind !== 'best') continue;
+      const h = hand(p.v, m(p), t.v, m(t)); n++; worst = Math.max(worst, Math.abs(r.v.drift - h) / h);
+      if (['HAT-P-32 b', 'WASP-12 b', 'Kepler-10 b', 'K2-18 b', 'Kepler-1052 c'].includes(name)) shown.push(`${name} ${r.v.drift.toFixed(2)} min (N = ${r.driftEpochs})`);
+    }
+    check('timing uncertainty: sqrt(sigma_T0^2 + (N sigma_P)^2) on every best-timed archive pair', n > 4000 && worst < 1e-12, `${n} planets, worst relative difference ${worst.toExponential(1)}; ${shown.join(', ')}`);
+    const ts = timingSigma({ per: 3, tmid: 2455000, perErr: 1e-6, tmidErr: 1e-4 }, 2455000 + 3 * 1000.4);
+    check('timing uncertainty: N is the transit nearest today, zero errors give none', ts.n === 1000 && Math.abs(ts.sigma - Math.hypot(1e-4, 1e-3)) < 1e-15 && timingSigma({ per: 3, tmid: 0, perErr: 0, tmidErr: 1e-4 }, 10) === null);
+    // exoplanet.eu: the Kepler offset in the epoch errors (archive KOI table: koi_time0_err of KOI-5372.01 = 0.0283 d, KOI-6256.01 = 0.00867 d)
+    const eu = new Map(L.eu.records.map((r) => [r.name, r])), k1 = eu.get('KOI-5372 b'), k2 = eu.get('KOI-6256 b');
+    const nOff = L.eu.records.filter((r) => /Kepler offset/.test((r.info.ephemerisNotes || []).join())).length, nNotJd = L.eu.records.filter((r) => /not a Julian date/.test(r.info.ephemerisRejected || '')).length;
+    const nBigP = L.eu.records.filter((r) => /period error larger/.test((r.info.ephemerisNotes || []).join())).length;
+    check('exoplanet.eu epochs: the Kepler offset is taken off the errors, epochs that are not JD are not used', Math.abs(k1.e.tmid[1] - 0.0283) < 1e-6 && Math.abs(k2.e.tmid[0] - 0.00867) < 1e-6 && nOff > 100 && nNotJd > 5 && L.eu.records.every((r) => !r.e.tmid || r.e.tmid.every((x) => x < 1e5)),
+      `${nOff} epoch errors carried 2454833; ${nNotJd} epochs are not Julian dates; ${nBigP} period errors larger than the period dropped; KOI-5372 b now ${by.get('KOI-5372 b').v.drift.toFixed(0)} min (archive KOI table: ${hand(212.60398, 0.01455, 2455046.411, 0.0283).toFixed(0)} min)`);
+    // the three choices of ephemeris
+    const D = buildTable(L, { now, eph: 'default' }), E = buildTable(L, { now, eph: 'eu' }), dBy = new Map(D.rows.map((r) => [r.name, r])), eBy = new Map(E.rows.map((r) => [r.name, r]));
+    const hp = by.get('HAT-P-32 b'), hpD = dBy.get('HAT-P-32 b'), hpE = eBy.get('HAT-P-32 b');
+    check('ephemeris choice: best-timed, archive default, exoplanet.eu', hp.ref.per === 'Kokori et al. 2023' && hpD.ref.per === 'Wang et al. 2019' && hpE.src.per === 'eu' && hpE.v.tmid === hpE.recs.eu.v.tmid && hpE.src.tmid === 'eu' && !hpE.eph.fallback && hpD.src.rp === hp.src.rp,
+      `HAT-P-32 b: ${hp.v.drift.toFixed(2)} / ${hpD.v.drift.toFixed(2)} / ${hpE.v.drift.toFixed(2)} min today`);
+    const fb = E.rows.filter((r) => r.eph.fallback), rej = E.rows.filter((r) => r.ephemerides.rejected.eu && /more than 1%/.test(r.ephemerides.rejected.eu));
+    const noEu = E.rows.filter((r) => r.recs.nea && !r.recs.eu);
+    check('ephemeris choice: a planet without a usable exoplanet.eu ephemeris says so, and shows the archive\'s best-timed one', fb.length > 0 && fb.every((r) => r.eph.used !== 'eu' && /used instead/.test(r.eph.fallback)) && noEu.every((r) => r.eph.fallback || !r.ephemerides.best) && rej.every((r) => !r.ephemerides.best || (r.eph.fallback && r.src.per === 'nea')),
+      `${fb.length} rows marked (${noEu.length} not in exoplanet.eu, ${rej.length} whose period is more than 1% from the archive's, e.g. ${rej.slice(0, 3).map((r) => `${r.name}: ${r.ephemerides.rejected.eu}`).join('; ')})`);
+    check('ephemeris choice: period and epoch always from one catalogue', [T2, D, E].every((t) => t.rows.every((r) => !(r.v.per > 0) || !Number.isFinite(r.v.tmid) || r.src.per === r.src.tmid)));
   }
   check('field registry covers the row values', T.rows.slice(0, 500).every((r) => Object.keys(r.v).every((k) => FIELDS[k])));
 }

@@ -33,7 +33,8 @@ export async function gunzip(buf) {
  */
 export async function openFits(buf, opts = {}) {
   let ab = buf instanceof Uint8Array ? (buf.byteOffset === 0 && buf.byteLength === buf.buffer.byteLength ? buf.buffer : buf.slice().buffer) : buf;
-  if (isGzip(ab)) ab = await gunzip(ab);
+  // a .fits.gz deflated inside a zip arrives gzip-wrapped twice (src/core/zip.js): unwrap up to three layers
+  for (let k = 0; k < 3 && isGzip(ab); k++) ab = await gunzip(ab);
   const fits = parseFits(ab);
   if (opts.inflate !== false) await inflateTiles(fits);
   return fits;

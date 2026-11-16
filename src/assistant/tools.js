@@ -17,6 +17,7 @@ import { TOOL_SPECS, toolsFor, checkArgs } from './toolspec.js';
 import * as ops from './ops.js';
 import { loadIndex, searchNames } from '../core/catalog.js';
 import { LD_LAWS } from '../core/limbdark.js';
+import { projectReport } from '../core/report.js';
 
 export { TOOL_SPECS };
 const sig = ops.sig;
@@ -25,8 +26,9 @@ const priorText = (p) => (!p ? '' : p.type === 'normal' ? `normal(${sig(p.a, 9)}
 
 export function createTools(ctx) {
   const { api, files, page = null, fetchJson = null, where = 'browser' } = ctx;
-  const specs = toolsFor(where), runs = [];
-  let catalog = null, nextRun = 1;
+  const has = (m) => typeof api[m] === 'function';
+  const specs = [...toolsFor(where).filter((t) => !t.needs || has(t.needs)), ...describedTools(api)], runs = [];
+  let catalog = null, nextRun = 1, lastSearch = null;
 
   const doc = (withResult = false) => api.exportSession(withResult);
   const tRef = () => (api.state().lightCurve || {}).timeReference || 0;
@@ -40,6 +42,8 @@ export function createTools(ctx) {
   }
   /** Change the session document and load it back (for what the api has no call for). */
   function roundTrip(fn) { const out = fn(doc(false)); api.importSession(out.doc); return out; }
+  /** The planets' letters and key suffixes as the api reports them. */
+  const sfxOf = (letter) => { const s = api.state(), L = letter ? String(letter).trim().slice(-1) : s.planets[0]; if (!s.planets.includes(L)) throw new Error(`there is no planet "${letter}": the planets are ${s.planets.join(', ')}`); return { letter: L, sfx: L === s.planets[0] ? '' : L }; };
   async function sourceText(args, what) {
     if (args.file) return { text: await files.readText(args.file), name: args.name || args.file };
     if (typeof args.text === 'string' && args.text.trim()) return { text: args.text, name: args.name || what };
@@ -54,12 +58,37 @@ export function createTools(ctx) {
   function recordRun(label) {
     const d = doc(true); if (!d.result) return null;
     const rec = ops.runRecord(d, { id: nextRun++, label });
-    if (page && page.comparison) { try { const c = page.comparison(); if (c && c.runs.length) rec.pageId = Math.max(...c.runs.map((r) => r.id)); } catch { /* the table is optional */ } }
+    const pr = pageRuns();
+    if (pr && pr.length) rec.pageId = (pr.find((r) => r.showing) || pr[pr.length - 1]).id;
+    else if (page && page.comparison) { try { const c = page.comparison(); if (c && c.runs.length) rec.pageId = Math.max(...c.runs.map((r) => r.id)); } catch { /* the table is optional */ } }
     runs.push(rec); return rec;
   }
   /** The comparison of the runs on the current data: the page's own table when it has every run, else the same rules on the run log. */
-  function comparison() {
-    const mine = ops.compareRuns(runs, ops.dataKey(doc(false)));
+  /** The analyzer's own run history (api.runs()), or null where there is none. */
+  const pageRuns = () => { if (!has('runs')) return null; try { const r = api.runs(); return Array.isArray(r) ? r : null; } catch { return null; } };
+  /**
+   * The comparison of runs. In the page it is the analyzer's own: its run history and its compare() of every run
+   * with the best one, in its words. Elsewhere (the MCP server, or runs the page no longer holds) the same rules
+   * on the log of this conversation (ops.compareRuns). Nothing is computed here.
+   */
+  function comparison(ids) {
+    const pool = ids ? runs.filter((r) => ids.includes(r.id)) : runs, mine = ops.compareRuns(pool, ids ? undefined : ops.dataKey(doc(false)));
+    const pr = pageRuns();
+    if (pr && has('compare')) {
+      const wanted = ids ? pool.map((r) => r.pageId) : pr.filter((r) => r.same_data).map((r) => r.id), here = pr.filter((r) => wanted.includes(r.id));
+      if (here.length && here.length === wanted.length && here.length >= (ids ? pool.length : 1)) {
+        try {
+          const label = (id) => { const r = runs.find((x) => x.pageId === id); return '#' + id + (r && r.label ? ' ' + r.label : ''); };
+          const lnz = (r) => (r.converged ? `${r.logZ.toFixed(2)} ± ${r.logZerr.toFixed(2)}` : `> ${r.logZ.toFixed(1)} (not converged)`);
+          const conv = here.filter((r) => r.converged), top = (conv.length ? conv : here).reduce((a, b) => (b.logZ > a.logZ ? b : a));
+          const pairs = here.filter((r) => r !== top).map((r) => ({ r, c: api.compare(r.id, top.id) }));
+          const rows = here.map((r) => { const p = pairs.find((x) => x.r === r); return { run: label(r.id), free: (r.labels || (r.free || []).join(', ')), limb_darkening: r.model, lnZ: lnz(r), delta_lnZ: p && p.c.comparable ? `${p.c.delta_lnZ.toFixed(2)} ± ${p.c.delta_lnZ_err.toFixed(2)}` : null, reading: p ? p.c.reading : 'reference', cautions: (r.cautions || []).length }; });
+          const verdict = here.length === 1 ? 'One run so far: an evidence means something only next to another model fitted to the same data.' : pairs.map((p) => p.c.words).join(' ');
+          return { source: 'the analyzer\'s run history and its own comparison of each run with the best one', runs: rows, verdict, cautions: [...new Set([...pairs.flatMap((p) => p.c.cautions), ...ops.sameModel(pool.filter((x) => wanted.includes(x.pageId)))])], rule: mine.rule };
+        } catch { /* fall through to the rules restated in ops.js */ }
+      }
+    }
+    if (ids) return { source: 'the runs of this experiment, read with the rules of the analyzer\'s comparison table', ...mine };
     if (page && page.comparison) {
       let c = null; try { c = page.comparison(); } catch { c = null; }
       if (c && c.runs.length && c.runs.length >= mine.runs.length) {
@@ -69,11 +98,58 @@ export function createTools(ctx) {
     }
     return { source: 'this conversation\'s runs, read with the rules of the analyzer\'s comparison table', ...mine };
   }
+  /** What identifies a set-up (not its fit result): to know when stepping back has reached it. */
+  const setupKey = (d) => JSON.stringify([d.name, d.star, d.limb_darkening, d.planets, !!d.kepler, d.phase || null, d.nbody || null, (d.fit.free || []).map((f) => [f.key, f.prior]), d.fit.fixed, d.fit.use, ops.dataKey({ ...d, fit: { use: { lc: true, rv: true, timing: true } } })]);
+  /**
+   * Back to the set-up an experiment started from. The analyzer's undo is tried first, because it keeps the run
+   * history (and with it the analyzer's own comparison); loading the saved document is the fallback.
+   */
+  function backTo(baseline, key) {
+    for (let i = 0; i < 40; i++) { let now; try { now = setupKey(doc(false)); } catch { break; } if (now === key) return 'undo'; if (api.undo() === false) break; }
+    try { if (setupKey(doc(false)) === key) return 'undo'; } catch { /* load it instead */ }
+    api.importSession(baseline); return 'import';
+  }
   async function fit(label, onProgress, signal) {
     const stop = () => { try { api.stop(); } catch { /* not running */ } };
     if (signal) { if (signal.aborted) throw new Error('stopped by the user'); signal.addEventListener('abort', stop, { once: true }); }
     try { const r = await api.run({ onProgress }); const rec = recordRun(label); return { result: r, rec }; }
     finally { if (signal) signal.removeEventListener('abort', stop); }
+  }
+
+  /** The first planet's T mid as an absolute date (BJD) when the data are dated, with its value as the api holds it. */
+  const tmidNow = () => { const s = api.state(), p = s.parameters.find((x) => x.key === 'tmid'), tr = s.lightCurve.timeReference || 0; return p ? { p, tr, abs: p.value > 1e5 ? p.value : p.value + tr, per: (s.parameters.find((x) => x.key === 'per') || {}).value } : null; };
+  /** Set T mid to a value in the api's own frame, its prior moved by the same amount. */
+  function shiftTmid(value) {
+    const { p } = tmidNow(), dt = value - p.value;
+    if (p.prior) api.setPrior('tmid', p.prior.type === 'uniform' ? { type: 'uniform', a: p.prior.a + dt, b: p.prior.b + dt } : { ...p.prior, a: p.prior.a + dt });
+    api.setValue('tmid', value);
+  }
+  /**
+   * The date a simulation of a given night is centred on: a BJD (or days from the time reference), or "planned", the
+   * mid-transit BJD of the event chosen on the plan page (ctx.planned). Returns { abs, note } or throws.
+   */
+  function nightOf(mid) {
+    const now = tmidNow(); if (!now) throw new Error('this set-up has no tmid to move');
+    const pv = ctx.planned ? ctx.planned() : null, planned = pv === null || pv === undefined || pv === '' ? NaN : Number(pv);
+    let abs;
+    if (/^\s*(planned|plan|that night|the planned (night|event|transit))\s*$/i.test(String(mid))) { if (!Number.isFinite(planned)) throw new Error('no event was planned on the plan page in this project: give mid_transit as a BJD'); abs = planned; }
+    else if (/^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(String(mid).trim())) {
+      // a UTC time is not a BJD; it is taken as the planned event when it is that event's time (within the hour)
+      const jd = Date.parse(String(mid).trim().replace(/Z?$/, 'Z')) / 864e5 + 2440587.5;
+      if (!(Number.isFinite(planned) && Math.abs(jd - planned) < 1 / 24)) throw new Error('mid_transit is a BJD_TDB, not a UTC time: give "planned" for the event chosen on the plan page, or the BJD_TDB a tool returned');
+      abs = planned;
+    } else { const v = Number(mid); if (!Number.isFinite(v)) throw new Error('mid_transit is a BJD such as 2461360.9, days from the time reference, or "planned"'); abs = v > 1e5 ? v : v + now.tr; }
+    const orbits = now.per > 0 ? Math.round((abs - now.abs) / now.per) : null;
+    const off = Number.isFinite(planned) && Math.abs(abs - planned) > 0.3 ? ` This is not the planned event (mid-transit BJD_TDB ${planned} on the plan page): to simulate that night, call simulate_light_curve with mid_transit "planned".` : '';
+    return { abs, note: `T mid was set to the requested mid-transit${orbits !== null ? ` (${orbits} orbits from the catalogue epoch)` : ''}, and its prior moved with it.${off}` };
+  }
+  /** Simulate, centred on `abs` when given; checked afterwards, and done again when the analyzer moved the time reference. */
+  function simulateAt(abs, run) {
+    if (abs === null) return run();
+    const before = tmidNow(); shiftTmid(abs > 1e5 && before.p.value <= 1e5 ? abs - before.tr : abs);
+    let out = run(); const after = tmidNow();
+    if (Math.abs(after.abs - abs) > 1e-4) { shiftTmid(after.p.value > 1e5 || !after.tr ? abs : abs - after.tr); out = run(); }
+    return out;
   }
 
   const H = {
@@ -103,7 +179,8 @@ export function createTools(ctx) {
     async lookup_planet({ name, kinds = ['transit'] }) {
       // observations the user loaded outlive a change of system: only a simulated stand-in is replaced
       const before = doc(false), L0 = before.data.light_curve, keepLC = !!(L0 && L0.time.length && !L0.synthetic), rv0 = before.data.radial_velocity || [], tim0 = before.data.timing || [];
-      await api.lookup(name, kinds);
+      try { await api.lookup(name, kinds); }
+      catch (err) { let held = ''; try { held = api.state().name; } catch { /* no state */ } throw new Error(`${String(err.message || err).replace(/\.$/, '')}. Nothing was loaded: the analyzer still holds ${held || 'what it held before'}, which is not "${name}". Do not fit it or report results as ${name}: tell the user, or choose another planet.`); }
       const kept = []; let moved = null;
       if (keepLC || rv0.length || tim0.length) {
         const d = doc(false);
@@ -142,12 +219,56 @@ export function createTools(ctx) {
       const s = api.state();
       return { set, chi2_at_current_values: sig(s.chi2, 6), note: s.hasResult ? undefined : 'Any earlier fit result was cleared: the values changed.' };
     },
-    add_planet(args) { const o = roundTrip((d) => ops.addPlanet(d, args)); return { added: o.letter, planets: api.state().planets, its_keys: o.keys, next: 'Set its values with set_parameters (keys carry the letter) and free what the data can measure.' }; },
-    remove_planet({ letter }) { const o = roundTrip((d) => ops.removePlanet(d, letter)); return { removed: o.removed, planets: api.state().planets }; },
+    add_planet(args) {
+      if (has('addPlanet')) { const letter = api.addPlanet({ ...(args.letter ? { letter: String(args.letter).trim().slice(-1) } : {}), ...(args.parameters ? { values: args.parameters } : {}) }), s = api.state(); return { added: letter, planets: s.planets, its_keys: s.parameters.filter((p) => p.key.endsWith('@' + letter)).map((p) => `${p.key} = ${sig(p.value, 7)}`), next: 'Set its values with set_parameters (keys carry the letter) and free what the data can measure.' }; }
+      const o = roundTrip((d) => ops.addPlanet(d, args)); return { added: o.letter, planets: api.state().planets, its_keys: o.keys, next: 'Set its values with set_parameters (keys carry the letter) and free what the data can measure.' };
+    },
+    remove_planet({ letter }) {
+      if (has('removePlanet')) { const L = String(letter).trim().slice(-1); api.removePlanet(L); return { removed: L, planets: api.state().planets }; }
+      const o = roundTrip((d) => ops.removePlanet(d, letter)); return { removed: o.removed, planets: api.state().planets };
+    },
     set_kepler({ on }) { api.setKepler(!!on); const s = api.state(); return { kepler_mode: s.kepler, note: s.kepler ? 'a/R* now follows from M*, R*, the period and the planet mass; mstar and rstar are parameters.' : 'a/R* is now a fixed number (ars).', parameters: s.parameters.map((p) => p.key) }; },
     set_limb_darkening(args) {
+      if (has('setLimbDarkening')) {
+        const o = api.setLimbDarkening({ ...(args.law ? { law: args.law } : {}), ...(args.coefficients ? { coeffs: args.coefficients } : args.follow_star ? { coeffs: 'star' } : {}), ...(args.follow_star !== undefined ? { mode: args.follow_star ? 'star' : 'coeffs' } : {}), ...(args.band !== undefined ? { band: args.band } : {}) }), names = LD_LAWS[o.law].names;
+        return { law: o.law, mode: o.mode === 'star' ? 'the coefficients follow the star (Teff, [Fe/H]) in the band' : 'the coefficients are parameters', band: o.band || undefined, coefficients: Object.fromEntries(names.map((n, i) => [`ld${i} (${n})`, sig((o.coeffs || [])[i], 6)])) };
+      }
+      if (!args.law) throw new Error('give "law"'); if (args.follow_star || args.band !== undefined) throw new Error('limb darkening that follows the star is only available in the web app: give the coefficients');
       const o = roundTrip((d) => ops.setLimbDarkening(d, args));
       return { law: o.law, coefficients: Object.fromEntries(o.names.map((n, i) => [`ld${i} (${n})`, o.coefficients[i]])), note: o.defaulted ? 'The coefficients are the law\'s generic defaults, not values for this star and band: free them (set_free) or set them.' : undefined };
+    },
+    async set_phase_curve(args) {
+      const { letter, sfx } = sfxOf(args.planet), on = args.on !== false;
+      if (has('setPhase')) {
+        // the analyzer's call acts on the planet on show
+        if (api.state().showing !== letter) api.showPlanet(letter);
+        api.setPhase(on ? { ...(args.mode ? { mode: args.mode } : {}), ...(args.lmax ? { lmax: args.lmax } : {}) } : null);
+        if (on) for (const [k, v] of Object.entries(args.parameters || {})) api.setValue(sfx ? `${k}@${sfx}` : k, v);
+      } else roundTrip((d) => ops.setPhase(d, { ...args, planet: letter }));
+      const keys = paramList().filter((p) => p.group === 'phase' && (p.key.split('@')[1] || '') === sfx);
+      return { planet: letter, own_light: on, keys: keys.map((p) => `${p.key} = ${sig(p.value, 6)}`), next: on ? 'Free what the data can measure (set_free, e.g. fpfs), then run_fit. A phase curve needs data that cover the eclipse or the whole orbit.' : undefined };
+    },
+    async set_moon(args) {
+      const { letter, sfx } = sfxOf(args.planet), on = args.on !== false;
+      if (has('setMoon')) { if (api.state().showing !== letter) api.showPlanet(letter); api.setMoon(on ? (args.parameters && Object.keys(args.parameters).length ? args.parameters : true) : false); }
+      else roundTrip((d) => ops.setMoon(d, { ...args, planet: letter }));
+      const keys = paramList().filter((p) => p.group === 'moon' && (p.key.split('@')[1] || '') === sfx);
+      return { planet: letter, moon: on, keys: keys.map((p) => `${p.key} = ${sig(p.value, 6)}`), next: on ? 'Free the moon parameters the data can measure (set_free), then run_fit; compare with a run without the moon (run_experiment) before claiming one.' : undefined };
+    },
+    async set_nbody(args) {
+      if (has('setNbody')) api.setNbody(args.on ? { ...(args.epoch !== undefined ? { epoch: args.epoch } : {}), ...(args.linear !== undefined ? { linear: args.linear } : {}) } : null);
+      else roundTrip((d) => ops.setNbody(d, args));
+      return { nbody: !!args.on, note: args.on ? 'Mid-transit times and velocities now come from an N-body integration; the light curve and mid-eclipse times stay Keplerian. An evidence from this model is not comparable with a Keplerian fit.' : 'Back to Keplerian orbits.' };
+    },
+    async companion_search({ options }) {
+      const r = await api.companionSearch(options || {});
+      lastSearch = r; return { best_companion: slim(r, 2200), next: r && r.significant === false ? 'The search does not find a significant companion: say so; do not add one.' : 'add_companion adds it as a planet with N-body dynamics on; then run_fit, and run_experiment kind "companion" compares the fit with and without it.' };
+    },
+    async add_companion({ candidate }) {
+      const cell = candidate && typeof candidate === 'object' ? candidate : lastSearch;
+      if (!cell) throw new Error('run companion_search first: add_companion takes what it found');
+      const letter = await api.addCompanion(cell), s = api.state();
+      return { added: letter, planets: s.planets, free: s.parameters.filter((p) => p.free).map((p) => p.key), next: 'run_fit fits the times with the companion; run_experiment kind "companion" compares the fit with and without it.' };
     },
 
     // ---- data -----------------------------------------------------------------------------------------------
@@ -187,8 +308,24 @@ export function createTools(ctx) {
       api.setTimings(pv.text);
       return { times: pv.times, skipped_lines: pv.skipped_lines, from: pv.from, to: pv.to, median_error_min: pv.median_error_min, planet: api.state().showing, next: 'fit_ephemeris gives the period and T0; timing_periodogram searches for variations; choose_data {timing: true} adds them to the fit.' };
     },
-    simulate_light_curve(args) { const o = roundTrip((d) => ops.simulateInto(d, args)); return { simulated: dataLines().find((l) => l.startsWith('light curve')), options: o.options, note: 'This is simulated data from the current parameters, not an observation.', next: 'set_free then run_fit recovers the parameters that were put in.' }; },
-    edit_data(args) { const o = roundTrip((d) => ops.editData(d, args)); return { done: o.done, data: dataLines() }; },
+    simulate_light_curve(args) {
+      const night = args.mid_transit !== undefined ? nightOf(args.mid_transit) : null, at = () => { const t = tmidNow(); return night ? { mid_transit: sig(t.abs, 12), time_reference: t.tr || undefined, tmid_note: night.note } : {}; };
+      if (has('simulate')) { const o = simulateAt(night ? night.abs : null, () => api.simulate({ ...(args.noise_ppm !== undefined ? { noise_ppm: args.noise_ppm } : {}), ...(args.exposure_min !== undefined ? { cadence_min: args.exposure_min } : {}), ...(args.baseline_hr !== undefined ? { baseline_hr: args.baseline_hr } : {}), ...(args.airmass !== undefined ? { airmass: args.airmass } : {}), ...(args.n_epochs !== undefined ? { epochs: args.n_epochs } : {}), ...(args.epoch_step !== undefined ? { epoch_step: args.epoch_step } : {}), ...(args.seed !== undefined ? { seed: args.seed } : {}) })); return { simulated: dataLines().find((l) => l.startsWith('light curve')), options: slim(o, 400), ...at(), note: 'This is simulated data from the current parameters, not an observation.', next: 'set_free then run_fit recovers the parameters that were put in.' }; }
+      const o = simulateAt(night ? night.abs : null, () => roundTrip((d) => ops.simulateInto(d, args))); return { simulated: dataLines().find((l) => l.startsWith('light curve')), options: o.options, ...at(), note: 'This is simulated data from the current parameters, not an observation.', next: 'set_free then run_fit recovers the parameters that were put in.' };
+    },
+    edit_data(args) {
+      const done = [], lc = {}, rest = {};
+      for (const k of ['remove_epoch', 'trim', 'clip_sigma', 'bin_min']) if (args[k] !== undefined) lc[k] = args[k];
+      for (const k of ['exposure_min', 'remove_velocities', 'clear_timings']) if (args[k] !== undefined) rest[k] = args[k];
+      if (Object.keys(lc).length) {
+        if (has('editData')) { const o = api.editData(lc); done.push(...(o.steps || [`light curve edited: ${o.points} points left, ${o.removed} removed`])); }
+        else if (lc.trim || lc.clip_sigma || lc.bin_min) throw new Error('trimming, clipping and binning are only available in the web app');
+        else rest.remove_epoch = lc.remove_epoch;
+      }
+      if (Object.keys(rest).length) done.push(...roundTrip((d) => ops.editData(d, rest)).done);
+      if (!done.length) throw new Error('nothing to do: give exposure_min, remove_epoch, trim, clip_sigma, bin_min, remove_velocities or clear_timings');
+      return { done, data: dataLines(), note: Object.keys(lc).length ? 'The data changed: evidences of earlier runs are no longer comparable with new ones.' : undefined };
+    },
 
     // ---- fit ------------------------------------------------------------------------------------------------
     choose_data(args) {
@@ -235,47 +372,83 @@ export function createTools(ctx) {
       return { run: rec ? '#' + rec.id + (label ? ' ' + label : '') : undefined, fitted: `the system ${s.name} against ${dl.join(' + ') || 'the data in the fit'}`, ...ops.summarizeResult(result),
         next: flat ? `This is not a measurement: the model did not change anywhere inside the priors, so the numbers above are just the priors. The usual causes: the loaded system (${s.name}) is not the planet in the data (call lookup_planet with the right name), or the tmid prior does not contain the transit (widen it with set_prior). Fix that and run again; do not report these values as results.` : 'Report these numbers as they are. compare_runs reads the evidence against other runs on the same data; export_file writes a report.' };
     },
+    fit_progress() { return slim(api.progress(), 1200); },
     stop_fit() { const was = api.state().running; api.stop(); return { stopped: was, note: was ? 'The fit was told to stop; the partial posterior is not converged.' : 'No fit was running.' }; },
 
     // ---- results --------------------------------------------------------------------------------------------
     get_results({ derived, keys }) { return ops.summarizeResult(api.results(), { derived, keys }); },
     explain_results() { return ops.explainResult(doc(true)); },
+    get_derived({ planet }) {
+      const want = planet ? sfxOf(planet) : null, mine = (k) => !want || (k.split('@')[1] || '') === want.sfx;
+      if (has('derived')) {
+        // the rows of the analyzer's system table, with the formatting of the result tables
+        const many = api.state().planets.length > 1, rows = (api.derived() || []).filter((x) => !want || !many || !/^Planet /.test(x.section || '') || x.section === 'Planet ' + want.letter);
+        if (rows.length) return { source: 'the analyzer\'s system table' + (rows.some((x) => x.plus !== null && x.plus !== undefined) ? ' (median and 68% interval)' : ' at the current values (no fit yet, so no intervals)'), rows: rows.slice(0, 70).map((x) => ({ section: x.section || '', quantity: x.label, value: ops.pmText({ median: x.value, plus: x.plus ?? 0, minus: x.minus ?? 0 }) + (x.unit ? ' ' + x.unit : ''), kind: x.kind })) };
+      }
+      const r = api.results();
+      if (r) { const all = ops.summarizeResult(r, { derived: true }).derived; return { source: 'the current fit (median and 68% interval)', derived: Object.fromEntries(Object.entries(all).filter(([k]) => mine(k.split(' ')[0]))) }; }
+      const m = ops.modelOf(doc(false)); return { source: 'the model at the current parameter values (no fit yet, so no intervals)', planets: want ? { [want.letter]: m.planets[want.letter] } : m.planets };
+    },
+    list_runs() {
+      const mine = runs.map((x) => ({ run: '#' + x.id + (x.label ? ' ' + x.label : ''), free: x.free.join(', '), lnZ: x.converged ? `${x.logZ.toFixed(2)} ± ${x.err.toFixed(2)}` : `> ${x.logZ.toFixed(1)} (not converged)`, on_current_data: x.dataKey === ops.dataKey(doc(false)), fitted: x.headline }));
+      const page = pageRuns();
+      if (page && page.length) return { source: 'the analyzer\'s run history', runs: page.map((x) => { const rec = runs.find((y) => y.pageId === x.id); return { run: '#' + x.id + (rec && rec.label ? ' ' + rec.label : ''), free: (x.free || []).join(', '), limb_darkening: x.model, lnZ: x.converged ? `${x.logZ.toFixed(2)} ± ${x.logZerr.toFixed(2)}` : `> ${x.logZ.toFixed(1)} (not converged)`, on_current_data: x.same_data, showing: x.showing || undefined, cautions: (x.cautions || []).length ? x.cautions : undefined }; }), next: 'restore_run brings one back; compare_runs reads their evidences.' };
+      return { source: 'the fits made in this conversation', runs: mine, note: mine.length ? undefined : 'No runs yet.' };
+    },
+    async restore_run({ run }) {
+      const id = Number(String(run).replace(/^#/, '').split(' ')[0]);
+      await api.restoreRun(id); const s = api.state();
+      return { restored: '#' + id, system: s.name, free: s.parameters.filter((p) => p.free).map((p) => p.key), has_result: s.hasResult, ...(s.hasResult ? { result: ops.resultLine(api.results()) } : {}) };
+    },
     compare_runs() { return comparison(); },
-    async run_experiment({ kind, variants, report }, { onProgress, signal } = {}) {
+    async run_experiment({ kind, variants, planet, report }, { onProgress, signal } = {}) {
       const s0 = api.state(), P = Object.fromEntries(s0.parameters.map((p) => [p.key, p]));
       let plan;
       if (kind === 'eccentricity') { if (!P.ecc) throw new Error('this set-up has no eccentricity parameter'); plan = [{ name: 'circular', fixed: { ecc: 0, ...(P.omega ? { omega: P.omega.value } : {}) } }, { name: 'eccentric', free: ['ecc', ...(P.omega ? ['omega'] : [])] }]; }
       else if (kind === 'limb_darkening') { const ld = s0.parameters.filter((p) => p.group === 'ld').map((p) => p.key); if (!ld.length) throw new Error('the uniform-disc law has no coefficients to free: choose another law with set_limb_darkening'); plan = [{ name: 'limb darkening fixed', fixed: Object.fromEntries(ld.map((k) => [k, P[k].value])) }, { name: 'limb darkening free', free: ld }]; }
       else if (kind === 'airmass') { const am = s0.parameters.filter((p) => p.group === 'baseline').map((p) => p.key); if (!am.length) throw new Error('the light curve has no airmass column, so there is no airmass slope to test'); plan = [{ name: 'no airmass trend', fixed: Object.fromEntries(am.map((k) => [k, 0])) }, { name: 'airmass trend', free: am }]; }
-      else { if (!variants || variants.length < 2) throw new Error('kind "custom" needs "variants": at least two, each { name, free: [keys], fixed: { key: value } }'); plan = variants.map((v) => ({ name: v.name, free: v.free || [], fixed: v.fixed || {} })); }
-      const touched = [...new Set(plan.flatMap((v) => [...(v.free || []), ...Object.keys(v.fixed || {})]))];
-      needKeys(touched);
+      else if (kind === 'companion') {
+        if (s0.planets.length < 2) throw new Error('the system has one planet. Add the companion first (add_planet, or companion_search and add_companion), set its values and free what the data can measure; then run this experiment.');
+        const L = planet ? sfxOf(planet).letter : s0.planets[s0.planets.length - 1];
+        plan = [{ name: `without planet ${L}`, setup: [{ tool: 'remove_planet', args: { letter: L } }] }, { name: `with planet ${L}` }];
+      }
+      else { if (!variants || variants.length < 2) throw new Error('kind "custom" needs "variants": at least two, each { name, free: [keys], fixed: { key: value }, setup: [{ tool, args }] }'); plan = variants.map((v) => ({ name: v.name, free: v.free || [], fixed: v.fixed || {}, setup: v.setup || [] })); }
+      const SETUP = ['set_parameters', 'set_prior', 'set_kepler', 'set_limb_darkening', 'add_planet', 'remove_planet', 'set_phase_curve', 'set_moon', 'set_nbody', 'choose_data'];
+      for (const v of plan) for (const st of v.setup || []) if (!SETUP.includes(st.tool)) throw new Error(`"${st.tool}" cannot be a set-up step of a variant. Allowed: ${SETUP.join(', ')}.`);
+      const keysOf = (v) => [...(v.free || []), ...Object.keys(v.fixed || {})], touched = [...new Set(plan.flatMap(keysOf))];
+      // keys of a variant without set-up steps must exist now; those of one with steps are checked after its steps ran
+      needKeys([...new Set(plan.filter((v) => !(v.setup || []).length).flatMap(keysOf))]);
       if (touched.some((k) => k.split('@')[0] === 'ars')) throw new Error('a/R* (ars) is never fitted, so it cannot be part of an experiment');
       const others = s0.parameters.filter((p) => p.free && !touched.includes(p.key)).map((p) => p.key);
-      if (!others.length && plan.some((v) => !(v.free || []).length)) throw new Error('one variant would have nothing free: free the parameters every variant shares first (set_free, e.g. rprs, inc, tmid)');
-      const done = [];
+      if (!others.length && plan.some((v) => !(v.free || []).length && !(v.setup || []).length)) throw new Error('one variant would have nothing free: free the parameters every variant shares first (set_free, e.g. rprs, inc, tmid)');
+      const done = [], anySetup = plan.some((v) => (v.setup || []).length), baseline = anySetup ? doc(false) : null, baseKey = anySetup ? setupKey(baseline) : null; let dirty = false;
       for (const v of plan) {
         if (signal && signal.aborted) break;
         const entry = { name: v.name, lines: [] };
         try {
           // every variant starts from the set-up the experiment was called with
-          for (const k of touched) { api.setFree(k, P[k].free); if (!P[k].free) api.setValue(k, P[k].value); }
+          if (dirty) { backTo(baseline, baseKey); dirty = false; }
+          for (const k of touched) { if (!P[k] || !paramList().some((p) => p.key === k)) continue; api.setFree(k, P[k].free); if (!P[k].free) api.setValue(k, P[k].value); }
+          for (const st of v.setup || []) { dirty = true; const r = await call(st.tool, st.args || {}); if (!r.ok) throw new Error(`set-up step ${st.tool}: ${r.text.replace(/^ERROR: /, '')}`); entry.lines.push(`set-up: ${st.tool} ${JSON.stringify(st.args || {})}`); }
+          if ((v.setup || []).length) needKeys(keysOf(v));
           for (const [k, x] of Object.entries(v.fixed || {})) { api.setFree(k, false); api.setValue(k, relTime(k, x)); }
           for (const k of v.free || []) api.setFree(k, true);
+          if (!api.state().parameters.some((p) => p.free)) throw new Error('nothing is free in this variant');
           const { result, rec } = await fit(v.name, onProgress ? (p) => onProgress({ ...p, variant: v.name }) : undefined, signal);
           const sum = ops.summarizeResult(result);
           entry.run = rec ? rec.id : null; entry.lnZ = sum.evidence; entry.converged = sum.converged;
-          entry.lines = [`free: ${api.state().parameters.filter((p) => p.free).map((p) => p.key).join(', ')}`, ...Object.entries(v.fixed || {}).map(([k, x]) => `${k} fixed at ${sig(x, 8)}`), ...Object.entries(sum.parameters).map(([k, q]) => `${k} = ${q}`), ...Object.entries(sum.derived).map(([k, t]) => `${k} = ${t} (derived)`), `chi2 = ${sum.chi2} for ${sum.n_data} points`, ...sum.warnings.map((w) => `warning: ${w}`)];
+          entry.lines.push(`free: ${api.state().parameters.filter((p) => p.free).map((p) => p.key).join(', ')}`, ...Object.entries(v.fixed || {}).map(([k, x]) => `${k} fixed at ${sig(x, 8)}`), ...Object.entries(sum.parameters).map(([k, q]) => `${k} = ${q}`), ...Object.entries(sum.derived).map(([k, t]) => `${k} = ${t} (derived)`), `chi2 = ${sum.chi2} for ${sum.n_data} points`, ...sum.warnings.map((w) => `warning: ${w}`));
         } catch (err) { entry.error = err.message; }
         done.push(entry);
       }
-      const ids = done.map((v) => v.run).filter(Boolean), cmp = { source: 'the runs of this experiment, read with the rules of the analyzer\'s comparison table', ...ops.compareRuns(runs.filter((r) => ids.includes(r.id))) }, d = doc(false), file = report || 'experiment_report.md';
-      const title = kind === 'custom' ? `Model comparison: ${plan.map((v) => v.name).join(' vs ')}` : { eccentricity: 'Circular against eccentric orbit', limb_darkening: 'Limb darkening fixed against free', airmass: 'With and without an airmass trend' }[kind];
-      const text = ops.experimentReport({ title, system: `${d.name} (planet${d.planets.length > 1 ? 's' : ''} ${d.planets.map((p) => p.letter).join(', ')})`, data: ops.describeData(d).map(ops.dataLine), variants: done, comparison: cmp });
+      const ids = done.map((v) => v.run).filter(Boolean), cmp = comparison(ids), d = doc(false), file = report || 'experiment_report.md';
+      const title = kind === 'custom' ? `Model comparison: ${plan.map((v) => v.name).join(' vs ')}` : { eccentricity: 'Circular against eccentric orbit', limb_darkening: 'Limb darkening fixed against free', airmass: 'With and without an airmass trend', companion: `${plan[0].name} against ${plan[1].name}` }[kind];
+      const forReport = cmp.runs && cmp.runs.every((r) => r.run !== undefined && r.lnZ !== undefined) ? cmp : { ...ops.compareRuns(runs.filter((r) => ids.includes(r.id))) };
+      const text = ops.experimentReport({ title, system: `${d.name} (planet${d.planets.length > 1 ? 's' : ''} ${d.planets.map((p) => p.letter).join(', ')})`, data: ops.describeData(d).map(ops.dataLine), variants: done, comparison: { cautions: [], rule: ops.compareRuns([]).rule, ...forReport } });
       const w = await files.write(file, text, 'text/markdown');
-      return { experiment: title, variants: done.map((v) => (v.error ? { name: v.name, failed: v.error } : { name: v.name, run: '#' + v.run, converged: v.converged, fitted: v.lines.filter((l) => / = /.test(l) && !/derived|chi2/.test(l)).join('; ') })), comparison: { runs: cmp.runs, verdict: cmp.verdict, cautions: cmp.cautions }, report_file: w.name,
+      return { experiment: title, variants: done.map((v) => (v.error ? { name: v.name, failed: v.error } : { name: v.name, run: '#' + v.run, converged: v.converged, fitted: v.lines.filter((l) => / = /.test(l) && !/derived|chi2/.test(l)).join('; ') })), comparison: { source: cmp.source, runs: forReport.runs, verdict: forReport.verdict, cautions: forReport.cautions }, report_file: w.name,
         left_loaded: done.length && !done[done.length - 1].error ? `the page shows the last run (${done[done.length - 1].name})` : undefined, stopped_early: signal && signal.aborted ? true : undefined,
-        next: 'Tell the user the verdict and the cautions in the software\'s words, and that the report file is ready to download. Do not add an interpretation of your own.' };
+        next: 'Give the user the comparison table as it is (each ln Z with its ±), then the verdict and the cautions in the software\'s words, and say the report file is ready to download. Do not add an interpretation of your own.' };
     },
 
     // ---- timing ---------------------------------------------------------------------------------------------
@@ -303,12 +476,27 @@ export function createTools(ctx) {
       if (!written.length) throw new Error(failed.map((x) => `${x.kind}: ${x.why}`).join('; '));
       return { written, failed: failed.length ? failed : undefined, note: where === 'browser' ? 'The files are listed under the conversation for the user to download.' : 'Written to the workspace.' };
     },
-    async get_figure({ which, name }) {
-      if (!page || !page.figure) throw new Error('figures are only available in the browser');
-      const blob = await page.figure(which);
-      if (!blob) throw new Error(`the ${which} figure is not on screen. ${{ corner: 'It needs a fit result: run_fit, then set_view {tab: "results"}.', oc: 'Open the timing tab (set_view {tab: "timing"}) with at least two times loaded.', periodogram: 'Open the timing tab with at least six times loaded.', limb_darkening: 'Open the system tab (set_view {tab: "system"}).', light_curve: 'The light-curve panel may be folded away.' }[which] || ''}`);
+    async write_report({ title, author, figures = true }) {
+      const d = doc(true), stem = String(title || d.name || 'analysis').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'analysis', written = [], figs = [];
+      if (figures) for (const which of ['light_curve', ...(d.result ? ['corner'] : [])]) { try { const r = await H.get_figure({ which, name: `${stem}_${which}.png` }); figs.push(r.written); } catch { /* a figure that is not drawn is left out */ } }
+      const sess = ops.exportText(d, 'session', `${stem}_session.json`), ws = await files.write(sess.name, sess.text, sess.mime); written.push(ws.name);
+      let verdict = ''; try { const c = page && page.comparison ? page.comparison() : null; verdict = (c && c.verdict) || ''; } catch { /* optional */ }
+      const R = projectReport(d, { project: ctx.siteProject ? ctx.siteProject() : null, reduction: ctx.reduction ? ctx.reduction() : null, runs, verdict, figures: figs, files: [ws.name, `${stem}_report.bib`], title, author, sessionFile: ws.name });
+      const wm = await files.write(`${stem}_report.md`, R.markdown, 'text/markdown'), wb = await files.write(`${stem}_report.bib`, R.bibtex, 'application/x-bibtex');
+      return { written: [wm.name, wb.name, ws.name, ...figs], sections: R.markdown.split('\n').filter((l) => /^## /.test(l)).map((l) => l.slice(3)), cited: R.keys, to_check: R.notes.slice(0, 4),
+        note: (ctx.siteProject && ctx.siteProject() ? '' : 'There is no observing project, so the target-and-observation section says so. ') + (ctx.reduction && ctx.reduction() ? '' : 'No photometry record was found, so the reduction section asks the user to describe it. ') + 'Tell the user the report is ready to download, and list what it still asks them to check.' };
+    },
+    async get_figure({ which, name, dark }) {
+      let blob = null; const view = { light_curve: 'lc', oc: 'timing' }[which] || which;
+      if (has('figure') && !['periodogram', 'limb_darkening'].includes(which)) {
+        // the analyzer draws any of its views with the code of its exported figures, on screen or not
+        const url = await api.figure(view, dark ? { theme: 'dark' } : {});
+        if (typeof url === 'string' && url.startsWith('data:') && ctx.blobFromDataUrl) blob = await ctx.blobFromDataUrl(url);
+      }
+      if (!blob) { if (!page || !page.figure) throw new Error('figures are only available in the browser'); blob = await page.figure(which); }
+      if (!blob) throw new Error(`the ${which} figure is not on screen. ${{ corner: 'It needs a fit result: run_fit, then set_view {tab: "results"}.', oc: 'Open the timing tab (set_view {tab: "timing"}) with at least two times loaded.', periodogram: 'Open the timing tab with at least six times loaded.', limb_darkening: 'Open the system tab (set_view {tab: "system"}).', light_curve: 'The light-curve panel may be folded away.', rv: 'Load radial velocities and show them (set_view {plot: "rv"}).' }[which] || ''}`);
       const w = await files.write(name || `${which}.png`, blob, 'image/png');
-      return { written: w.name, size_bytes: w.size, note: 'A PNG of the figure as shown on the page; the page\'s own "Save figure" buttons give print-quality PNG and PDF.' };
+      return { written: w.name, size_bytes: w.size, shown: 'The figure is shown to the user in the chat and listed with the files.' };
     },
     async import_session({ file }) {
       const text = await files.readText(file); let d;
@@ -325,18 +513,7 @@ export function createTools(ctx) {
     undo({ redo }) { const r = redo ? api.redo() : api.undo(); const s = api.state(); return { done: r === false ? false : true, note: r === false ? `nothing to ${redo ? 'redo' : 'undo'}` : undefined, system: s.name, has_result: s.hasResult }; },
 
     // ---- files ----------------------------------------------------------------------------------------------
-    list_files() { const all = files.list(); return { files: all.map((f) => ({ name: f.name, size_bytes: f.size, origin: f.origin, about: f.about })), note: all.length ? undefined : (where === 'browser' ? 'No files yet. The user can attach files with the paperclip or by dropping them on the panel.' : 'The workspace is empty.') }; },
-    async read_file({ name, max_chars = 2000, offset = 0 }) {
-      const text = await files.readText(name), about = ops.describeText(text, name);
-      if (offset >= text.length && text.length) throw new Error(`offset ${offset} is past the end of ${name} (${text.length} characters)`);
-      const part = text.slice(offset, offset + max_chars), whole = offset === 0 && text.length <= max_chars;
-      return { name, ...about, content: part, ...(whole ? {} : { showing: `characters ${offset} to ${offset + part.length} of ${text.length}`, read_on: offset + part.length < text.length ? `read_file with offset ${offset + part.length}` : undefined, advice: about.columns ? 'This is a data table: do not read it all. Pass the file name to load_light_curve, load_radial_velocities or set_timings.' : undefined }) };
-    },
-    async write_file({ name, content }) {
-      if (!/^[\w][\w .()+-]{0,120}$/.test(name) || name.includes('..')) throw new Error('a file name is letters, digits, spaces, dots, dashes and underscores, without folders');
-      const w = await files.write(name, content, /\.json$/i.test(name) ? 'application/json' : /\.csv$/i.test(name) ? 'text/csv' : /\.md$/i.test(name) ? 'text/markdown' : 'text/plain');
-      return { written: w.name, size_bytes: w.size };
-    },
+    ...fileHandlers(files, where),
   };
 
   /** The sentence the user is asked to confirm before a call runs, or null when it may simply run. */
@@ -353,11 +530,19 @@ export function createTools(ctx) {
   async function call(name, rawArgs, opts = {}) {
     const spec = specs.find((t) => t.name === name);
     if (!spec) { const guess = specs.map((t) => t.name).filter((n) => n.includes(String(name).replace(/^.*[.:]/, '')) || String(name).includes(n)); return { ok: false, text: `ERROR: there is no tool "${name}".${guess.length ? ' Did you mean ' + guess.slice(0, 3).join(' or ') + '?' : ''} The tools are: ${specs.map((t) => t.name).join(', ')}.` }; }
-    const { args, error } = checkArgs(spec, rawArgs);
+    if (name === 'set_free' && rawArgs && typeof rawArgs === 'object' && !rawArgs.free && !rawArgs.fixed && rawArgs.values && typeof rawArgs.values === 'object' && !Array.isArray(rawArgs.values)) rawArgs = { free: Object.keys(rawArgs.values) };
+    let { args, error } = checkArgs(spec, rawArgs), ignored = [];
+    // an argument the tool does not take, and nothing else wrong: it is dropped and the call runs (the result says so)
+    if (error && rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs) && spec.parameters && spec.parameters.properties && spec.parameters.additionalProperties === false) {
+      const extra = Object.keys(rawArgs).filter((k) => !(k in spec.parameters.properties));
+      if (extra.length) { const again = checkArgs(spec, Object.fromEntries(Object.entries(rawArgs).filter(([k]) => !extra.includes(k)))); if (!again.error) { args = again.args; error = null; ignored = extra; } }
+    }
     if (error) return { ok: false, args, text: 'ERROR: ' + error };
     try {
-      const data = await H[name](args, opts);
-      return { ok: true, args, data, text: JSON.stringify(data, (k, v) => (v === undefined || v === null ? undefined : typeof v === 'number' && !Number.isFinite(v) ? undefined : v)) };
+      let data = await H[name](args, opts);
+      if (ignored.length && data && typeof data === 'object' && !Array.isArray(data)) data = { ...data, ignored_arguments: `${ignored.join(', ')} (${name} does not take ${ignored.length > 1 ? 'them' : 'it'})` };
+      let table = ''; try { table = ops.tableFor(name, data); } catch { table = ''; }
+      return { ok: true, args, data, table, text: JSON.stringify(data, (k, v) => (v === undefined || v === null ? undefined : typeof v === 'number' && !Number.isFinite(v) ? undefined : v)) };
     } catch (err) { return { ok: false, args, text: 'ERROR: ' + String((err && err.message) || err).replace(/★/g, '*') }; }
   }
 
@@ -387,8 +572,74 @@ export function createTools(ctx) {
     return 'CURRENT STATE OF THE APP (live; regenerated every step)\n' + L.join('\n');
   }
 
+  // methods the analyzer describes (api.describe()) that no declared tool wraps: called as they are
+  for (const t of specs) if (t.apiMethod && !H[t.name]) H[t.name] = async (args) => { const m = t.apiMethod, a = t.positional ? t.positional.map((k) => args[k]) : [args]; const r = await api[m](...a); return r === undefined ? { done: true } : slim(r, 3000); };
   const missing = specs.filter((t) => typeof H[t.name] !== 'function').map((t) => t.name);
   return { specs, names: specs.map((t) => t.name), handlers: H, missing, call, confirmFor, stateCard, runs, comparison, fileNames: () => files.list().map((f) => f.name), resetRuns() { runs.length = 0; nextRun = 1; } };
+}
+
+/** list_files, read_file and write_file on a file store: the same on every page of the site and in the MCP server. */
+export function fileHandlers(files, where = 'browser') {
+  return {
+    list_files() { const all = files.list(); return { files: all.map((f) => ({ name: f.name, size_bytes: f.size, origin: f.origin, about: f.about })), note: all.length ? undefined : (where === 'browser' ? 'No files yet. The user can attach files with the paperclip or by dropping them on the chat.' : 'The workspace is empty.') }; },
+    async read_file({ name, max_chars = 2000, offset = 0 }) {
+      const text = await files.readText(name), about = ops.describeText(text, name);
+      if (offset >= text.length && text.length) throw new Error(`offset ${offset} is past the end of ${name} (${text.length} characters)`);
+      const part = text.slice(offset, offset + max_chars), whole = offset === 0 && text.length <= max_chars;
+      return { name, ...about, content: part, ...(whole ? {} : { showing: `characters ${offset} to ${offset + part.length} of ${text.length}`, read_on: offset + part.length < text.length ? `read_file with offset ${offset + part.length}` : undefined, advice: about.columns ? 'This is a data table: do not read it all. Pass the file name to load_light_curve, load_radial_velocities or set_timings (on the analyze page).' : undefined }) };
+    },
+    async write_file({ name, content }) {
+      if (!/^[\w][\w .()+-]{0,120}$/.test(name) || name.includes('..')) throw new Error('a file name is letters, digits, spaces, dots, dashes and underscores, without folders');
+      const w = await files.write(name, content, /\.json$/i.test(name) ? 'application/json' : /\.csv$/i.test(name) ? 'text/csv' : /\.md$/i.test(name) ? 'text/markdown' : 'text/plain');
+      return { written: w.name, size_bytes: w.size };
+    },
+  };
+}
+
+/** A value cut down to what a model should read: no long arrays, no draws, strings and depth capped. */
+export function slim(v, budget = 2000, depth = 0) {
+  const walk = (x, d) => {
+    if (x === null || x === undefined) return x;
+    if (typeof x === 'number') return Number.isFinite(x) ? x : null;
+    if (typeof x === 'string') return x.length > 400 ? x.slice(0, 400) + '…' : x;
+    if (typeof x !== 'object') return typeof x === 'function' ? undefined : x;
+    if (ArrayBuffer.isView(x)) return `[${x.length} numbers]`;
+    if (Array.isArray(x)) { if (x.length > 12 && x.every((y) => typeof y === 'number')) return `[${x.length} numbers]`; const head = x.slice(0, 12).map((y) => walk(y, d + 1)); return x.length > 12 ? [...head, `… ${x.length - 12} more`] : head; }
+    if (d > 4) return '{…}';
+    return Object.fromEntries(Object.entries(x).filter(([k]) => !/^(samples|draws|chain|posterior)$/i.test(k)).map(([k, y]) => [k, walk(y, d + 1)]).filter(([, y]) => y !== undefined));
+  };
+  const out = walk(v, depth), text = JSON.stringify(out);
+  return text && text.length > budget ? { summary: text.slice(0, budget) + '…', note: 'cut by the app: ask for a narrower result' } : out;
+}
+
+// The api methods the declared tools already wrap: a description of one of these adds no tool.
+const WRAPPED = ['state', 'examples', 'loadExample', 'lookup', 'setValue', 'setFree', 'setPrior', 'setUse', 'setKepler', 'setSampler', 'loadLightCurve', 'addLightCurveEpoch', 'addRadialVelocities', 'setTimings', 'showPlanet', 'setView', 'showTab', 'run', 'stop', 'results', 'exportSession', 'importSession', 'save', 'listSaved', 'openSaved', 'deleteSaved', 'undo', 'redo',
+  'addPlanet', 'removePlanet', 'setLimbDarkening', 'simulate', 'editData', 'progress', 'runs', 'compare', 'restoreRun', 'figure', 'setPhase', 'setMoon', 'setNbody', 'companionSearch', 'addCompanion', 'derived', 'describe'];
+/**
+ * Tools made from the analyzer's own description of its scripting surface (api.describe()), for the methods no
+ * declared tool wraps. Accepts a list or a map of { name | method, description | summary, parameters | params | args }
+ * where the parameters are a JSON schema, a map of name -> type or schema, or a list of names.
+ */
+export function describedTools(api) {
+  if (!api || typeof api.describe !== 'function') return [];
+  let d; try { d = api.describe(); } catch { return []; }
+  const list = Array.isArray(d) ? d : d && Array.isArray(d.methods) ? d.methods : d && typeof d === 'object' ? Object.entries(d.methods || d).map(([name, v]) => (v && typeof v === 'object' ? { name, ...v } : { name, description: String(v) })) : [];
+  const out = [];
+  for (const m of list) {
+    const method = m && (m.method || m.name); if (!method || WRAPPED.includes(method) || typeof api[method] !== 'function' || method.startsWith('_')) continue;
+    const ordered = Array.isArray(m.args) && m.args.every((a) => a && typeof a === 'object' && a.name) ? m.args : null;
+    const raw = ordered ? Object.fromEntries(ordered.map((a) => [a.name, a.schema || {}])) : m.parameters || m.params || m.args || {}, tool = 'api_' + String(method).replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+    let parameters, positional = null;
+    if (!ordered && raw && raw.type === 'object') parameters = { additionalProperties: true, ...raw };
+    else {
+      const names = Array.isArray(raw) ? raw.map((x) => (typeof x === 'string' ? x : x.name)) : Object.keys(raw), props = {};
+      names.forEach((n, i) => { const v = Array.isArray(raw) ? raw[i] : raw[n], sch = v && typeof v === 'object' && !Array.isArray(v) ? v : { type: typeof v === 'string' && ['string', 'number', 'integer', 'boolean', 'object', 'array'].includes(v) ? v : undefined }; const clean = String(n).replace(/\?$/, ''); props[clean] = { ...(sch.type ? { type: sch.type } : {}), description: sch.description || sch.about || clean, ...(sch.enum ? { enum: sch.enum } : {}), ...(sch.type === 'array' ? { items: sch.items || {} } : {}) }; });
+      parameters = { type: 'object', properties: props, required: ordered ? ordered.filter((a) => a.required).map((a) => a.name) : [], additionalProperties: true }; positional = names.map((n) => String(n).replace(/\?$/, ''));
+    }
+    const about = String(m.description || m.summary || m.about || method);
+    out.push({ name: tool, group: 'analyzer', apiMethod: method, positional, core: /(archiv|fetch|download|retriev|radial|velocit|project|coach|guide)/i.test(method + ' ' + String(m.description || m.summary || '')) || undefined, readOnly: !!(m.readOnly || m.readonly), confirm: m.confirm || (m.destructive ? 'This replaces or deletes something in the analysis.' : undefined), description: (about.length < 30 ? `${about} (the analyzer's ${method} call).` : about).slice(0, 690), parameters });
+  }
+  return out;
 }
 
 /** An in-memory file store (the browser keeps attachments here; the tests use it as is). onWrite(file) is told of each new file. */
@@ -396,7 +647,7 @@ export function memoryFiles({ onWrite } = {}) {
   const all = new Map();
   const about = (name, text) => { try { return ops.describeText(text, name).kind; } catch { return ''; } };
   return {
-    add(name, text, origin = 'attached') { const f = { name, text, size: text.length, origin, about: about(name, text) }; all.set(name, f); return f; },
+    add(name, text, origin = 'attached', extra = {}) { const f = { name, text, size: text.length, origin, about: about(name, text), ...extra }; all.set(name, f); if (onWrite && origin === 'attached') onWrite(f); return f; },
     list: () => [...all.values()].map((f) => ({ name: f.name, size: f.size, origin: f.origin, about: f.about })),
     get: (name) => all.get(name) || null,
     async readText(name) {
@@ -410,5 +661,8 @@ export function memoryFiles({ onWrite } = {}) {
       all.set(name, f); if (onWrite) onWrite(f); return { name, size: f.size };
     },
     remove(name) { all.delete(name); },
+    /** Put back a stored record as it is (a file kept from another page of the site). */
+    put(rec) { all.set(rec.name, { about: '', origin: 'attached', mime: 'text/plain', text: null, blob: null, ...rec }); },
+    clear() { all.clear(); },
   };
 }

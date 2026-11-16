@@ -1,16 +1,17 @@
-// Section 5 of the Validation page: one card per entry of topics.js, rendered from its declarative description and the
+// Section 5 of the validation part of the Methods page (tab "Validation"): one card per entry of topics.js, rendered from its declarative description and the
 // stored output of its tests (public/validation/project.json, or a JSON file of the topic's own with the same shape).
 // Nothing here knows about a particular topic: to add a section, add an entry to topics.js (recipe in validation/README.md).
 
 import { chart, rangesHeight } from './plot.js';
-import { $, esc, pill, table, details, keyNumber, cite, code, L } from './ui.js';
+import { $, esc, pill, table, details, keyNumber, cite, code, L, vdata } from './ui.js';
+import { vid } from './anchors.js';
 import { TOPICS } from './topics.js';
 
 /** The stored data of one topic: { date, tests: { file: { exit, checks } }, plot }. */
 async function load(ctx, t) {
   const P = ctx.data.P;
   if (!t.json || t.json.startsWith('project.json')) return { date: P.date, node: P.node, tests: Object.fromEntries(t.tests.filter((f) => P.tests?.[f]).map((f) => [f, P.tests[f]])), plot: P.plots?.[t.id] };
-  try { const r = await fetch(new URL(t.json, document.baseURI)); if (!r.ok) throw new Error('HTTP ' + r.status); const j = await r.json(); return { date: j.date, node: j.node, tests: Array.isArray(j.tests) ? Object.fromEntries(j.tests.map((x) => [x.file, x])) : j.tests || {}, plot: j.plot }; }
+  try { const r = await fetch(vdata(t.json)); if (!r.ok) throw new Error('HTTP ' + r.status); const j = await r.json(); return { date: j.date, node: j.node, tests: Array.isArray(j.tests) ? Object.fromEntries(j.tests.map((x) => [x.file, x])) : j.tests || {}, plot: j.plot }; }
   catch (err) { return { error: `${t.json}: ${err.message}`, tests: {} }; }
 }
 
@@ -22,10 +23,10 @@ export function findQuote(tests, t, row) {
 }
 
 export async function projectBlock(ctx) {
-  const host = document.querySelector('#project .vbody'), done = TOPICS.filter((t) => t.status === 'done'), planned = TOPICS.filter((t) => t.status !== 'done');
+  const host = document.querySelector(`#${vid('project')} .vbody`), done = TOPICS.filter((t) => t.status === 'done'), planned = TOPICS.filter((t) => t.status !== 'done');
   const grid = $('div', 'vtopics'); host.append(grid);
   for (const t of done) {
-    const D = await load(ctx, t), art = $('article', 'vtopic'); art.id = t.id; grid.append(art);
+    const D = await load(ctx, t), art = $('article', 'vtopic'); art.id = vid(t.id); grid.append(art);
     const files = Object.entries(D.tests), nAll = files.reduce((a, [, x]) => a + x.checks.length, 0), nBad = files.reduce((a, [, x]) => a + x.checks.filter((c) => !c.ok).length, 0), exitBad = files.filter(([, x]) => x.exit !== 0).length;
     const stale = t.rows.filter((r) => { const q = findQuote(D.tests, t, r); return !q || !q.ok; });
     const ok = files.length === t.tests.length && !exitBad && !stale.length;
@@ -55,7 +56,7 @@ export async function projectBlock(ctx) {
     });
   }
   if (planned.length) {
-    const box = $('div', 'vplanned'); box.id = 'planned'; host.append(box);
-    box.innerHTML = `<h3>Being added</h3><p>Not yet validated; each gets a card once its test exists.</p><ul class="vlist">${planned.map((t) => `<li id="${t.id}"><b>${esc(t.title)}.</b> ${esc(t.purpose)}</li>`).join('')}</ul>`;
+    const box = $('div', 'vplanned'); box.id = 'val-planned'; host.append(box);
+    box.innerHTML = `<h3>Being added</h3><p>Not yet validated; each gets a card once its test exists.</p><ul class="vlist">${planned.map((t) => `<li id="${vid(t.id)}"><b>${esc(t.title)}.</b> ${esc(t.purpose)}</li>`).join('')}</ul>`;
   }
 }

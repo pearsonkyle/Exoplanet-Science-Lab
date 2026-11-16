@@ -40,9 +40,10 @@ try { symlinkSync(join(tmpdir(), 'esl-mcp-outside.txt'), join(ws, 'link.txt')); 
 
 const client = new Client({ name: 'esl-mcp-test', version: '0' });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(HERE, 'server.mjs'), '--workspace', ws], stderr: 'ignore' }));
-const call = async (name, args = {}, opts) => { const r = await client.callTool({ name, arguments: args }, undefined, opts); const text = r.content[0].text; let data = null; try { data = JSON.parse(text); } catch { /* an error sentence */ } return { text, data, isError: !!r.isError }; };
+const call = async (name, args = {}, opts) => { const r = await client.callTool({ name, arguments: args }, undefined, opts); const text = r.content[0].text; let data = null; try { data = JSON.parse(text); } catch { /* an error sentence */ } return { text, data, isError: !!r.isError, table: r.content[1] ? r.content[1].text : '' }; };
 
-const listed = (await client.listTools()).tools, want = toolsFor('mcp').map((t) => t.name);
+// tools that need a call only the web page has (figures of the page, the companion search) are not offered here
+const listed = (await client.listTools()).tools, want = toolsFor('mcp').filter((t) => !t.needs).map((t) => t.name);
 check('the server lists the tools of the shared table', listed.length === want.length && want.every((n) => listed.some((t) => t.name === n)), `${listed.length} tools`);
 check('every tool has a description, an object schema and hints', listed.every((t) => t.description.length > 30 && t.inputSchema.type === 'object' && t.annotations && typeof t.annotations.readOnlyHint === 'boolean'));
 check('the server sends its instructions', /ESL session/.test(client.getInstructions() || ''));
@@ -82,6 +83,19 @@ check('a planet is found in the catalogue snapshot', !look.isError && look.data.
 await call('set_timings', { file: 'times.csv' });
 const eph = await call('fit_ephemeris'), pg = await call('timing_periodogram');
 check('ephemeris and periodogram work on a timing file from the workspace', !eph.isError && eph.data.times > 400 && /-\d/.test(eph.data.quadratic.dPdt_ms_per_year) && /strongly preferred/.test(eph.data.reading) && !pg.isError && typeof pg.data.verdict === 'string', eph.isError ? eph.text : `dP/dt = ${eph.data.quadratic.dPdt_ms_per_year} ms/yr; ${eph.data.reading}`);
+
+// the capabilities shared with the site's assistant: a queue of variants, optional models, derived values, the run history
+check('the newer tools of the shared table are offered, those that need the web page are not', ['set_phase_curve', 'set_moon', 'set_nbody', 'get_derived', 'list_runs', 'run_experiment'].every((n) => listed.some((t) => t.name === n)) && !['companion_search', 'add_companion', 'restore_run', 'fit_progress', 'get_figure', 'set_view'].some((n) => listed.some((t) => t.name === n)));
+await call('load_example', { id: 'single', fresh: true }); await call('set_sampler', { nlive: 60 });
+const queue = await call('run_experiment', { kind: 'custom', report: 'ld_queue.md', variants: [{ name: 'linear law', setup: [{ tool: 'set_limb_darkening', args: { law: 'linear' } }] }, { name: 'quadratic law' }] }, { timeout: 600000 });
+check('run_experiment runs a queue of variants with set-up steps and returns the comparison as data and as a table', !queue.isError && queue.data.variants.length === 2 && queue.data.variants.every((v) => v.run) && queue.data.comparison.runs.every((r) => /±/.test(r.lnZ)) && /\| Run \| Free parameters \| ln Z \|/.test(queue.table) && queue.table.includes(queue.data.comparison.verdict) && existsSync(join(ws, 'ld_queue.md')), queue.isError ? queue.text : queue.data.comparison.verdict);
+await call('add_planet', { parameters: { per: 9 } });
+const withc = await call('run_experiment', { kind: 'companion', report: 'companion.md' }, { timeout: 600000 }), after = await call('get_state');
+check('"with and without the companion": both fits run, and the system ends with the companion in place', !withc.isError && withc.data.variants.map((v) => v.name).join() === 'without planet c,with planet c' && withc.data.comparison.runs.length === 2 && after.data.planets.join() === 'b,c', withc.isError ? withc.text : withc.data.comparison.runs.map((r) => `${r.run}: ${r.lnZ}`).join('; '));
+const hist = await call('list_runs'), der = await call('get_derived', { planet: 'b' });
+check('the run history and the derived quantities come back as the software computed them', !hist.isError && hist.data.runs.length === 5 && hist.data.runs.filter((r) => r.on_current_data).length === 4 && hist.data.runs.every((r) => /±|not converged/.test(r.lnZ)) && !der.isError && Object.keys(der.data.derived || der.data.planets).length > 0, `${hist.data.runs.length} runs`);
+const moon = await call('set_moon', { parameters: { rmoon: 0.02, permoon: 0.4 } }), st2 = await call('get_state'), moonOff = await call('set_moon', { on: false }), ph = await call('set_phase_curve', { mode: 'harmonic', parameters: { fpfs: 0.001 } }), st3 = await call('get_state'), nb = await call('set_nbody', { on: true });
+check('a moon and the planet\'s own light are switched on the session document; N-body dynamics ask for Kepler mode first', !moon.isError && st2.data.parameters.some((p) => p.key === 'rmoon' && p.value === 0.02) && !moonOff.isError && !ph.isError && st3.data.parameters.some((p) => p.key === 'fpfs') && !st3.data.parameters.some((p) => p.key === 'rmoon') && nb.isError && /Kepler mode/.test(nb.text), nb.text.slice(0, 90));
 
 // nothing outside the workspace
 const esc = [await call('read_file', { name: '../esl-mcp-outside.txt' }), await call('read_file', { name: '/etc/hosts' }), await call('import_session', { file: '../../etc/passwd' }), await call('write_file', { name: '../evil.txt', content: 'x' }), await call('export_file', { kinds: ['session'], name: '../../evil.json' })];

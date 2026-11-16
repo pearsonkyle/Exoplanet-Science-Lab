@@ -18,7 +18,7 @@ import { deriveSystem } from '../core/derive.js';
 import { FORMAT, FORMAT_VERSION, validateSession, valuesFromSession, planetValuesOf, runSession, specFromSession } from '../core/session.js';
 import { buildProblem } from '../core/model.js';
 import { loadIndex, lookupHost, systemFromRows } from '../core/catalog.js';
-import { lcBlock } from './ops.js';
+import { lcBlock, isPlanetExtra } from './ops.js';
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const base = (k) => String(k).split('@')[0];
@@ -62,7 +62,8 @@ export function createDocApi({ session, fetchText, fetchJson, store } = {}) {
   const rvOn = () => !!(doc.fit.use || {}).rv && (doc.data.radial_velocity || []).length > 0;
   const actParams = () => {
     const L = lc(), air = !L || !L.airmass ? false : nEpochs() > 1 ? L.epochs.map((e) => !!e.airmass) : true;
-    return activeParams((doc.limb_darkening || {}).law || 'quadratic', air, { planets: doc.planets.map((p, i) => ({ sfx: sfxOf(i), letter: p.letter })), kepler: !!doc.kepler, mass: !!doc.kepler || (doc.data.radial_velocity || []).length > 0, rv: (doc.data.radial_velocity || []).map((r) => r.name) });
+    return activeParams((doc.limb_darkening || {}).law || 'quadratic', air, { planets: doc.planets.map((p, i) => ({ sfx: sfxOf(i), letter: p.letter })), kepler: !!doc.kepler, mass: !!doc.kepler || (doc.data.radial_velocity || []).length > 0, rv: (doc.data.radial_velocity || []).map((r) => r.name),
+      moons: doc.planets.map((p, i) => (p.parameters.rmoon !== undefined ? sfxOf(i) : null)).filter((x) => x !== null), phase: Object.fromEntries(doc.planets.map((p, i) => (p.parameters.fpfs !== undefined ? [sfxOf(i), doc.phase || { mode: 'harmonic' }] : null)).filter(Boolean)) });
   };
   const values = () => { const v = valuesFromSession(doc); for (const k of STAR_KEYS) if (Number.isFinite((doc.star || {})[k])) v[k] = doc.star[k]; return v; };
   const priors = () => (doc.fit.priors = doc.fit.priors || {});
@@ -89,6 +90,13 @@ export function createDocApi({ session, fetchText, fetchJson, store } = {}) {
       case 'rvlin': return U(-0.1, 0.1);
       case 'rvquad': return U(-1e-3, 1e-3);
       case 'jit': return U(0, 30);
+      case 'rmoon': case 'fpfs': return U(0, Math.max(5 * v, 0.01));
+      case 'permoon': return U(Math.max(1e-3, v * 0.3), v * 3);
+      case 'phmoon': return U(0, 1);
+      case 'mmoon': return U(0, Math.max(5 * v, 0.1));
+      case 'imoon': return U(0, 180);
+      case 'hotspot': return U(-90, 90);
+      case 'contrast': return U(0, 1);
       case 'mstar': case 'rstar': { const e = (doc.star || {})[b + 'Err']; return N(r6(v), e > 0 ? e : 0.05 * v); }
       case 'teff': return N(v, (doc.star || {}).teffErr || 100);
       case 'feh': return N(v, (doc.star || {}).fehErr || 0.1);
@@ -99,7 +107,7 @@ export function createDocApi({ session, fetchText, fetchJson, store } = {}) {
     v = Number(v); if (!Number.isFinite(v)) throw new Error(`${key}: not a number`);
     const b = base(key), sfx = key.split('@')[1] || '';
     if (STAR_KEYS.includes(key)) doc.star = { ...doc.star, [key]: v };
-    else if (PLANET_FIELDS.includes(b)) { const i = sfx ? doc.planets.findIndex((p, k) => k > 0 && p.letter === sfx) : 0; if (i < 0) throw new Error(`no planet ${sfx}`); doc.planets[i].parameters[b] = b === 'tmid' ? v + tRef() : v; }
+    else if (PLANET_FIELDS.includes(b) || isPlanetExtra(b)) { const i = sfx ? doc.planets.findIndex((p, k) => k > 0 && p.letter === sfx) : 0; if (i < 0) throw new Error(`no planet ${sfx}`); doc.planets[i].parameters[b] = b === 'tmid' ? v + tRef() : v; }
     else if (/^ld[0-3]$/.test(key)) { const n = LD_LAWS[doc.limb_darkening.law].names.length, j = Number(key[2]); if (j >= n) throw new Error(`${key} is not a coefficient of the ${doc.limb_darkening.law} law`); doc.limb_darkening.coefficients[j] = v; }
     else doc.fit.fixed = { ...doc.fit.fixed, [key]: v };
   }

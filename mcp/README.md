@@ -7,7 +7,13 @@ and exposes tools that act on it through `src/core`, the same numerical code the
 The tools are the ones the in-page assistant uses: both take their names, descriptions and argument schemas
 from `src/assistant/toolspec.js`, and both run the handlers of `src/assistant/tools.js`. In the page the
 handlers drive `window.__esl.api`; here they drive `src/assistant/docApi.js`, the same surface on a session
-document. Two tools exist only in the page (`set_view`, `get_figure`) and one only here (`new_session`).
+document. A few tools exist only in the page, because they need the page itself: `set_view`, `get_figure`,
+`restore_run`, `fit_progress`, `companion_search`, `add_companion`, and the tools of the other pages of the site
+(`navigate`, `plan_*`, `observe_*`, `photometry_*`, `search_*`, `validation_*`). One exists only here (`new_session`).
+
+This server is also the way to use the assistant's tools when the in-page chat cannot reach your model: a page
+served over https may not call a model server on plain http on another machine (browsers block it as mixed
+content). A desktop client that speaks MCP has no such limit.
 
 ## Install and run
 
@@ -77,10 +83,10 @@ await client.callTool({ name: 'export_file', arguments: { kind: 'report' } });
 
 | Group | Tools |
 |---|---|
-| System | `get_state`, `list_examples`, `load_example`, `search_catalog`, `lookup_planet`, `new_session`, `set_parameters`, `add_planet`, `remove_planet`, `set_kepler`, `set_limb_darkening` |
+| System | `get_state`, `list_examples`, `load_example`, `search_catalog`, `lookup_planet`, `new_session`, `set_parameters`, `add_planet`, `remove_planet`, `set_kepler`, `set_limb_darkening`, `set_phase_curve`, `set_moon`, `set_nbody` |
 | Data | `describe_data`, `load_light_curve`, `load_radial_velocities`, `set_timings`, `simulate_light_curve`, `edit_data` |
 | Fit | `choose_data`, `set_free`, `set_prior`, `set_sampler`, `run_fit`, `stop_fit` |
-| Results | `get_results`, `compare_runs`, `run_experiment` |
+| Results | `get_results`, `explain_results`, `get_derived`, `list_runs`, `compare_runs`, `run_experiment` |
 | Timing and model | `fit_ephemeris`, `timing_periodogram`, `compute_model` |
 | Files | `list_files`, `read_file`, `write_file`, `export_file`, `import_session` |
 | Saved analyses | `save_analysis`, `list_saved`, `open_saved`, `delete_saved`, `undo` |
@@ -90,6 +96,15 @@ never returned; a light curve is "685 points, 0.97 d span, median error 540 ppm"
 file. `run_fit` and `run_experiment` send progress notifications when the client passes a progress token.
 A refused call comes back as an error result whose text says what was wrong and what the tool takes.
 
+`run_experiment` runs a queue of fits one after another and compares them: `eccentricity`, `limb_darkening`,
+`airmass`, `companion` (without and with one planet of the system), or `custom` variants, each a list of keys
+to free and fix plus optional set-up steps (`set_limb_darkening`, `add_planet`, `set_moon`, ...). Every variant
+starts from the set-up the experiment was called with. It writes a Markdown report into the workspace.
+
+A result that holds a table (fitted values, a comparison, an ephemeris) is returned twice: as JSON, and as a
+second text block with the same numbers as a Markdown table, so a client can show the software's own table
+instead of a model's retelling of it.
+
 `compare_runs` and `run_experiment` return the reading of the evidence in words (indistinguishable, weakly /
 moderately / strongly disfavoured) with the cautions that apply, by the rules of the analyzer's "Runs & model
 comparison" table. A client model should relay that reading instead of interpreting ln Z itself.
@@ -97,6 +112,9 @@ comparison" table. A client model should relay that reading instead of interpret
 ## What differs from the web app
 
 - Limb darkening that follows the star (mode "star") is not available: the coefficients are used as given.
+- `edit_data` removes an epoch, a velocity set or the timing list and sets the exposure; trimming, clipping
+  and binning are in the page only. Figures are in the page only.
+- `set_nbody` writes the N-body block of the session; the fit then integrates the system as the page does.
 - Default priors for a newly freed parameter are simple rules around the current value. The page's use the
   transit duration and the epochs; set priors explicitly with `set_prior` when they matter.
 - `lookup_planet` loads catalogue values and priors but no stand-in light curve; use `simulate_light_curve`.
@@ -119,5 +137,6 @@ comparison" table. A client model should relay that reading instead of interpret
 
 `node mcp/test.mjs` lists the tools, opens EXOTIC's three-planet example as a session (built as in
 `test/session.test.mjs`), runs the fit with progress notifications, writes the fitted session, a report, a
-results table and a model curve, reads them back, fits the WASP-12 b timing example, and checks the path
-confinement and the HTTP mode.
+results table and a model curve, reads them back, fits the WASP-12 b timing example, runs a queue of variants
+with a set-up step and a fit with and without a second planet, switches a moon and a phase curve on and off,
+and checks the path confinement and the HTTP mode.

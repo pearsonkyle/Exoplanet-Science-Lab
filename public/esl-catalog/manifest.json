@@ -2,7 +2,7 @@
  "format": "esl-catalog",
  "formatVersion": 1,
  "name": "Exoplanet Science Lab catalogue",
- "built": "2026-11-15T22:48:50Z",
+ "built": "2026-11-16T15:13:11Z",
  "software": {
   "name": "exoplanet-science-lab",
   "version": "0.2.0",
@@ -52,43 +52,43 @@
   }
  ],
  "counts": {
-  "planets": 8561,
+  "planets": 8563,
   "inNasaArchive": 6470,
   "inExoplanetEu": 8479,
-  "matchedInBoth": 6388,
-  "nasaArchiveOnly": 82,
-  "exoplanetEuOnly": 2091,
+  "matchedInBoth": 6386,
+  "nasaArchiveOnly": 84,
+  "exoplanetEuOnly": 2093,
   "toi": 0,
-  "transiting": 5125,
-  "withPriors": 8556,
-  "withEstimates": 6785,
+  "transiting": 5126,
+  "withPriors": 8558,
+  "withEstimates": 6787,
   "withLimits": 532,
-  "values": 230521,
-  "estimates": 15789,
-  "priors": 100991,
+  "values": 230551,
+  "estimates": 15804,
+  "priors": 101011,
   "priorsByBasis": {
    "transit": 4829,
    "rv": 1202,
    "all": 439,
-   "merged": 2086
+   "merged": 2088
   },
   "estimatesByRelation": {
-   "depth": 2797,
-   "kepler3": 2772,
+   "depth": 2799,
+   "kepler3": 2774,
    "impact": 929,
-   "rvk": 3824,
-   "t14": 339,
-   "teq": 749,
-   "sb": 1888,
-   "ck17": 1563,
-   "gravity": 875,
+   "rvk": 3826,
+   "t14": 340,
+   "teq": 750,
+   "sb": 1892,
+   "ck17": 1564,
+   "gravity": 877,
    "pm13": 53
   },
   "matchStages": {
    "name": 5882,
    "alias": 254,
    "host+letter": 31,
-   "position": 221
+   "position": 219
   },
   "tables": {
    "refs": 3012,
@@ -148,9 +148,9 @@
   {
    "name": "catalog.json",
    "description": "the catalogue: dictionaries and one record per planet",
-   "bytes": 6794512,
-   "gzipBytes": 2011329,
-   "sha256": "63067c3b2dd2c70f508caea258aa1c4aa296d9256d85e1694cf6352470052028"
+   "bytes": 6795441,
+   "gzipBytes": 2011711,
+   "sha256": "ff1c4c0a2e0613375ce587744ec804bbda7de9c0047b7567d53b0b205d6c9cae"
   }
  ],
  "licences": [
@@ -206,7 +206,7 @@
  "steps": [
   {
    "step": "merge_esl_catalog.mjs",
-   "seconds": 10.2
+   "seconds": 11.3
   }
  ]
 }

@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: >-
+  If you use Exoplanet Science Lab in work that leads to a publication, please cite the software with the
+  version you used, and the papers of the methods your analysis relied on (docs/METHODS.md lists them by
+  section; docs/references.bib holds the BibTeX; the function methodsParagraph in src/core/methodsText.js
+  writes the list for a given session).
+type: software
+title: "Exoplanet Science Lab"
+abstract: >-
+  Transit, radial-velocity, timing, phase-curve and photometry analysis for exoplanet observations that runs
+  in the browser, with a nested sampler, a session format for reproducible fits, and the same core callable
+  from Python.
+authors:
+  - family-names: Pearson
+    given-names: Kyle A.
+version: "0.2.0"
+url: "https://exoplanet.science"
+keywords:
+  - exoplanets
+  - transit photometry
+  - radial velocities
+  - transit timing
+  - nested sampling
+  - Bayesian inference
+license: MIT
+repository-code: "https://github.com/pearsonkyle/Exoplanet-Science-Lab"

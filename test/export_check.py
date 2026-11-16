@@ -1,12 +1,15 @@
 # Exercises zoom, the white/dark figure exports and the PDF writer in headless Chrome.
-import sys, base64
+import sys, base64, os
 from playwright.sync_api import sync_playwright
 out = sys.argv[1]
+# the site: $ESL_BASE, else the static server of CLAUDE.md ("Browser checks"); Chrome when it is installed, else Playwright's Chromium
+BASE = os.environ.get('ESL_BASE', 'http://127.0.0.1:8765').rstrip('/')
+CHROME = {'executable_path': '/usr/bin/google-chrome'} if os.path.exists('/usr/bin/google-chrome') else {}
 with sync_playwright() as p:
-    b = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox'])
+    b = p.chromium.launch(**CHROME, args=['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'])
     pg = b.new_page(viewport={'width': 1440, 'height': 900}); logs = []
     pg.on('pageerror', lambda e: logs.append(str(e)))
-    pg.goto('http://127.0.0.1:8765/analyze/index.html?skipintro'); pg.wait_for_timeout(2000)
+    pg.goto(BASE + '/analyze/index.html?skipintro'); pg.wait_for_timeout(2000)
     pg.select_option('#preset', 'hd80606'); pg.wait_for_timeout(800)
     pg.click('.tabs [data-tab=fit]'); pg.click('#runbtn')
     pg.wait_for_function("/^(Finished|Fit failed)/.test(document.querySelector('#pstat').textContent)", timeout=300000)

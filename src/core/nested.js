@@ -25,6 +25,11 @@
 //     number of dimensions (+0.5 at 20 dimensions with 400 live points).
 //   * The radius ignores groups that were left out whole and are far away, so a
 //     mode down to its last point does not join all modes up again.
+//   * The wrapping ellipsoid is tested against the likelihood during the run: a fifth
+//     of the region proposals come from the balls alone, and a point accepted outside
+//     the ellipsoid enlarges it for the rest of the run (_grow). Without this the
+//     ellipsoid cut the wide end off funnel-shaped contours and ln Z came out 0.2 to
+//     0.3 low with a clean insertion-order test (UltraNest: -0.30 on the same 4-D funnel).
 //   * The choice between region and slice sampling is made during the run from
 //     the measured cost of each, with hysteresis, in both directions.
 //   * The insertion-order test is also used during the run: if the points drawn
@@ -54,6 +59,9 @@ export class MiniNest {
    * opts.maxSeconds (none): wall-clock budget, counted from construction.
    * opts.method: 'auto' (default: region sampling, slice sampling when that is cheaper), 'region' or 'slice'.
    * opts.sliceSteps: slice steps per new point (default max(10, 2 ndim)).
+   * opts.openFrac (0.2, or 2 / ndim above ten dimensions, where such proposals are rarely accepted): share of region
+   *   proposals drawn without the wrapping ellipsoid, which costs at most 1 / (1 - openFrac) in likelihood calls; opts.growPad (2): factor by
+   *   which the ellipsoid (squared radius) is taken beyond a point found outside it. 0 switches the check off.
    * opts.names, opts.labels: parameter keys and display names, used in the warnings.
    */
   constructor(opts) {
@@ -86,8 +94,10 @@ export class MiniNest {
     this.probeLeft = 0; this.probeTries = 0; this.probeAcc = 0;
     this.rankHist = new Float64Array(RANK_BINS); this.rankN = 0; this.regionDistrusted = false;
     this.holes = null; this.liveFrac = 0; this.liveRelVar = 0;
-    this.stat = { regionIter: 0, sliceIter: 0, regionCalls: 0, sliceCalls: 0, switches: 0, restarts: 0, callsBeforeRestart: 0, maxClusters: 1, events: [] };
+    this.stat = { regionIter: 0, sliceIter: 0, regionCalls: 0, sliceCalls: 0, switches: 0, restarts: 0, callsBeforeRestart: 0, maxClusters: 1, ellipsoidGrown: 0, events: [] };
     this.probeSkip = 0; this._sliceUsedRegion = false;
+    // the wrapping ellipsoid is checked during the run (see _grow): openFrac of the region proposals ignore it
+    this.openFrac = opts.openFrac ?? Math.min(0.2, 2 / this.d); this.growPad = opts.growPad ?? 2; this.ellGrow = 1; this._openS = 0;
     this.t0 = now();
     this._u = new Float64Array(d); this._t = new Float64Array(d); this._x = new Float64Array(d);
     this._cur = new Float64Array(d); this._dir = new Float64Array(d); this._cand = new Float64Array(d);
@@ -135,6 +145,12 @@ export class MiniNest {
     } else this.logVol = logVol;
     if (this.ncl > this.stat.maxClusters) this.stat.maxClusters = this.ncl;
     this.sinceRegion = 0;
+    this._prepareDraw();
+  }
+
+  /** The bounding box of the region and the cheapest exact way to draw from it; again whenever a radius changes. */
+  _prepareDraw() {
+    const { N, d } = this;
     // axis-aligned box around the region in the unit cube: every ball and the ellipsoid reach r sqrt(C_kk), R sqrt(C_kk) along axis k
     const { U, A, mean } = this;
     if (!this.boxLo) { this.boxLo = new Float64Array(d); this.boxW = new Float64Array(d); }
@@ -236,7 +252,7 @@ export class MiniNest {
     if (!(r2 > 0)) { for (let q = 0; q < nCross; q++) if (cross[q] > r2) r2 = cross[q]; }
     else { const lim = 4 * r2; let ext = r2; for (let q = 0; q < nCross; q++) if (cross[q] <= lim && cross[q] > ext) ext = cross[q]; r2 = ext; }
     this.r2 = r2; this.r = Math.sqrt(r2);
-    this.R2 = maxAll * f; this.R = Math.sqrt(this.R2); this.enlarge = f;
+    this.R2 = maxAll * f * this.ellGrow; this.R = Math.sqrt(this.R2); this.enlarge = f * this.ellGrow;
   }
 
   /** Friends-of-friends groups at the current radius. Returns true if the number of groups changed. */
@@ -307,6 +323,37 @@ export class MiniNest {
     if (s > this.R2 || !this._unwhiten(t, u)) return false;
     const nf = this._friends(t);
     return nf <= 1 || rng.next() * nf <= 1;
+  }
+  // The same without the ellipsoid: uniform in (union of balls) ∩ unit cube. Leaves the squared whitened radius in _openS.
+  _tryBallOpen() {
+    const { N, d, T, rng, _t: t, _u: u } = this;
+    const io = rng.int(N) * d;
+    this._ballDir(t, this.r);
+    let s = 0;
+    for (let k = 0; k < d; k++) { t[k] += T[io + k]; s += t[k] * t[k]; }
+    if (!this._unwhiten(t, u)) return false;
+    const nf = this._friends(t);
+    this._openS = s;
+    return nf <= 1 || rng.next() * nf <= 1;
+  }
+  /**
+   * A point above the likelihood threshold was found outside the wrapping ellipsoid (squared whitened radius s):
+   * the ellipsoid was cutting off part of the contour. Its bootstrap only measures how far left-out live points
+   * stick out, which is too little for contours that are far from ellipsoidal (cones, funnels: the rim of the
+   * wide end). The clipped part is then lost for good, the insertion-order test cannot see a loss that has
+   * settled, and ln Z comes out low by ln(1 - clipped fraction): -0.34 +- 0.07 for a 10-D funnel. So a tenth of
+   * the region proposals (openFrac) are drawn from the balls alone, which is as valid a bound, and slice chains
+   * are free to leave the ellipsoid on the steps that use stepping-out; whenever such a point is accepted
+   * outside, the ellipsoid is enlarged to hold it, now and in every later region of this run.
+   */
+  _grow(s) {
+    const g = (this.growPad * s) / this.R2;
+    this.ellGrow *= g; this.enlarge *= g; this.R2 *= g; this.R = Math.sqrt(this.R2);
+    this.logVol = Infinity;                 // the next region is not compared with this one's volume
+    this.stat.ellipsoidGrown++;
+    const keep = Float64Array.from(this._u);      // the probes in _prepareDraw use the scratch point
+    this._prepareDraw();
+    this._u.set(keep);
   }
   // Propose from the wrapping ellipsoid; keep if any live point is within r.
   _trySphere() {
@@ -542,7 +589,7 @@ export class MiniNest {
     this.dead = { x: [], u: [], logl: [], logw: [], nl: [] };
     this.ranks = []; this.rankHist.fill(0); this.rankN = 0;
     this.it = 0; this.logZ = -Infinity; this.H = 0; this.logX = 0; this.nplateau = 0; this.varPlateau = 0; this.remFrac = undefined;
-    this.label.fill(0); this.ncl = 1; this.A = null; this.logVol = Infinity;
+    this.label.fill(0); this.ncl = 1; this.A = null; this.logVol = Infinity; this.ellGrow = 1;
     this._init();
   }
 
@@ -560,7 +607,10 @@ export class MiniNest {
       if (probing) this.probeLeft--;
       for (let tries = 0; tries < cap; tries++) {
         if (this.ncalls >= this.maxCalls) return 'max calls reached';
-        if (!this._drawRegion(probing ? 20000 : 100000)) {
+        // one proposal in ten ignores the wrapping ellipsoid (see _grow)
+        let open = this.openFrac > 0 && this.rng.next() < this.openFrac;
+        if (open) { open = false; for (let q = 0; q < 2000 && !open; q++) open = this._tryBallOpen(); }
+        if (!open && !this._drawRegion(probing ? 20000 : 100000)) {
           // the region is too awkward to draw from by rejection (no likelihood involved): slice sampling instead
           if (this.method === 'region') return 'could not find a better point';
           if (probing) { this.probeLeft = 0; this.probeSkip = 5; } else { this.mode = 'slice'; this.stat.switches++; this.probeSkip = 5; }
@@ -569,7 +619,7 @@ export class MiniNest {
         this.transform(this._u, this._x);
         newL = this.loglike(this._x); this.ncalls++; this.stat.regionCalls++;
         if (probing) this.probeTries++; else this.winCalls++;
-        if (newL > Lmin) { got = byRegion = true; break; }
+        if (newL > Lmin) { got = byRegion = true; if (open && this._openS > this.R2) this._grow(this._openS); break; }
         if (!probing && this.method === 'auto') {
           // Region sampling costs winCalls / winAcc calls per point. Its draws are independent and it keeps separate
           // modes in proportion, which slice sampling does not, so it is given up only when it costs three times as much.
@@ -599,6 +649,7 @@ export class MiniNest {
         got = newL > Lmin;
       }
       if (!got) return 'could not find a better point';
+      { let s = 0; for (let k = 0; k < d; k++) s += this._cur[k] ** 2; if (s > this.R2) this._grow(s); }
     }
     if (byRegion) this._sliceUsedRegion = false;
     if (byRegion) { this.winAcc += this.mode === 'region' && !probing ? 1 : 0; this.stat.regionIter++; } else this.stat.sliceIter++;
@@ -739,7 +790,7 @@ export class MiniNest {
       converged, remFrac: this.remFrac ?? 1, liveFrac: this.liveFrac, logZrange: this.logZrange ? Array.from(this.logZrange) : null,
       budget: { maxCalls: this.maxCalls, calls: this.ncalls, maxSeconds: Number.isFinite(this.maxSeconds) ? this.maxSeconds : null, seconds: this.seconds ?? (now() - this.t0) / 1000, reached },
       efficiency: this.it / Math.max(1, this.ncalls), nclusters: this._groups(), maxClusters: st.maxClusters,
-      sampling: { regionIter: st.regionIter, sliceIter: st.sliceIter, regionCalls: st.regionCalls, sliceCalls: st.sliceCalls, switches: st.switches, sliceSteps: this.sliceSteps, regionAbandoned: this.regionDistrusted, restarts: st.restarts, callsBeforeRestart: st.callsBeforeRestart, events: st.events },
+      sampling: { regionIter: st.regionIter, sliceIter: st.sliceIter, regionCalls: st.regionCalls, sliceCalls: st.sliceCalls, switches: st.switches, sliceSteps: this.sliceSteps, regionAbandoned: this.regionDistrusted, restarts: st.restarts, callsBeforeRestart: st.callsBeforeRestart, ellipsoidGrown: st.ellipsoidGrown, ellipsoidScale: Math.sqrt(this.ellGrow), events: st.events },
     };
     // range of the final live points in every parameter: for a run stopped before the peak (ess of a few) the
     // weighted posterior is one point, and this box is the honest statement of where the fit still was

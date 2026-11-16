@@ -1,10 +1,12 @@
 // A virtualised table: only the rows in view are in the DOM, so tens of thousands of rows scroll smoothly.
 // createTable(el, { rowHeight, cell(row, key) -> html, headCell(key) -> html, width(key), onSort(key), onSelect(row) })
-// returns { setData(rows, cols, keepScroll), select(row), scrollTo(row), resize() }.
+// returns { setData(rows, cols, keepScroll), select(row), scrollTo(row), resize(), message(html, cls) }.
+// message() fills the empty table with a loading or error note until the first setData.
 
 export function createTable(el, opt) {
   const H = opt.rowHeight;
   el.innerHTML = '<div class="vt-head" role="row"></div><div class="vt-body" role="rowgroup"></div>';
+  el.style.setProperty('--row-h', H + 'px');
   const head = el.firstChild, body = el.lastChild;
   let rows = [], cols = [], selected = null, first = -1, last = -1, raf = 0;
 
@@ -53,6 +55,7 @@ export function createTable(el, opt) {
       draw(true);
     },
     resize: schedule,
+    message(html, cls = '') { if (!rows.length) body.innerHTML = `<div class="vt-empty ${cls}" role="${cls === 'err' ? 'alert' : 'status'}">${html}</div>`; },
     visibleRange: () => [first, last],
   };
   return api;

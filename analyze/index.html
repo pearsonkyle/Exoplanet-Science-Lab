@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Analyze · Exoplanet Science Lab</title>
 <meta name="esl-root" content="../">
 <link rel="stylesheet" href="../src/site/site.css">
@@ -18,28 +18,30 @@
 <body>
 <div id="app">
   <header id="sitebar" data-active="analyze"></header>
+  <nav id="subnav" class="subnav" data-active="fits"></nav><script type="module" src="../src/site/subnav.js"></script>
   <header id="topbar">
     <div class="brand apptitle"><h1>Analyze</h1><span class="brand-sub">transits · radial velocities · timing</span></div>
     <div class="topright">
       <span id="flash" class="toast" aria-live="polite"></span>
       <button id="startbtn" class="chip small" title="Start page: choose what to do, look up a system, or open an example">☰<span class="wide"> Start</span></button>
-      <span class="seg small" id="layoutseg" role="group" aria-label="Panels shown">
-        <button id="tglc" class="on" title="Show or hide the plot under the system view">Plot</button>
-        <button id="tgpanel" class="on" title="Show or hide the side panel">Panel</button>
+      <span class="seg small" id="layoutseg" role="group" aria-label="Parts of the page shown">
+        <button id="tgstage" class="on" aria-pressed="true" title="Show or hide the 3D view of the system">3D</button>
+        <button id="tglc" class="on" aria-pressed="true" title="Show or hide the plot under the system view">Plot</button>
+        <button id="tgpanel" class="on" aria-pressed="true" title="Show or hide the panel with the tabs">Panel</button>
       </span>
       <button id="aibtn" class="chip small" title="An assistant that can drive this page for you: load data, set up and run fits, explain results. It talks to a language model you choose, which can be one running on your own machine.">Assistant</button>
       <button id="tourbtn" class="chip small" title="A two-minute tour of this page" aria-label="Tour of this page">?</button>
       <button id="savebtn" class="chip small" title="Save this analysis in this browser: data, priors and results. Reopen it from the Start page.">Save</button>
       <button id="undo" class="chip small" title="Undo (Ctrl/⌘+Z)" aria-label="Undo" disabled>↶<span class="wide"> Undo</span></button>
       <button id="redo" class="chip small" title="Redo (Ctrl/⌘+Shift+Z)" aria-label="Redo" disabled>↷</button>
-      <label class="preset">System
-        <select id="preset"></select>
+      <label class="preset"><span>System</span>
+        <select id="preset" aria-label="System"></select>
       </label>
     </div>
   </header>
 
   <section id="stage" aria-label="3D view of the system">
-    <div id="viz"></div>
+    <div id="viz" role="img" aria-label="The star and its planets, drawn to scale from the current parameters. Drag to look around, scroll or pinch to zoom."></div>
     <div id="labels"></div>
     <div class="hud hud-tl">
       <div class="seg" id="viewseg" role="group" aria-label="Camera">
@@ -53,38 +55,42 @@
     <div class="hud hud-tr" id="readout"></div>
     <div class="inset-frame" id="insetframe"><span>As seen from Earth · true scale</span></div>
     <div class="hud hud-b" id="transport">
-      <button id="play" class="chip" aria-label="Play or pause">❚❚</button>
+      <button id="play" class="chip" aria-label="Play or pause">▶</button>
       <div class="seg" id="loopseg" role="group" aria-label="Animation range">
         <button data-loop="transit" class="on">Transit</button>
         <button data-loop="orbit">Full orbit</button>
       </div>
-      <label class="speed">Speed <input id="speed" type="range" min="-1" max="1" step="0.01" value="0"></label>
-      <span id="clock" class="mono"></span>
+      <label class="speed" title="Simulated time per second of real time (a logarithmic scale: one minute to a hundred days per second)"><span>Rate</span> <input id="speed" type="range" min="0" max="18" step="1" value="7" aria-label="Simulated time per second"> <output id="speedval" class="mono" for="speed">1 h/s</output></label>
+      <span id="clock" class="mono" aria-label="Time from mid-transit and orbital phase"></span>
       <select id="recfig" class="chip small" title="Which figure goes under the system view in the recorded video" aria-label="Figure in the video"></select>
       <select id="recfmt" class="chip small" title="Shape of the recorded video: landscape for video sites and slides, portrait or square for social media" aria-label="Video format"></select>
       <button id="rec" class="chip" title="Record one pass of the animation (system view + light curve) as a video">● Rec</button>
     </div>
   </section>
 
-  <section id="lc" aria-label="Light curve">
-    <canvas id="lccanvas"></canvas>
+  <section id="lc" aria-label="Plot of the data and the model">
+    <div id="lcgrip" role="separator" aria-orientation="horizontal" aria-label="Resize the plot" aria-controls="lc" tabindex="0" title="Drag to make the plot taller or shorter · arrow keys · double-click to reset"></div>
+    <canvas id="lccanvas" role="img" aria-label="The data, the model and their difference against time. Scroll or pinch to zoom, drag to pan, click or tap to set the time."></canvas>
     <div class="lctools">
-      <span id="lcmsg" class="toast"></span>
-      <span class="lchint">scroll to zoom · drag to pan · shift+scroll for the flux axis · click to set the time</span>
-      <div class="seg small" id="viewsel" role="group" aria-label="Data shown">
-        <button data-v="lc" class="on">Light curve</button>
-        <button data-v="rv" disabled title="Radial velocities (load them on the Data tab)">RV</button>
-        <button data-v="phase" hidden title="The whole orbit folded on the period: transit, eclipse and the planet's phase curve between them">Phase</button>
-        <button data-v="map" hidden title="The planet's brightness-temperature map, the hemisphere facing the observer, and temperature against orbital phase">Map</button>
-        <button data-v="moon" hidden title="The moon of the planet on show: its own dip, planet-moon eclipses and the planet's wobble, each on its own">Moon</button>
+      <!-- the buttons sit in one row that scrolls sideways when the plot is narrow; the menus they open stay outside it -->
+      <div class="lcrow" role="toolbar" aria-label="Plot tools">
+        <span id="lcmsg" class="toast" aria-live="polite"></span>
+        <span class="lchint">scroll to zoom · drag to pan · shift+scroll for the flux axis · click to set the time</span>
+        <div class="seg small" id="viewsel" role="group" aria-label="Data shown">
+          <button data-v="lc" class="on">Light curve</button>
+          <button data-v="rv" disabled title="Radial velocities (load them on the Data tab)">RV</button>
+          <button data-v="phase" hidden title="The whole orbit folded on the period: transit, eclipse and the planet's phase curve between them">Phase</button>
+          <button data-v="map" hidden title="The planet's brightness-temperature map, the hemisphere facing the observer, and temperature against orbital phase">Map</button>
+          <button data-v="moon" hidden title="The moon of the planet on show: its own dip, planet-moon eclipses and the planet's wobble, each on its own">Moon</button>
+        </div>
+        <button id="lcreset" class="chip small" hidden>Reset view</button>
+        <button id="lcnorm" class="chip small" title="The plotted data are divided by a baseline that stays put while you move the sliders, so you see the model and the residuals change. This re-centres the data on the current model.">Re-centre data</button>
+        <button id="lcall" class="chip small" hidden aria-pressed="false" title="Every planet folded on its own period, side by side on one vertical scale, so the sizes of the signals can be compared">All planets</button>
+        <button id="lcfold" class="chip small" aria-pressed="false" title="Fold on the period: every transit drawn on top of the others, against time from the nearest mid-transit">Fold</button>
+        <button id="viewbtn" class="chip small" aria-haspopup="true" aria-expanded="false" title="How the data and model are drawn">View ▾</button>
+        <button id="lcexport" class="chip small" aria-haspopup="true" aria-expanded="false">Save figure ▾</button>
       </div>
-      <button id="lcreset" class="chip small" hidden>Reset view</button>
-      <button id="lcnorm" class="chip small" title="The plotted data are divided by a baseline that stays put while you move the sliders, so you see the model and the residuals change. This re-centres the data on the current model.">Re-centre data</button>
-      <button id="lcall" class="chip small" hidden title="Every planet folded on its own period, side by side on one vertical scale, so the sizes of the signals can be compared">All planets</button>
-      <button id="lcfold" class="chip small" title="Fold on the period: every transit drawn on top of the others, against time from the nearest mid-transit">Fold</button>
-      <button id="viewbtn" class="chip small" aria-haspopup="true" title="How the data and model are drawn">View ▾</button>
       <div id="viewpop" class="pop lcmenu viewpop" hidden></div>
-      <button id="lcexport" class="chip small" aria-haspopup="true">Save figure ▾</button>
       <div id="lcmenu" class="pop lcmenu" hidden>
         <button data-fmt="png-light">PNG · white</button>
         <button data-fmt="pdf-light">PDF · white</button>
@@ -96,18 +102,19 @@
 
   <aside id="panel">
     <div id="grip" role="separator" aria-orientation="vertical" aria-label="Resize side panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
-    <nav class="tabs" role="tablist">
-      <button role="tab" data-tab="system" class="on">System</button>
-      <button role="tab" data-tab="data">Data</button>
-      <button role="tab" data-tab="fit">Fit</button>
-      <button role="tab" data-tab="results">Results</button>
-      <button role="tab" data-tab="timing">Timing</button>
+    <nav class="tabs" role="tablist" aria-label="Panel">
+      <button role="tab" id="tabbtn-system" data-tab="system" aria-controls="tab-system" aria-selected="true" class="on">System</button>
+      <button role="tab" id="tabbtn-data" data-tab="data" aria-controls="tab-data" aria-selected="false" tabindex="-1">Data</button>
+      <button role="tab" id="tabbtn-fit" data-tab="fit" aria-controls="tab-fit" aria-selected="false" tabindex="-1">Fit</button>
+      <button role="tab" id="tabbtn-results" data-tab="results" aria-controls="tab-results" aria-selected="false" tabindex="-1">Results</button>
+      <button role="tab" id="tabbtn-timing" data-tab="timing" aria-controls="tab-timing" aria-selected="false" tabindex="-1">Timing</button>
+      <button id="panelmax" class="chip small" aria-pressed="false" title="Give the panel the whole screen, or bring the views back" aria-label="Panel on the whole screen">⤢</button>
     </nav>
-    <div class="tabpane on" id="tab-system"></div>
-    <div class="tabpane" id="tab-data"></div>
-    <div class="tabpane" id="tab-fit"></div>
-    <div class="tabpane" id="tab-results"></div>
-    <div class="tabpane" id="tab-timing"></div>
+    <div class="tabpane on" id="tab-system" role="tabpanel" aria-labelledby="tabbtn-system"></div>
+    <div class="tabpane" id="tab-data" role="tabpanel" aria-labelledby="tabbtn-data"></div>
+    <div class="tabpane" id="tab-fit" role="tabpanel" aria-labelledby="tabbtn-fit"></div>
+    <div class="tabpane" id="tab-results" role="tabpanel" aria-labelledby="tabbtn-results"></div>
+    <div class="tabpane" id="tab-timing" role="tabpanel" aria-labelledby="tabbtn-timing"></div>
   </aside>
 </div>
 <div id="intro" hidden role="dialog" aria-modal="true" aria-label="Start page"></div>

@@ -23,6 +23,7 @@
     <button class="btn" id="s-cols-btn" aria-expanded="false" aria-controls="s-cols">Columns</button>
     <label class="s-unit">Planet units <select id="s-units"><option value="earth">Earth</option><option value="jup">Jupiter</option></select></label>
     <label class="s-unit" title="Which catalogue's value is shown when both have one">Show first <select id="s-prefer"><option value="nea">NASA archive</option><option value="eu">exoplanet.eu</option></select></label>
+    <label class="s-unit" title="Which period and mid-transit time (always a pair from one solution) the Period, T mid and T unc. columns show: the NASA archive's pair with the smallest predicted uncertainty today, the archive's default parameter set, or exoplanet.eu's. A planet without the chosen one is marked †.">Ephemeris <select id="s-eph"><option value="best">NASA best-timed</option><option value="default">NASA archive default</option><option value="eu">exoplanet.eu</option></select></label>
     <span class="s-count" id="s-count" aria-live="polite"></span>
     <button class="btn" id="s-csv" title="Download the rows that pass the filters, with the columns on show">Export CSV</button>
   </div>

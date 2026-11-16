@@ -2,6 +2,9 @@
 // direct evaluation of orbitPosition at independently obtained times (tmid, eventTimes().tecl and .tperi, tperi + P/2,
 // and the upward zero crossing of Z found by bisection), and against the analytic distances and impact parameters.
 import { orbitElements, orbitPosition, eventTimes, derived, eventAnomaly, eventPosition, eventTime } from '../src/core/kepler.js';
+import { moonPosition, planetPosition } from '../src/core/exomoon.js';
+import { moonForView, moonPlacement } from '../src/viz/moonview.js';
+import { mapFrame, mapLonLat } from '../src/viz/planetmap.js';
 let ok = true; const check = (name, cond, info = '') => { console.log((cond ? 'ok   ' : 'FAIL ') + name + (info ? '   ' + info : '')); if (!cond) ok = false; };
 const DEG = Math.PI / 180;
 
@@ -64,4 +67,80 @@ check('ascending node: Z = 0 rising, on the -X axis, P/4 before transit when e =
   check('HD 80606 b: Y at transit = -b, Y at eclipse = +b_ecl', Math.abs(T[1] + bT) < 1e-12 && Math.abs(E[1] - bE) < 1e-12, `b = ${bT.toFixed(4)}, b_ecl = ${bE.toFixed(4)}; star-planet distance ${Math.hypot(...T).toFixed(2)} R* at transit, ${Math.hypot(...E).toFixed(2)} R* at eclipse`);
 }
 check('unknown kind gives NaN', Number.isNaN(eventAnomaly(orbitElements(cases[0]), 'nope')));
+
+// ---- the moon in the system view (src/viz/moonview.js: what scene.js and fallback2d.js place on screen) ----------------
+// Checked against relations written out here, not taken from exomoon.js: Kepler's third law for the planet-moon
+// separation, the centre of mass staying on the planet's Keplerian orbit, the moon's period, the direction of the
+// moon at the phases the model defines, and the sense of the orbit from its angular momentum.
+{
+  const MJ = 1.26686534e17 / 1.32712440018e20;   // Jupiter mass in solar masses: IAU 2015 Resolution B3 nominal GM values
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const systems = [
+    { name: 'Jupiter at 45 d, moon at 3.7 d (the worked example)', planet: { per: 45, tmid: 2.5, ars: 60.8, inc: 89.6, ecc: 0, omega: 0, rprs: 0.1 }, moon: { rmoon: 0.02, permoon: 3.7, phmoon: 0.15, mmoon: 0.01, imoon: 0, mplanet: 1, mstar: 1 } },
+    { name: 'eccentric planet (e = 0.3), tilted moon', planet: { per: 120, tmid: -7, ars: 110, inc: 89.8, ecc: 0.3, omega: 70, rprs: 0.08 }, moon: { rmoon: 0.015, permoon: 6.2, phmoon: 0.62, mmoon: 0.03, imoon: 25, mplanet: 2.5, mstar: 0.9 } },
+    { name: 'retrograde moon (imoon = 180), no wobble', planet: { per: 30, tmid: 0, ars: 40, inc: 90, ecc: 0, omega: 0, rprs: 0.1 }, moon: { rmoon: 0.03, permoon: 2.1, phmoon: 0.25, mmoon: 0, imoon: 180, mplanet: 0.8, mstar: 1.1 } },
+  ];
+  let wSep = 0, wBary = 0, wPer = 0, wK1 = 0, wScale = 0, wRing = 0, sense = true;
+  for (const sy of systems) {
+    const el = orbitElements(sy.planet), mp = { ...sy.moon, rprs: sy.planet.rprs }, mv = moonForView(el, mp), q = sy.moon.mmoon;
+    // Kepler's third law for both orbits: a_m / a_p = [ (Mp + Mm) / (M* + Mp + Mm) ]^(1/3) (P_m / P_p)^(2/3)
+    const mu = (sy.moon.mplanet * MJ * (1 + q)) / sy.moon.mstar, sep = sy.planet.ars * Math.cbrt(mu / (1 + mu)) * Math.pow(sy.moon.permoon / sy.planet.per, 2 / 3);
+    wSep = Math.max(wSep, Math.abs(mv.sep / sep - 1));
+    for (const dt of [-11.3, -0.4, 0, 0.07, 1.9, 23.7]) {
+      const t = sy.planet.tmid + dt, a = moonPlacement(el, mv, t, 1), pl = [...a.planet], mo = [...a.moon];
+      // true scale: the model's own positions
+      const pm = planetPosition(el, mp, t), mm = moonPosition(el, mp, t);
+      wK1 = Math.max(wK1, Math.hypot(...sub(pl, pm)), Math.hypot(...sub(mo, mm)), Math.abs(a.rMoon - sy.moon.rmoon));
+      wSep = Math.max(wSep, Math.abs(Math.hypot(...sub(mo, pl)) / sep - 1));
+      // centre of mass of planet and moon is on the planet's Keplerian orbit
+      const bc = orbitPosition(el, t, [0, 0, 0]), cm = [0, 1, 2].map((i) => (pl[i] + q * mo[i]) / (1 + q));
+      wBary = Math.max(wBary, Math.hypot(...sub(cm, bc)) / sy.planet.ars);
+      // one moon period later the moon is back where it was relative to the planet
+      const b = moonPlacement(el, mv, t + sy.moon.permoon, 1);
+      wPer = Math.max(wPer, Math.hypot(...sub(sub(b.moon, b.planet), sub(mo, pl))) / sep);
+      // enlarged k times: radius and separation both grow by k, so separation / planet radius is the true ratio
+      const k = 7.5, c = moonPlacement(el, mv, t, k);
+      wScale = Math.max(wScale, Math.abs(Math.hypot(...sub(c.moon, c.planet)) / (k * sy.planet.rprs) / (Math.hypot(...sub(mo, pl)) / sy.planet.rprs) - 1), Math.abs(c.rMoon / (k * sy.planet.rprs) - sy.moon.rmoon / sy.planet.rprs), Math.hypot(...sub(c.planet, pl)));
+      // the ring drawn round the planet passes through the moon: nearest ring point within half a segment
+      let dmin = Infinity; for (let i = 0; i < 128; i++) dmin = Math.min(dmin, Math.hypot(pl[0] + mv.ring[3 * i] - mo[0], pl[1] + mv.ring[3 * i + 1] - mo[1], pl[2] + mv.ring[3 * i + 2] - mo[2]));
+      wRing = Math.max(wRing, dmin / (sep * Math.PI / 128));
+    }
+    // sense of the orbit: the moon's angular momentum about the planet against the planet's about the star
+    const h = 1e-4, t0 = sy.planet.tmid + 0.3, r0 = moonPlacement(el, mv, t0 - h, 1), ra = sub(r0.moon, r0.planet), r1 = moonPlacement(el, mv, t0 + h, 1), rb = sub(r1.moon, r1.planet);
+    const Lm = cross(ra, sub(rb, ra)), Lp = cross(orbitPosition(el, t0 - h, [0, 0, 0]), sub(orbitPosition(el, t0 + h, [0, 0, 0]), orbitPosition(el, t0 - h, [0, 0, 0])));
+    const cosT = dot(Lm, Lp) / (Math.hypot(...Lm) * Math.hypot(...Lp)), want = Math.cos(sy.moon.imoon * DEG);
+    if (Math.abs(cosT - want) > 1e-6) sense = false;
+  }
+  check('moon: planet-moon separation is Kepler\'s third law for the two orbits', wSep < 1e-10, `max relative difference ${wSep.toExponential(1)}`);
+  check('moon: at true scale the view places planet and moon where the light-curve model has them', wK1 < 1e-13, `max difference ${wK1.toExponential(1)} R*`);
+  check('moon: the centre of mass of planet and moon stays on the planet\'s Keplerian orbit', wBary < 1e-13, `max ${wBary.toExponential(1)} of a/R*`);
+  check('moon: back at the same place relative to the planet after one moon period', wPer < 1e-9, `max ${wPer.toExponential(1)} of the separation`);
+  check('moon: enlarged with its planet, the pair keeps its proportions and the planet its place', wScale < 1e-12, `max ${wScale.toExponential(1)}`);
+  check('moon: the drawn orbit ring passes through the moon', wRing <= 1 + 1e-9, `nearest ring point at most ${wRing.toFixed(2)} of half a segment away`);
+  check('moon: angle between the moon\'s and the planet\'s orbital angular momenta is imoon (prograde 0, retrograde 180)', sense);
+  // phases: at the planet's mid-transit a moon with phase 0 is in front of the planet (toward the observer), 0.25 ahead of it (+X, the direction of motion), 0.5 behind it
+  const pl = { per: 30, tmid: 0, ars: 40, inc: 90, ecc: 0, omega: 0, rprs: 0.1 }, el = orbitElements(pl), dir = (ph) => { const a = moonPlacement(el, moonForView(el, { rmoon: 0.02, permoon: 2, phmoon: ph, mmoon: 0, imoon: 0, mplanet: 1, mstar: 1, rprs: 0.1 }), 0, 1), d = sub(a.moon, a.planet), n = Math.hypot(...d); return d.map((x) => x / n); };
+  const d0 = dir(0), d25 = dir(0.25), d50 = dir(0.5), v = sub(orbitPosition(el, 1e-3, [0, 0, 0]), orbitPosition(el, -1e-3, [0, 0, 0]));
+  check('moon: phase 0 is toward the observer, 0.25 ahead of the planet along its motion, 0.5 behind the planet', d0[2] > 0.999999 && d50[2] < -0.999999 && d25[0] > 0.999999 && v[0] > 0, `phase 0: Z ${d0[2].toFixed(6)}; phase 0.25: X ${d25[0].toFixed(6)}; the planet moves toward +X at mid-transit`);
+  check('moon: a planet without a moon, or a moon without a defined orbit, is not drawn', moonForView(el, null) === null && moonForView(el, { rmoon: 0.02, permoon: 2, rprs: 0.1 }) === null);
+}
+// The fitted brightness map on the 3D planet (viz/planetmap.js, mirrored by the planet shader) against the convention of
+// the Map view's globes and core/phasecurve.js: the observer sees sub-observer longitude lon0 = -(phase - 0.5) * 360 deg
+// (east of the substellar point; phase from mid-transit) and latitude lat0 = 90 - i. Independent of the shader: the
+// observer's direction +Z is put through mapLonLat at positions from orbitPosition.
+{
+  for (const inc of [90, 83.5]) {
+    const el = orbitElements({ per: 0.8135, tmid: 0, ars: 4.9, inc, ecc: 0, omega: 0, rprs: 0.16 });
+    let worst = 0, worstLat = 0;
+    for (const ph of [0.02, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]) {
+      const f = mapFrame(orbitPosition(el, ph * el.per, [0, 0, 0]), el), ll = mapLonLat([0, 0, 1], f);
+      const want = ((((-(ph - 0.5) * 360) + 180) % 360) + 360) % 360 - 180, d = Math.abs(((ll.lon - want + 540) % 360) - 180);
+      worst = Math.max(worst, d); worstLat = Math.max(worstLat, Math.abs(ll.lat - (90 - inc)));
+    }
+    check(`planet map (i = ${inc}°): the hemisphere facing the observer is the Map view's at every phase`, worst < 1e-6 && worstLat < 1e-6, `largest longitude error ${worst.toExponential(1)}°, latitude ${worstLat.toExponential(1)}°`);
+  }
+  const el = orbitElements({ per: 1, tmid: 0, ars: 5, inc: 90, ecc: 0, omega: 0, rprs: 0.1 }), p = orbitPosition(el, 0.25, [0, 0, 0]), f = mapFrame(p, el);
+  const toStar = mapLonLat(f.sub, f);
+  check('planet map: the substellar point faces the star', Math.abs(toStar.lon) < 1e-9 && Math.abs(toStar.lat) < 1e-9);
+}
 process.exit(ok ? 0 : 1);

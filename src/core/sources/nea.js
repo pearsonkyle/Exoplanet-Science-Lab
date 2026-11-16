@@ -8,6 +8,7 @@ const MAP = {
   teff: ['st_teff'], rstar: ['st_rad'], mstar: ['st_mass'], logg: ['st_logg'], feh: ['st_met'],
 };
 const err = (q) => (q.lo != null || q.hi != null ? ((q.lo ?? q.hi) + (q.hi ?? q.lo)) / 2 : 0);
+const pairErr = (q) => (q.lo != null || q.hi != null ? [q.lo ?? q.hi, q.hi ?? q.lo] : null);
 const PLAIN = { ra: 'ra', dec: 'dec', dist: 'sy_dist', vmag: 'sy_vmag', gmag: 'sy_gaiamag', tmag: 'sy_tmag', jmag: 'sy_jmag', kmag: 'sy_kmag', year: 'disc_year' };
 
 export default {
@@ -25,7 +26,12 @@ export default {
       for (const [f, c] of Object.entries(PLAIN)) { const x = S.n(row, c); if (Number.isFinite(x)) r.v[f] = x; }
       const lum = S.q(row, 'st_lum'); if (lum && !lum.lim) { r.v.lum = 10 ** lum.v; if (lum.ref) r.ref.lum = lum.ref; }
       // ephemeris: the pair from one reference when there is one, else the composite values (possibly from two papers)
-      const pair = S.q(row, 'eph_per') && S.q(row, 'eph_tmid');
+      // a paired ephemeris whose period disagrees with the composite one by more than 1% belongs to another planet (rows of
+      // the archive's `ps` table taken from ExoFOP for a sibling, e.g. HD 106315 c given 1221 d instead of 21.06 d): ignore it
+      const ePer = S.q(row, 'eph_per'), cPer = S.q(row, 'pl_orbper');
+      const pairBad = !!(ePer && cPer && ePer.v > 0 && cPer.v > 0 && Math.abs(ePer.v / cPer.v - 1) > 0.01);
+      const pair = !pairBad && S.q(row, 'eph_per') && S.q(row, 'eph_tmid');
+      if (pairBad) r.info.ephemerisRejected = `best-timed period ${ePer.v} d disagrees with ${cPer.v} d`;
       mapQuantities(r, S, row, pair ? { per: ['eph_per'], tmid: ['eph_tmid'] } : { per: ['pl_orbper'], tmid: ['pl_tranmid'] });
       r.info.ephemerisPaired = !!pair;
       r.info.tsys = pair ? S.s(row, 'eph_tsys') : S.s(row, 'pl_tranmid_systemref');
@@ -33,7 +39,7 @@ export default {
       // both choices of ephemeris, for the planner: `best` is what r.v.per / r.v.tmid hold (smallest predicted uncertainty
       // today, or the composite values when no reference gives a pair with errors); `default` is the archive's default
       // parameter set (ps default_flag = 1) when it gives both, else the composite values (which may mix two papers)
-      const eph = (pc, tc, tsys, kind) => { const p = S.q(row, pc), t = S.q(row, tc); return p && t && p.v > 0 && !p.lim && !t.lim ? { kind, per: p.v, tmid: t.v, perErr: err(p), tmidErr: err(t), hasErr: err(p) > 0 && err(t) > 0, ref: p.ref === t.ref ? p.ref : [p.ref, t.ref].filter(Boolean).join(' + '), refUrl: p.refUrl, mixed: p.ref !== t.ref, tsys: tsys || '' } : null; };
+      const eph = (pc, tc, tsys, kind) => { const p = S.q(row, pc), t = S.q(row, tc); return p && t && p.v > 0 && t.v > 2.2e6 && !p.lim && !t.lim ? { kind, cat: 'nea', per: p.v, tmid: t.v, perE: pairErr(p), tmidE: pairErr(t), perErr: err(p), tmidErr: err(t), hasErr: err(p) > 0 && err(t) > 0, ref: p.ref === t.ref ? p.ref : [p.ref, t.ref].filter(Boolean).join(' + '), refUrl: p.refUrl, mixed: p.ref !== t.ref, tsys: tsys || '' } : null; };
       const comp = eph('pl_orbper', 'pl_tranmid', S.s(row, 'pl_tranmid_systemref'), 'composite');
       r.info.ephemerides = { best: (pair && eph('eph_per', 'eph_tmid', S.s(row, 'eph_tsys'), 'best')) || comp, default: eph('def_per', 'def_tmid', S.s(row, 'def_tsys'), 'default') || comp };
       r.v.status = S.n(row, 'pl_controv_flag') ? 'Confirmed (disputed)' : 'Confirmed';

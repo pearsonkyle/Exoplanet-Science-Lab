@@ -23,7 +23,7 @@ export function describeKey(key, session) {
   if (ld) label = `LD ${Number(ld[1]) + 1}`;
   if (sfx) {
     const rv = /^rv(\d+)$/.exec(sfx), sets = (session && session.data && session.data.radial_velocity) || [];
-    label += rv && sets[rv[1] - 1] ? ` (${sets[rv[1] - 1].name})` : base === 'a2' ? ` (epoch ${sfx})` : ` (${sfx})`;
+    label += rv && sets[rv[1] - 1] ? ` (${sets[rv[1] - 1].name})` : ['a2', 'jitlc', 'dil'].includes(base) ? ` (epoch ${sfx})` : ` (${sfx})`;
   } else if (session && session.planets && session.planets.length > 1 && p && ['rprs', 'ars', 'inc', 'per', 'tmid', 'ecc', 'omega', 'mplanet', 'K'].includes(base)) label += ` (${session.planets[0].letter})`;
   return { label, unit };
 }
@@ -326,9 +326,9 @@ export function markdownReportFor(session, opts = {}) {
 
 // ---- LaTeX -------------------------------------------------------------------------------------------------------
 
-const TEX = { rprs: '$R_p/R_\\star$', ars: '$a/R_\\star$', inc: '$i$', per: '$P$', tmid: '$T_{\\rm mid}$', ecc: '$e$', omega: '$\\omega$', mplanet: '$M_p$', K: '$K$', a2: 'airmass $k$', rvlin: '$\\dot{\\gamma}$', rvquad: '$\\ddot{\\gamma}$', jit: '$\\sigma_{\\rm jit}$',
+const TEX = { rprs: '$R_p/R_\\star$', ars: '$a/R_\\star$', inc: '$i$', per: '$P$', tmid: '$T_{\\rm mid}$', ecc: '$e$', omega: '$\\omega$', mplanet: '$M_p$', K: '$K$', a2: 'airmass $k$', rvlin: '$\\dot{\\gamma}$', rvquad: '$\\ddot{\\gamma}$', jit: '$\\sigma_{\\rm jit}$', jitlc: '$\\sigma_{\\rm jit,LC}$', dil: 'dilution $d$', vsini: '$v\\sin i_\\star$', lambda: '$\\lambda$',
   mstar: '$M_\\star$', rstar: '$R_\\star$', teff: '$T_{\\rm eff}$', feh: '[Fe/H]', aAU: '$a$', b: '$b$', t14: '$T_{14}$', emid: '$T_{\\rm ecl}$', rpJup: '$R_p$', teq: '$T_{\\rm eq}$', rhoStar: '$\\rho_\\star$' };
-const TEX_UNIT = { '°': 'deg', 'M Jup': '$M_{\\rm Jup}$', 'R Jup': '$R_{\\rm Jup}$', 'M☉': '$M_\\odot$', 'R☉': '$R_\\odot$', 'm/s/d': 'm\\,s$^{-1}$\\,d$^{-1}$', 'm/s/d²': 'm\\,s$^{-1}$\\,d$^{-2}$', 'm/s': 'm\\,s$^{-1}$', 'g/cm³': 'g\\,cm$^{-3}$' };
+const TEX_UNIT = { '°': 'deg', 'M Jup': '$M_{\\rm Jup}$', 'R Jup': '$R_{\\rm Jup}$', 'M☉': '$M_\\odot$', 'R☉': '$R_\\odot$', 'm/s/d': 'm\\,s$^{-1}$\\,d$^{-1}$', 'm/s/d²': 'm\\,s$^{-1}$\\,d$^{-2}$', 'm/s': 'm\\,s$^{-1}$', 'km/s': 'km\\,s$^{-1}$', 'g/cm³': 'g\\,cm$^{-3}$' };
 const texEsc = (t) => String(t).replace(/([%&_#])/g, '\\$1');
 const texKey = (key, s) => { const [base, sfx] = key.split('@'), ld = /^ld([0-3])$/.exec(base), t = ld ? `$u_${Number(ld[1]) + 1}$` : TEX[base] || texEsc(base); const rv = sfx && /^rv(\d+)$/.exec(sfx), sets = (s.data && s.data.radial_velocity) || []; return sfx ? `${t} (${texEsc(rv && sets[rv[1] - 1] ? sets[rv[1] - 1].name : sfx)})` : t; };
 const texPM = (q) => { const f = formatValue(q.median, q.plus, q.minus); return !f.plus ? `$${f.value}$` : f.plus === f.minus ? `$${f.value} \\pm ${f.plus}$` : `$${f.value}^{+${f.plus}}_{-${f.minus}}$`; };

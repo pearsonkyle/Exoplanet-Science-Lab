@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- Standalone harness for the system view (src/viz/scene.js and fallback2d.js), served by the Vite dev server:
-     test/scene_harness.html?sys=trappist|hd80606|single|wide (&list=1 with single: a one-entry planets list) &view=free|earth|top &highlight=transit|eclipse|periastron|apastron|ascending
+     test/scene_harness.html?sys=trappist|hd80606|single|wide|moon (moon: &imoon=<deg> &phmoon=<0..1> &mmoon=<Mm/Mp>) (&list=1 with single: a one-entry planets list) &view=free|earth|top &highlight=transit|eclipse|periastron|apastron|ascending
        &t=<days after the active planet's mid-transit> &active=<index> &fit=auto|active|all &fly=1 &align=1 (all planets transit at t = 0)
        &fallback=1 (2D canvas) &enlarge=1 &hz=1 &style=blueprint &labels=0 &inset=0 &play=<days per second>
      window.viz is the view; window.sysArg the argument given to setSystem. -->
@@ -58,6 +58,12 @@ function single() {   // a plain hot Jupiter, with a one-entry `planets` list: m
   return s;
 }
 
+function moon() {   // a Jupiter at 45 d with a moon of 2.2 Earth radii on a 3.7 d orbit (the worked example), drawn orbiting the planet
+  const el = orbitElements({ per: 45, tmid: 0, ars: 60.8, inc: 89.6, ecc: 0, omega: 0 });
+  const m = { rmoon: 0.02, permoon: 3.7, phmoon: +(q.get('phmoon') ?? 0.15), mmoon: +(q.get('mmoon') ?? 0.01), imoon: +(q.get('imoon') ?? 0), mplanet: 1, mstar: 1, rprs: 0.1 };
+  return { el, rprs: 0.1, claret: [0, 0.8, 0, -0.2], teff: 5700, name: 'Planet b', look: 'jupiter', hz: null, moon: m };
+}
+
 const box = document.querySelector('#viz'), labels = document.querySelector('#labels'), inset = document.querySelector('#insetframe');
 let viz;
 if (q.get('fallback') === '1') viz = createFallbackViz(box, labels, inset, 'forced by ?fallback=1');
@@ -65,7 +71,7 @@ else {
   try { viz = await (await import('/src/viz/scene.js')).createViz(box, labels, inset, (err) => { console.error('render error', err); box.innerHTML = ''; viz = window.viz = createFallbackViz(box, labels, inset, String(err)); viz.setSystem(sysArg); }); }
   catch (err) { console.warn('WebGL view failed, using the 2D fallback:', err); box.innerHTML = ''; viz = createFallbackViz(box, labels, inset, String(err)); }
 }
-const sysArg = ({ trappist, hd80606, single, wide })[q.get('sys') || 'trappist']();
+const sysArg = ({ trappist, hd80606, single, wide, moon })[q.get('sys') || 'trappist']();
 const o = {};
 for (const k of ['enlarge', 'hz', 'labels', 'inset', 'orbit', 'corridor', 'grid', 'glow', 'stars']) if (q.has(k)) o[k] = q.get(k) === '1';
 for (const k of ['fit', 'style', 'look']) if (q.has(k)) o[k] = q.get(k);
@@ -85,7 +91,7 @@ let last = performance.now(), frames = 0, fps = 0, acc = 0;
   if (acc > 0.5) { fps = frames / acc; frames = 0; acc = 0; }
   if (rate) { t += rate * dt; window.viz.setTime(t); }
   const info = window.viz.getInfo ? window.viz.getInfo() : {};
-  hud.textContent = `${window.viz.kind} · ${info.planets ?? '?'} planet(s) · t = ${(t - sysArg.el.tmid).toFixed(3)} d\n${info.drawCalls ?? '-'} draw calls · ${fps.toFixed(0)} fps`;
+  hud.textContent = `${window.viz.kind} · ${info.planets ?? '?'} planet(s)${info.moons ? ` · ${info.moons} moon(s)` : ''} · t = ${(t - sysArg.el.tmid).toFixed(3)} d\n${info.drawCalls ?? '-'} draw calls · ${fps.toFixed(0)} fps`;
 })(last);
 </script>
 </body>

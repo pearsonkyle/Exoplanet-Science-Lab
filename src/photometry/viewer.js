@@ -11,6 +11,9 @@ export class ImageViewer {
     this.w = 0; this.h = 0; this.data = null; this.scale = 1; this.ox = 0; this.oy = 0; this.fitted = false;
     this.stretch = { kind: 'asinh', lo: 10, hi: 99.8 }; this.vmin = 0; this.vmax = 1;
     this.onDraw = null; this.onClick = null; this.onHover = null;
+    // a drawing tool (line cut, region box): when dragTool() returns true a one-finger / mouse drag calls
+    // onDrag(x0, y0, x1, y1, phase 'move' | 'end') in image pixels instead of panning; two fingers still pan and zoom
+    this.dragTool = null; this.onDrag = null;
     this._bind();
     new ResizeObserver(() => { this.resize(); }).observe(canvas);
   }
@@ -70,16 +73,20 @@ export class ImageViewer {
   _bind() {
     const cv = this.cv, pts = new Map(); let moved = 0, pinch = 0, start = null;
     const pos = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-    cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, pos(e)); moved = 0; start = pos(e); if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); } });
+    const hover = (p) => { if (this.onHover && this.data) { const [x, y] = this.toImage(p[0], p[1]), xi = Math.round(x), yi = Math.round(y); this.onHover(x, y, xi >= 0 && yi >= 0 && xi < this.w && yi < this.h ? this.data[yi * this.w + xi] : NaN); } };
+    // a finger never hovers: the readout follows the touch as well
+    let drawing = false;
+    cv.addEventListener('pointerdown', (e) => { try { cv.setPointerCapture(e.pointerId); } catch { /* a synthetic event has no pointer to capture */ } pts.set(e.pointerId, pos(e)); moved = 0; start = pos(e); drawing = pts.size === 1 && !e.shiftKey && !!(this.dragTool && this.dragTool() && this.data); if (e.pointerType !== 'mouse') hover(start); if (pts.size === 2) { drawing = false; const [a, b] = [...pts.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); } });
     cv.addEventListener('pointermove', (e) => {
       const p = pos(e);
       if (pts.has(e.pointerId)) {
         const q = pts.get(e.pointerId);
-        if (pts.size === 1) { this.ox += p[0] - q[0]; this.oy += p[1] - q[1]; moved += Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]); pts.set(e.pointerId, p); this.draw(); }
+        if (pts.size === 1 && drawing) { moved += Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]); pts.set(e.pointerId, p); hover(p); if (moved >= 5 && this.onDrag) { const a = this.toImage(start[0], start[1]), b = this.toImage(p[0], p[1]); this.onDrag(a[0], a[1], b[0], b[1], 'move'); } }
+        else if (pts.size === 1) { this.ox += p[0] - q[0]; this.oy += p[1] - q[1]; moved += Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]); pts.set(e.pointerId, p); this.draw(); }
         else if (pts.size === 2) { pts.set(e.pointerId, p); const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]); if (pinch > 0) this.zoomAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, d / pinch); pinch = d; moved += 10; }
-      } else if (this.onHover && this.data) { const [x, y] = this.toImage(p[0], p[1]), xi = Math.round(x), yi = Math.round(y); this.onHover(x, y, xi >= 0 && yi >= 0 && xi < this.w && yi < this.h ? this.data[yi * this.w + xi] : NaN); }
+      } else hover(p);
     });
-    const up = (e) => { if (!pts.has(e.pointerId)) return; pts.delete(e.pointerId); if (moved < 5 && start && this.onClick && this.data && pts.size === 0) { const [x, y] = this.toImage(start[0], start[1]); if (x > -0.5 && y > -0.5 && x < this.w - 0.5 && y < this.h - 0.5) this.onClick(x, y, e); } };
+    const up = (e) => { if (!pts.has(e.pointerId)) return; const last = pts.get(e.pointerId); pts.delete(e.pointerId); if (drawing && moved >= 5 && pts.size === 0) { drawing = false; if (this.onDrag) { const a = this.toImage(start[0], start[1]), b = this.toImage(last[0], last[1]); this.onDrag(a[0], a[1], b[0], b[1], 'end'); } return; } drawing = false; if (moved < 5 && start && this.onClick && this.data && pts.size === 0) { const [x, y] = this.toImage(start[0], start[1]); if (x > -0.5 && y > -0.5 && x < this.w - 0.5 && y < this.h - 0.5) this.onClick(x, y, e); } };
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', (e) => pts.delete(e.pointerId));
     cv.addEventListener('wheel', (e) => { e.preventDefault(); const p = pos(e); this.zoomAt(p[0], p[1], Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
     cv.addEventListener('dblclick', () => this.fit());

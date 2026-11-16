@@ -1,4 +1,4 @@
-// Section 5 of the Validation page: checks that live elsewhere in the project, each described declaratively.
+// Section 5 of the validation part of the Methods page (tab "Validation"): checks that live elsewhere in the project, each described declaratively.
 // Pure data (no DOM), imported by the page, by tools/validation/project_reference.mjs and by test/validation.test.mjs.
 //
 // HOW TO ADD A SECTION (the full recipe is in validation/README.md, "Adding a section"):
@@ -29,7 +29,7 @@ export const TOPICS = [
   {
     id: 'exotic', status: 'done', title: 'EXOTIC’s own examples, reproduced',
     purpose: 'The example data sets shipped with EXOTIC, fitted here and compared with EXOTIC’s own results.',
-    headline: { value: '0.11 σ', label: 'largest shift of a fitted value from EXOTIC’s; error bars within 6%' },
+    headline: { value: '0.11 σ', label: 'largest shift of a fitted value from EXOTIC’s in the five-night fit, error bars within 6%; the single-night fit is within the test’s limits of 0.25σ and 15%' },
     rows: [
       { what: 'Transit model against pylightcurve, five planets up to e = 0.93', result: 'largest flux difference 1.0e-7', check: 'transit model matches pylightcurve', quote: 'max |Δflux| 1.0e-7' },
       { what: 'Single transit: posterior against EXOTIC’s lc_fitter', result: 'means within 0.25σ, widths within 15% (the test’s limits)', check: 'single transit: posterior matches EXOTIC', quote: 'means within 0.25σ, widths within 15%' },
@@ -46,13 +46,15 @@ export const TOPICS = [
   {
     id: 'sampler', status: 'done', title: 'The nested sampler on hard problems',
     purpose: 'The sampler on awkward problems with known answers (thin ridges, several peaks, funnels), alongside UltraNest.',
-    headline: { value: '46 of 47', label: 'problems solved within tolerance; the other stops at its budget, flagged' },
+    headline: { value: '44 of 47', label: 'problems within tolerance on one seed of the full run; the three others are listed below, one of them not flagged by the run itself' },
     rows: [
-      { what: 'Correlated Gaussian, 10 parameters, ρ = 0.99', result: 'ln Z = −7.138 ± 0.326, exact −6.931', check: 'a-gauss-d10-r0.99', quote: 'lnZ -7.138 ± 0.326 vs -6.931' },
-      { what: 'Transit with a/R★ and inclination both free (0.99 correlated)', result: 'ln Z = 744.267 ± 0.209, quadrature 744.090; means within 0.035 sd', check: 'c-transit-b0.5-1000ppm-ars+inc', quote: 'lnZ 744.267 ± 0.209 vs 744.090' },
-      { what: 'Period aliases: three separate peaks', result: 'ln Z = 1.863 ± 0.157, exact 2.121; the peaks are reported with their weights', check: 'd-aliases', quote: 'lnZ 1.863 ± 0.157 vs 2.121' },
-      { what: 'Neal’s funnel, 4 parameters', result: 'ln Z = −16.873 ± 0.165, exact −16.588 (1.7σ low), after a restart with a warning', check: 'g-funnel-4d', quote: 'lnZ -16.873 ± 0.165 vs -16.588' },
-      { what: 'Three planets, 17 free parameters', result: 'converged in 952,538 likelihood calls', check: 'h-toy-17d', quote: '952538 calls' },
+      { what: 'Correlated Gaussian, 10 parameters, ρ = 0.99', result: 'ln Z = −7.729 ± 0.335, exact −6.931 (2.4σ low on this seed; over 32 seeds the mean offset is −0.078 ± 0.054)', check: 'a-gauss-d10-r0.99', quote: 'lnZ -7.729 ± 0.335 vs -6.931' },
+      { what: 'Transit with a/R★ and inclination both free (0.99 correlated)', result: 'ln Z = 744.121 ± 0.196, quadrature 744.090; means within 0.025 sd', check: 'c-transit-b0.5-1000ppm-ars+inc', quote: 'lnZ 744.121 ± 0.196 vs 744.090' },
+      { what: 'Period aliases: three separate peaks', result: 'ln Z = 2.166 ± 0.154, exact 2.121; the peaks are reported with their weights', check: 'd-aliases', quote: 'lnZ 2.166 ± 0.154 vs 2.121' },
+      { what: 'Neal’s funnel, 4 parameters', result: 'ln Z = −16.872 ± 0.158, exact −16.588 (1.8σ low on this seed); over 48 seeds −0.045 ± 0.026 since the ellipsoid check, −0.24 ± 0.05 before', check: 'g-funnel-4d', quote: 'lnZ -16.872 ± 0.158 vs -16.588' },
+      { what: 'Correlated Gaussian, 15 parameters, ρ = 0.99', result: 'ln Z = −10.245 ± 0.359, exact −10.397', check: 'a-gauss-d15-r0.99', quote: 'lnZ -10.245 ± 0.359 vs -10.397' },
+      { what: 'Banana, 5 parameters', result: 'ln Z = −17.033 ± 0.204, exact −16.732 (1.5σ); posterior widths off by 23% on this seed, beyond the 20% tolerance', check: 'b-banana-5d', quote: 'widths within 23.4%', failing: true },
+      { what: 'One narrow peak, 8 parameters (information 63 nats)', result: 'ln Z = 0.803 ± 0.373, exact 0 (2.2σ, just past the 0.8 ceiling of the check, and the run raised no warning); over 32 seeds the mean offset is 0.085 ± 0.076, so this seed is a fluctuation, not a bias', check: 'e-narrow-8d-H63', quote: 'lnZ 0.803 ± 0.373 vs 0.000', failing: true },
       { what: 'Correlated Gaussian, 20 parameters, ρ = 0.999', result: 'not converged at the one-million-call budget (reported as such)', check: 'a-gauss-d20-r0.999', quote: 'max calls reached', failing: true },
     ],
     against: ['UltraNest'], refs: ['buchner2021', 'buchner2016', 'buchner2019'],
@@ -64,7 +66,7 @@ export const TOPICS = [
   {
     id: 'limbdark', status: 'done', title: 'Limb darkening from stellar parameters',
     purpose: 'How a star darkens toward its edge, computed from its temperature, gravity and metallicity, against ExoTETHyS.',
-    headline: { value: '13 ppm', label: 'largest resulting difference in a transit light curve, F to M dwarfs' },
+    headline: { value: '13 ppm', label: 'largest resulting difference in a transit light curve with the four-coefficient law, F to M dwarfs (21 ppm with the quadratic law)' },
     rows: [
       { what: 'HD 80606, TESS band, against the coefficients EXOTIC’s examples use', result: '0.56 ppm in flux', check: 'HD 80606 / TESS anchor: transit', quote: 'largest flux difference 0.56 ppm' },
       { what: 'Four-coefficient law, worst spectral type (K)', result: 'I(μ) rms 0.0009; 12.9 ppm in a transit', check: 'four-coefficient law, K stars', quote: 'flux 12.9 ppm' },
@@ -136,11 +138,11 @@ export const TOPICS = [
       { what: 'FITS pixel values, six data types', result: '3.7e-16', check: 'BITPIX 8, 16, 32, 64, -32, -64 decode', quote: 'largest difference 3.7e-16', test: 'test/fits.test.mjs' },
       { what: 'UTC to BJD_TDB, 35 targets and dates', result: 'within 0.045 s', check: 'UTC -> BJD_TDB against astropy', quote: 'largest difference 0.045 s', test: 'test/fits.test.mjs' },
       { what: 'Gaussian-process detrending: likelihood against scikit-learn', result: '1.1e-13', check: 'log marginal likelihood matches scikit-learn', quote: 'difference 1.1e-13', test: 'test/gp.test.mjs' },
-      { what: 'End to end on synthetic frames with an injected transit', result: 'scatter 0.378%, at the photon-noise level', check: 'residual scatter is at the photon-noise level', quote: '0.378%' },
+      { what: 'End to end on synthetic frames with an injected transit', result: 'scatter 0.372%, at the photon-noise level', check: 'residual scatter is at the photon-noise level', quote: '0.372%' },
     ],
     against: ['photutils', 'astropy', 'EXOTIC'], refs: ['bradley', 'astropy2022', 'virtanen2020'],
     tests: ['test/photometry.test.mjs', 'test/fits.test.mjs', 'test/gp.test.mjs'], generators: ['test/make_photometry_reference.py'], stored: ['test/photometry_reference.json'],
-    caveat: 'Synthetic frames and two archived TESS and Kepler pixel files only: no real ground-based images have been reduced and compared with a published light curve.',
+    caveat: 'Synthetic frames and two archived TESS and Kepler pixel files. One set of real ground-based frames (EXOTIC’s HAT-P-32 b sample, 142 frames) is reduced in a separate test, test/exotic_photometry.test.mjs, and compared with EXOTIC’s reduction of the same frames: the two choose different apertures and comparison stars and give Rp/R★ = 0.1452 ± 0.0032 here against 0.1562 ± 0.0034. No reduction has been compared with a published light curve.',
   },
   {
     id: 'relations', status: 'done', title: 'Estimates in the catalogue',

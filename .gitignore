@@ -10,12 +10,18 @@ ld_table.json
 .venv/
 .venv*/
 test-results/
-# python package: build outputs and the generated JS bundle (rebuild with npm run build:python)
+# python package: build outputs. The generated JS bundle (python/esl/_core) IS committed, so that
+# pip install from git works without Node; rebuild it with npm run build:python when src/core changes.
 python/examples/output/
 .pytest_cache/
 python/dist/
 python/build/
-python/esl/_core/esl_core.js
-python/esl/_core/esl_ld_spectral.js
-python/esl/_core/manifest.json
 mcp/node_modules/
+# public JWST x1dints files for test/spectroscopy.test.mjs (207 MB; URLs in test/make_spectroscopy_reference.py)
+test/data/jwst/
+# documentation site: build output and the pages generated from the code (npm run docs:gen)
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+docs/reference/
+docs/guide/examples.md
+.vitepress/
