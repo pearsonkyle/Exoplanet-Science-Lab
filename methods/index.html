@@ -4,11 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Methods · Exoplanet Science Lab</title>
-<meta name="description" content="The methods of Exoplanet Science Lab as implemented, and how well they work: transit model and limb darkening, orbits, radial velocities, the likelihood, nested sampling, timing, phase curves, exomoons, N-body dynamics, catalogues, photometry and noise diagnostics, with equations, default priors and known limits; comparisons with batman, PyTransit, exoplanet-core, PyAstronomy, ellc, pylightcurve, EXOTIC, pyaneti, radvel, emcee, dynesty and UltraNest and with a 30-digit reference; a reproducibility table, one bibliography and a methods paragraph to adapt for a paper.">
+<meta name="description" content="The methods of Exoplanet Science Lab as implemented, and how well they work: transit model and limb darkening, orbits, radial velocities, the likelihood, nested sampling, timing, phase curves, exomoons, N-body dynamics, catalogues, photometry and noise diagnostics, with equations, default priors and known limits; comparisons with DS9, IRAF imexam, AstroImageJ, astrometry.net, Stellarium, REBOUND, batman, PyTransit, exoplanet-core, PyAstronomy, ellc, pylightcurve, EXOTIC, pyaneti, radvel, emcee, dynesty and UltraNest and with a 30-digit reference; a reproducibility table, a part-by-part comparison with other software, one bibliography and a methods paragraph to adapt for a paper.">
 <meta name="esl-root" content="../">
+<!-- the site theme before first paint (src/site/theme.js) -->
+<script>try{var t=localStorage.getItem('esl.theme');if(t&&t!=='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="stylesheet" href="../src/site/site.css">
 <link rel="stylesheet" href="../src/validation/validation.css">
 <link rel="stylesheet" href="../src/methods/methods.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Exoplanet Science Lab", "applicationCategory": "ScientificApplication", "operatingSystem": "Any (web browser)", "url": "https://pearsonkyle.github.io/Exoplanet-Science-Lab/", "codeRepository": "https://github.com/pearsonkyle/Exoplanet-Science-Lab", "license": "https://opensource.org/licenses/MIT", "author": {"@type": "Person", "name": "Kyle A. Pearson"}, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "description": "Plan, observe, reduce and fit exoplanet observations in the browser: an online FITS viewer and photometry pipeline, transit, radial-velocity and N-body models with nested sampling, a transit planner, a sky view and a merged NASA Exoplanet Archive / exoplanet.eu catalogue.", "featureList": ["Online FITS viewer with radial profiles, focus maps and region statistics (in the manner of DS9 and IRAF imexam)", "Photometry pipeline with aperture search and AAVSO Exoplanet Watch reports (as EXOTIC)", "Plate solving against Gaia DR3 without an API key", "Transit, eclipse, phase-curve and radial-velocity models (compared with batman, PyTransit, pylightcurve, RadVel)", "Nested sampling with Bayesian evidence", "N-body transit-timing variations (compared with REBOUND)", "Transit planner for 89 observatories", "Planetarium sky view with exoplanet hosts", "Python package and MCP server"]}</script>
 </head>
 <body class="page">
 <header id="sitebar" data-active="methods"></header>
@@ -22,6 +25,7 @@
   <nav id="mtabs" class="mtabs" aria-label="Parts of this page">
     <a href="#methods" data-tab="methods">Methods</a>
     <a href="#validation" data-tab="validation">Validation</a>
+    <a href="#software" data-tab="software">Other software</a>
     <a href="#reproducibility" data-tab="reproducibility">Reproducibility</a>
     <a href="#references" data-tab="references">References</a>
     <a href="#cite" data-tab="cite">How to cite</a>
@@ -132,6 +136,127 @@
           <div class="vbody"></div>
         </section>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== Other software: what this site does in place of which tools, the check against each, and where each
+       still does more. Static HTML (readable without JavaScript and by search engines); every number is one of the
+       Validation tab's, linked to it. Keep the two in step. ===== -->
+  <div class="mpanel" id="software" data-tab="software" hidden>
+    <div class="vsections mwide soft">
+      <section>
+        <h2>One site in place of several programs</h2>
+        <p>An exoplanet observation usually passes through a handful of programs: a FITS viewer such as
+          <a href="https://ds9.si.edu/" rel="noopener">SAOImage DS9</a> and IRAF’s <code>imexam</code> to look at the frames, a photometry pipeline such as
+          <a href="https://github.com/rzellem/EXOTIC" rel="noopener">EXOTIC</a> or <a href="https://www.astro.louisville.edu/software/astroimagej/" rel="noopener">AstroImageJ</a>,
+          a light-curve model such as <a href="https://lkreidberg.github.io/batman/" rel="noopener">batman</a> under a sampler, a radial-velocity code such as
+          <a href="https://radvel.readthedocs.io/" rel="noopener">RadVel</a>, and the <a href="https://exoplanetarchive.ipac.caltech.edu/" rel="noopener">NASA Exoplanet Archive</a>,
+          <a href="https://exoplanet.eu/" rel="noopener">exoplanet.eu</a> and a transit finder to choose the target. Exoplanet Science Lab does each of these
+          steps in the browser, with one model and one likelihood behind all of them. There is nothing to install, it runs on a phone, and the
+          files you open never leave your computer. The same core is a <a href="../docs/guide/python.html">Python package</a> and an
+          <a href="../docs/guide/mcp.html">MCP server</a> for scripts and agents.</p>
+        <p>This page says which tool each part can stand in for, how it was checked against that tool, and where the other tool still does
+          more. Every number is one of the <a href="#validation">Validation</a> tab’s, which says how it was measured.</p>
+      </section>
+
+      <section id="software-table">
+        <h2>Part by part</h2>
+        <div class="softwrap"><table class="vtable softtable">
+          <thead><tr><th>Job</th><th>Often done with</th><th>Here</th><th>Checked against them</th><th>Where they still do more</th></tr></thead>
+          <tbody>
+          <tr id="sw-fits"><th>Looking at FITS images</th>
+            <td><a href="https://ds9.si.edu/" rel="noopener">SAOImage DS9</a>, <a href="https://iraf-community.github.io/" rel="noopener">IRAF</a> / PyRAF <code>imexam</code>,
+              <a href="https://imexam.readthedocs.io/" rel="noopener">imexam (Python)</a>, <a href="https://www.astro.louisville.edu/software/astroimagej/" rel="noopener">AstroImageJ</a></td>
+            <td>An online FITS viewer (<a href="../analyze/photometry/">Analyze › Photometry</a>): every BITPIX, tile-compressed <code>.fz</code>, colour cubes and Bayer
+              mosaics; radial profiles with Gaussian and Moffat fits, curves of growth, cuts, region statistics, a focus map across the field, the
+              header. <a href="#imexam">Method</a></td>
+            <td>Radial profiles and curves of growth equal <a href="https://photutils.readthedocs.io/" rel="noopener">photutils</a> to 6e-15; region statistics
+              equal astropy’s <code>sigma_clipped_stats</code> to 1e-14; tile-compressed files bit-identical to astropy. <a href="#val-photometry">Evidence</a></td>
+            <td>DS9: region files, contours, mosaics, blinking, scripting (XPA, SAMP). IRAF: a complete reduction system, spectra included.</td></tr>
+          <tr id="sw-photometry"><th>Photometry pipeline</th>
+            <td><a href="https://github.com/rzellem/EXOTIC" rel="noopener">EXOTIC</a>, <a href="https://www.astro.louisville.edu/software/astroimagej/" rel="noopener">AstroImageJ</a>,
+              <a href="https://photutils.readthedocs.io/" rel="noopener">photutils</a></td>
+            <td>Calibration, tracking, exact apertures, a search over apertures, annuli and comparison stars scored with the transit model,
+              SNR-optimal apertures, Gaia-ranked comparison stars, and the AAVSO Exoplanet Watch report. <a href="#photometry">Method</a></td>
+            <td>On EXOTIC’s own HAT-P-32 b frames: residual scatter 0.496% against EXOTIC 4.3.1’s 0.573%; the search in 9.1 s against about 30 s;
+              Exoplanet Watch reports identical to EXOTIC’s character for character; aperture sums equal photutils to 4e-16.
+              <a href="#val-photometry">Evidence</a></td>
+            <td>At EXOTIC’s own choice of aperture this code is worse (0.599% against 0.573%), and the reason has not been found. EXOTIC is the
+              Exoplanet Watch pipeline, with its community. AstroImageJ is the usual tool of TESS follow-up groups.</td></tr>
+          <tr id="sw-wcs"><th>Plate solving</th>
+            <td><a href="https://nova.astrometry.net/" rel="noopener">astrometry.net</a></td>
+            <td>Stars matched to Gaia DR3 in the browser, with no account or key; the target found by name. <a href="#platesolve">Method</a></td>
+            <td>A HAT-P-32 b frame solved to 0.74″ rms; within 1.13″ of an independent astropy solution across the frame; the WCS fit equals
+              astropy’s <code>fit_wcs_from_points</code> to 1e-7 px. <a href="#platesolve">Evidence</a></td>
+            <td>astrometry.net solves blind, with no pointing and any scale. This code needs a rough position (a name or the header) and about eight
+              stars in common with Gaia.</td></tr>
+          <tr id="sw-transit"><th>Transit light curves</th>
+            <td><a href="https://lkreidberg.github.io/batman/" rel="noopener">batman</a>, <a href="https://pytransit.readthedocs.io/" rel="noopener">PyTransit</a>,
+              <a href="https://github.com/ucl-exoplanets/pylightcurve" rel="noopener">pylightcurve</a>, <a href="https://github.com/exoplanet-dev/exoplanet-core" rel="noopener">exoplanet-core</a>,
+              <a href="https://pypi.org/project/ellc/" rel="noopener">ellc</a>, <a href="https://pyastronomy.readthedocs.io/" rel="noopener">PyAstronomy</a></td>
+            <td>Any limb-darkening law up to four coefficients, eccentric orbits, exposure averaging, eclipses, phase curves, maps and moons.
+              <a href="#transit">Method</a></td>
+            <td>Within 1e-10 of a 30-digit reference; within 1.0e-7 of pylightcurve (the model inside EXOTIC) on five planets up to e = 0.93; the other codes
+              compared on the same grid. <a href="#val-transit">Evidence</a></td>
+            <td>Compiled codes are faster: for the quadratic law batman and PyTransit are several times quicker. This code is faster than batman for
+              the four-coefficient law. <a href="#transit-speed">Timings</a></td></tr>
+          <tr id="sw-fit"><th>Fitting and posteriors</th>
+            <td>EXOTIC’s fitters, <a href="https://johannesbuchner.github.io/UltraNest/" rel="noopener">UltraNest</a>,
+              <a href="https://dynesty.readthedocs.io/" rel="noopener">dynesty</a>, <a href="https://emcee.readthedocs.io/" rel="noopener">emcee</a></td>
+            <td>Nested sampling with evidence, in a Web Worker, with plain-language warnings about correlated parameters, prior edges and separate peaks.
+              <a href="#sampler">Method</a></td>
+            <td>EXOTIC’s single-transit example: means within 0.25σ, widths within 15%, 1.8 s against 8 s; five nights at once: within 0.11σ,
+              4.2 s against 57 s. The hard problems against UltraNest 4.6.3. <a href="#val-exotic">Evidence</a> · <a href="#val-sampler">sampler</a></td>
+            <td>UltraNest, dynesty and emcee have more options and much longer publication records; for a paper, check a result with one of them.</td></tr>
+          <tr id="sw-rv"><th>Radial velocities and joint fits</th>
+            <td><a href="https://radvel.readthedocs.io/" rel="noopener">RadVel</a>, <a href="https://github.com/oscaribv/pyaneti" rel="noopener">pyaneti</a>, EXOTIC</td>
+            <td>Several planets and instruments, jitter, trends, transits, velocities and transit times in one fit; the Rossiter–McLaughlin effect.
+              <a href="#rv">Method</a></td>
+            <td>HD 80606 b from seven instruments: K 469.6 m/s against the paper’s 469.2, e 0.93157 against 0.93183; the Kepler solver compared with
+              RadVel’s and pyaneti’s at high eccentricity. <a href="#val-exotic">Evidence</a> · <a href="#val-rv">orbits</a></td>
+            <td>RadVel and pyaneti are established in the literature, with their own Gaussian-process models for stellar activity.</td></tr>
+          <tr id="sw-nbody"><th>Timing variations and N-body</th>
+            <td><a href="https://rebound.readthedocs.io/" rel="noopener">REBOUND</a></td>
+            <td>Wisdom–Holman and IAS15 integrators, photodynamical light curves, a search for an unseen companion. <a href="#nbody">Method</a></td>
+            <td>Transit times equal REBOUND 5.2.2’s IAS15 to 1.3e-6 s; positions equal WHFast to 2e-12 AU. <a href="#val-nbody">Evidence</a></td>
+            <td>REBOUND has many more integrators, collisions and forces, and handles large numbers of bodies.</td></tr>
+          <tr id="sw-plan"><th>Planning observations</th>
+            <td><a href="https://astro.swarthmore.edu/transits/" rel="noopener">Swarthmore transit finder (Tapir)</a>,
+              <a href="https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TransitView/nph-visibletbls?dataset=transits" rel="noopener">NASA Exoplanet Archive Transit Service</a>,
+              <a href="https://astroplan.readthedocs.io/" rel="noopener">astroplan</a></td>
+            <td>Transits, eclipses and phase-curve windows for 89 observatories or your own site, scored, with altitude, dark time and the Moon.
+              <a href="../plan/">Plan</a></td>
+            <td>32 of 32 of the Swarthmore finder’s events found, mid-times within 0.7 min; altitudes within 0.008° and twilights within 6.4 s of
+              astropy. <a href="#val-planner">Evidence</a></td>
+            <td>Tapir also draws finder charts.</td></tr>
+          <tr id="sw-sky"><th>Sky view</th>
+            <td><a href="https://stellarium.org/" rel="noopener">Stellarium</a></td>
+            <td>A planetarium with the 4,862 exoplanet hosts coloured by how their planets were found, TOI candidates, satellites, and an AR mode on
+              phones. <a href="../observe/">Observe</a></td>
+            <td>Star positions within 25.2″ of astropy, the Moon within 12.2″. <a href="#val-sky">Evidence</a></td>
+            <td>Stellarium has far more objects, deep-sky images, realistic rendering and telescope control; planets here are good to about 10′.</td></tr>
+          <tr id="sw-catalogues"><th>Catalogues</th>
+            <td><a href="https://exoplanetarchive.ipac.caltech.edu/" rel="noopener">NASA Exoplanet Archive</a>, <a href="https://exoplanet.eu/" rel="noopener">exoplanet.eu</a>,
+              <a href="https://exofop.ipac.caltech.edu/tess/" rel="noopener">ExoFOP TOI list</a></td>
+            <td>The three side by side in one table: 98.7% of archive planets matched to their exoplanet.eu entry, disagreements marked, estimates
+              from named relations labelled as such. <a href="../search/">Search</a></td>
+            <td>Mass–radius estimates within 1.4% of the <code>forecaster</code> package. <a href="#val-relations">Evidence</a></td>
+            <td>The archives are the sources: live, with every published solution. This site uses dated snapshots of them.</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="software-why">
+        <h2>Why use it alongside them</h2>
+        <ul class="vlist">
+          <li><b>Nothing to install.</b> Open the page. The Python package installs from GitHub with <code>pip</code> and needs three packages, all with prebuilt wheels: numpy, pydantic and a JavaScript engine that runs the same core as the site.</li>
+          <li><b>One model throughout.</b> Photometry, fitting, planning and the catalogue share the same transit model and likelihood, so a
+            comparison star is chosen by how well the light curve fits, not by a separate score.</li>
+          <li><b>Private by default.</b> Images and data are read in the browser and are not uploaded anywhere.</li>
+          <li><b>Checked in the open.</b> Each comparison above is a test in the repository against the other program’s own output; the
+            <a href="#validation">Validation</a> tab lists them, including where this code loses.</li>
+        </ul>
+      </section>
     </div>
   </div>
 

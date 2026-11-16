@@ -14,6 +14,8 @@ const api = createDocApi({ fetchText: async (p) => readFileSync(pub(p), 'utf8'),
 const files = memoryFiles(), tools = createTools({ api, files, fetchJson: async (n) => JSON.parse(readFileSync(pub('catalog/' + n), 'utf8')), where: 'mcp' });
 for (const a of (process.env.ESL_ATTACH || '').split(',').filter(Boolean)) files.add(a.split('/').pop(), readFileSync(a, 'utf8'));
 const models = await listModels(base, { apiKey: process.env.ESL_LLM_KEY }), model = models.find((m) => m.id === process.env.ESL_LLM_MODEL) || models[0];
+// LM Studio gives the context of a loaded model only on its own list (the chat panel reads it the same way, in presets.js)
+if (!model.context) { try { const j = await (await fetch(base.replace(/\/v1$/, '') + '/api/v0/models')).json(); const x = (j.data || []).find((m) => m.id === model.id && m.state === 'loaded'); if (x) model.context = x.loaded_context_length; } catch { /* not LM Studio */ } }
 console.log(`model ${model.id} · context ${model.context ?? 'unknown'} (the endpoint address is not printed)`);
 const agent = createAgent({ base, model: model.id, apiKey: process.env.ESL_LLM_KEY, contextLimit: process.env.ESL_CTX ? Number(process.env.ESL_CTX) : model.context, tools, maxSteps: Number(process.env.ESL_STEPS || 12), protocol: process.env.ESL_PROTOCOL || 'auto', stream: process.env.ESL_STREAM !== '0',
   confirm: async ({ name, reason }) => { console.log(`   [confirm] ${name}: ${reason} -> yes`); return true; },

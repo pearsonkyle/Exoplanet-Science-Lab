@@ -4,7 +4,7 @@ Browser app for modelling and fitting exoplanet light curves. Vite + three.js, p
 Read `HANDOFF.md` first: it has the current state, what has never been run, and the roadmap.
 
 ## Commands
-- `npm install` then `npm run dev` (Vite) · `npm run build` · `npm test` (69 Node suites, about 12 min) · `npm run test:stress` (sampler, all problems)
+- `npm install` then `npm run dev` (Vite) · `npm run build` · `npm test` (73 Node suites, about 13 min) · `npm run test:stress` (sampler, all problems)
 - Reference scripts (`test/make_*.py`) run with `.venv/bin/python` (numpy, scipy); other references have their own `.venv-*` (HANDOFF.md, Environments)
 - Docs (VitePress, `docs/`): `npm run docs:dev`; `npm run pages:build` builds app + docs into `dist/` as GitHub Pages serves them (`.github/workflows/pages.yml`). Reference pages are generated from the code (`tools/docs/`), not edited.
 - `npm run build:python` rebuilds the Python package's bundle (committed: pip installs from git); `cd python && ../.venv-py/bin/pytest` · `cd mcp && node test.mjs`

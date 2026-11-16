@@ -226,6 +226,28 @@ $$
 
 with the same orbit as the transit model, so the star recedes before mid-transit and approaches after it. $t_\mathrm{ref}$ is the earliest velocity. A planet's amplitude is computed from its mass (the sampled parameter is $M_p$ in Jupiter masses), or $K$ can be given directly. $\gamma_d$ is the zero point of instrument $d$ and is integrated out analytically (see [The likelihood](#likelihood)); each instrument also has a jitter $s_d$ added in quadrature to its uncertainties. $c_1$ and $c_2$ (keys `rvlin`, `rvquad`) are shared by all instruments. The inverse (mass from $K$) is solved by fixed-point iteration.
 
+### Where the semi-amplitude comes from
+
+Momentum about the barycentre: the star and the planet move on similar ellipses about their common centre of mass, $M_\star a_\star = M_p a_p$, so the star's semi-major axis is a fraction of the relative orbit's $a = a_\star + a_p$:
+
+$$
+a_\star = a\,\frac{M_p}{M_\star + M_p}
+$$
+
+A Keplerian orbit seen at inclination $i$ moves the star along the line of sight at $v_r = K\left[\cos(\omega + \nu) + e\cos\omega\right]$, with $K$ the orbital speed scale of the star times $\sin i$ (from $r = a_\star(1 - e^2)/(1 + e\cos\nu)$ and the constant specific angular momentum $r^2\dot\nu = 2\pi a_\star^2\sqrt{1 - e^2}/P$):
+
+$$
+K = \frac{2\pi}{P}\,\frac{a_\star \sin i}{\sqrt{1 - e^2}}
+$$
+
+Kepler's third law for the relative orbit gives $a$ from the period and the total mass:
+
+$$
+a^3 = \frac{G\,(M_\star + M_p)\,P^2}{4\pi^2}
+$$
+
+Putting the three together, $\frac{2\pi}{P}\left[\frac{G (M_\star + M_p) P^2}{4\pi^2}\right]^{1/3} = \left[\frac{2\pi G (M_\star + M_p)}{P}\right]^{1/3}$, and multiplying by $M_p/(M_\star + M_p)$ leaves $(M_\star + M_p)^{1/3 - 1} = (M_\star + M_p)^{-2/3}$: the equation above. `src/core/rv.js` \`semiAmplitude\` evaluates it with the IAU nominal $G M_\odot$ and the Jupiter-to-Sun mass ratio; \`massFromK\` inverts it by iteration, because $M_p$ appears on both sides.
+
 ### Accuracy and checks
 
 - Velocity curves of 5 orbits up to $e$ = 0.93 against 30-digit arithmetic: worst 1.3e-14 $K$; $K$ from the masses against the two-body formula with IAU nominal constants: 3.1e-8 relative (`node test/validation.test.mjs`; [Validation: the star's velocity](https://exoplanet.science/methods/#val-rv)).
@@ -496,7 +518,7 @@ The Timing tab compares ephemeris models by $\mathrm{BIC} = \chi^2 + k\ln n$ [Sc
 - The evidence depends on the prior widths chosen. A model comparison in a paper should state the priors of both models and, ideally, show that the conclusion survives a reasonable change of them.
 - The uncertainty of $\ln Z$ is sampling error. Systematic bias of the sampler (see [Nested sampling](#sampler)) is of the same size as the "indistinguishable" threshold; differences below about 1 should not be interpreted.
 - The BIC is an approximation that ignores the priors. On signal-free timing lists the BIC alone prefers a sinusoid in 58% of cases (project notes), which is why the Timing tab also requires a significant periodogram peak.
-- Both criteria assume the error bars are right. They are not rescaled.
+- Both criteria assume the error bars are right. They are not rescaled during a fit. The Data tab's "Rescale errors" multiplies every error bar of an epoch by one factor $\beta_k = \sqrt{\chi^2_k / (n_k (N - k)/N)}$, with $k$ the free parameters plus one normalisation per epoch, so that $\chi^2/(N - k) = 1$ about the model on screen; the relative sizes of the error bars are kept (`test/data.test.mjs`).
 
 References: [Kass & Raftery 1995](#ref-kass1995); [Trotta 2008](#ref-trotta2008); [Schwarz 1978](#ref-schwarz1978).
 
@@ -926,7 +948,7 @@ References: [Akeson et al. 2013](#ref-akeson2013); [Schneider et al. 2011](#ref-
 
 ## 20. Observability and sky positions
 
-Code: `src/core/observability.js`, `src/core/astro.js`, `src/core/horizon.js`
+Code: `src/core/observability.js`, `src/core/astro.js`, `src/core/horizon.js`, `src/core/skyfield.js`, `src/core/healpix.js`
 
 Two modules compute positions; both take UT1 = UTC and use the algorithms of [Meeus 1998](#ref-meeus1998): IAU 1976 precession, the mean sidereal time of 1982, a four-term nutation, the low-precision Sun (chapter 25) and a truncated lunar theory (chapter 47). The sky view (`astro.js`) adds the planets from the Keplerian elements of [Standish & Williams (JPL)](#ref-standish) with light-time iteration, apparent sidereal time, and refraction for display by the formulas of Bennett and Sæmundsson as given by [Meeus 1998](#ref-meeus1998) (see also [Bennett 1982](#ref-bennett1982)). The planner (`observability.js`) uses mean sidereal time for the target, topocentric parallax for the Moon, and the airmass of [Kasten & Young 1989](#ref-kasten1989).
 
@@ -943,6 +965,16 @@ which assumes $T_0$ and $P$ uncorrelated. A transit is listed as observable in f
 ### Terrain horizon
 
 The horizon profile is traced through elevation tiles (Mapzen/Tilezen Terrarium) along great circles out to 150 km on a spherical Earth, with terrestrial refraction through an effective radius $R/(1 - k)$, $k$ = 0.13.
+
+### Survey image of a field
+
+The sky view shows a real image of a target's field from an open survey (DSS2, 2MASS, Pan-STARRS DR1, SDSS DR9, DESI Legacy Surveys DR10 or AllWISE, as HiPS maps of CDS). Each image is a square of 512 pixels on one gnomonic (TAN) plane about the target [Calabretta & Greisen 2002](#ref-calabretta2002), north up and east to the left; neighbouring images lie on the same plane, so the mosaic and its overlays stay continuous. The page resamples the survey's HiPS tiles onto that grid itself (nearest pixel, at the shallowest tile order whose pixels are no larger than the image's): each output pixel's direction is located in the HEALPix nested scheme of Górski et al. (2005) at the order of the tile pixels, its upper bits naming the tile and its lower bits the pixel inside it. CDS hips2fits, given the same WCS, is the fallback.
+
+The stars are Gaia DR3 [Gaia Collaboration, Vallenari et al. 2023](#ref-gaia2023) from VizieR [Ochsenbein, Bauer & Marcout 2000](#ref-ochsenbein2000), moved to the date shown by their proper motions. The target is the Gaia star nearest to the catalogue position within 8″, the one closest to the catalogue's V when several are; a neighbour is a possible comparison star when its $\Delta G = G - G_\star$ lies in the chosen range, Gaia does not flag it as variable, it is more than 10″ from the target and, with a detector outline, inside the outline. Separations are the haversine formula; position angles, east of north, are
+
+$$
+\theta = \mathrm{atan2}\left(\sin\Delta\alpha\cos\delta_2,\ \cos\delta_1\sin\delta_2 - \sin\delta_1\cos\delta_2\cos\Delta\alpha\right)
+$$
 
 ### Accuracy and checks
 
@@ -964,8 +996,9 @@ The horizon profile is traced through elevation tiles (Mapzen/Tilezen Terrarium)
 - Planner altitudes are geometric (no refraction). The planner's barycentric correction uses the Sun's centre and is good to about 4 s.
 - The ephemeris uncertainty ignores the covariance of $T_0$ and $P$ and trusts the published errors; an ephemeris that is stale or optimistic gives a window that is too narrow.
 - The comparison with the Swarthmore transit finder covers one site and one week. Terrain data have 30 m to 300 m pixels and contain no buildings or trees; summits come out 0.08° to 0.14° low in the three places checked.
+- Survey images are for finding a field and judging its comparison stars, not for photometry: they are the survey's display images (JPEG or PNG, stretched), resampled to the nearest pixel. ΔG is in Gaia's G band, not the observer's filter. The hips2fits fallback has not been seen to answer (CDS returned HTTP 404 on 2026-11-16), so its use of the WCS is untested.
 
-References: [Meeus 1998](#ref-meeus1998); [Standish & Williams (JPL)](#ref-standish); [Bennett 1982](#ref-bennett1982); [Kasten & Young 1989](#ref-kasten1989); [Jensen 2013](#ref-jensen2013); [Astropy Collaboration 2022](#ref-astropy2022); [Anderson & Francis 2012](#ref-anderson2012).
+References: [Meeus 1998](#ref-meeus1998); [Standish & Williams (JPL)](#ref-standish); [Bennett 1982](#ref-bennett1982); [Kasten & Young 1989](#ref-kasten1989); [Jensen 2013](#ref-jensen2013); [Astropy Collaboration 2022](#ref-astropy2022); [Anderson & Francis 2012](#ref-anderson2012); [Calabretta & Greisen 2002](#ref-calabretta2002); [Gaia Collaboration, Vallenari et al. 2023](#ref-gaia2023); [Ochsenbein, Bauer & Marcout 2000](#ref-ochsenbein2000).
 
 <a id="photometry"></a>
 

@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "c66ba6381619f7f1",
+ "sourceHash": "206c0d786999e305",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1308019,
-   "sha256": "b6e90d9f59023594cd5f1ddad711f1fe091b5222e4ac0c70a3d6d1a504f51c8a"
+   "bytes": 1322389,
+   "sha256": "8e565562dd88326cf00eb3d74634413c018d343ea76b78a5c2475a9a674f4be2"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -33,6 +33,7 @@
   "src/core/fitRunner.js",
   "src/core/fits.js",
   "src/core/gp.js",
+  "src/core/healpix.js",
   "src/core/horizon.js",
   "src/core/hz.js",
   "src/core/imexam.js",
@@ -64,6 +65,7 @@
   "src/core/rv.js",
   "src/core/rvsources.js",
   "src/core/session.js",
+  "src/core/skyfield.js",
   "src/core/sources/eu.js",
   "src/core/sources/fields.js",
   "src/core/sources/fill.js",
@@ -221,6 +223,7 @@
    "combineEpochs",
    "detectTimeStandard",
    "epochList",
+   "errorScaleFactors",
    "foldTimes",
    "heliocentricDelay",
    "nearestEpoch",
@@ -339,6 +342,18 @@
    "gpPredict",
    "nelderMead"
   ],
+  "healpix": [
+   "ang2pixNest",
+   "ang2xyf",
+   "hipsLocate",
+   "hipsOrderFor",
+   "hipsTileUrl",
+   "nest2xyf",
+   "npixOf",
+   "pix2angNest",
+   "pixelSizeArcsec",
+   "xyf2nest"
+  ],
   "horizon": [
    "ATTRIBUTION",
    "BANDS",
@@ -369,6 +384,7 @@
   "imexam": [
    "bilinear",
    "focusMap",
+   "gainFromSky",
    "lineProfile",
    "lmFit",
    "optimalAperture",
@@ -819,6 +835,26 @@
    "summarizeFit",
    "validateSession",
    "valuesFromSession"
+  ],
+  "skyfield": [
+   "angleText",
+   "cameraField",
+   "cellCentre",
+   "cellCentreSky",
+   "cellToPlane",
+   "cellWcs",
+   "findTarget",
+   "hips2fitsUrl",
+   "hipsCellMap",
+   "insidePolygon",
+   "makePlane",
+   "measure",
+   "neighbours",
+   "outlineCorners",
+   "planeToCell",
+   "positionAngle",
+   "scaleBar",
+   "separation"
   ],
   "spectroscopy": [
    "applyCommonMode",

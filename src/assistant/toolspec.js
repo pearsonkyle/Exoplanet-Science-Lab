@@ -148,6 +148,9 @@ export const TOOL_SPECS = [
   { name: 'timing_periodogram', group: 'timing', readOnly: true,
     description: 'Search the timing residuals (O - C) for a periodic variation: highest periodogram peaks with false-alarm probabilities, the comparison of linear and sinusoidal models, and a verdict in words with its caveats. Needs at least 6 times. Report the verdict as returned.',
     parameters: obj({ planet: str('Planet letter (default: the first).'), bootstrap: int('Bootstrap resamplings for the false-alarm level (0 = analytic only, default 0).', { minimum: 0, maximum: 2000 }) }) },
+  { name: 'residual_periodogram', group: 'timing', readOnly: true,
+    description: 'Search the residuals of the current model for another periodic signal (a further planet, stellar rotation, a systematic): a Lomb-Scargle periodogram of the radial-velocity residuals (each instrument about its own zero point, jitter included) or of the light-curve residuals, the strongest peaks with false-alarm probabilities, which peaks are a known planet, a harmonic or a 1-day alias, and a verdict. Run it after a fit. A candidate period is tested by add_planet with that period, a new fit and compare_runs.',
+    parameters: obj({ data: str('"rv", "lc" or "auto" (default: velocities when loaded, else the light curve).', { enum: ['auto', 'rv', 'lc'] }), min_period: num('Shortest period searched, days.'), max_period: num('Longest period searched, days.') }) },
   { name: 'compute_model', group: 'timing', readOnly: true,
     description: 'Evaluate the model at the current parameter values: transit depth, duration, impact parameter, chi-squared against the loaded data and the scatter of the residuals. With file set, also writes the model curve (time, model flux, data, residual) as CSV for the user.',
     parameters: obj({ file: str('File name for the curve, e.g. "model.csv". Omit for the summary only.') }) },
@@ -190,6 +193,12 @@ export const TOOL_SPECS = [
   { name: 'list_files', group: 'files', readOnly: true,
     description: 'List the files available to this conversation: those the user attached and those you wrote (name, size, a one-line guess of what each holds).',
     parameters: obj({}) },
+  { name: 'explain_method', group: 'knowledge', readOnly: true,
+    description: 'How this site computes something, from its Methods document: the equations as implemented (LaTeX), the assumptions and limits, the checks against other codes, and which source file does it. Use it for any question "how is X calculated / what does the model assume / how accurate is it", before answering from memory. Without arguments: the list of sections.',
+    parameters: obj({ query: str('The question in words, e.g. "equilibrium temperature" or "how is the evidence estimated".'), topic: str('A section id from the list, when known (e.g. "rv", "transit", "sampler").') }) },
+  { name: 'read_source', group: 'knowledge', readOnly: true,
+    description: 'The exact source code of one function of this site (from the file a Methods section names under "code"), to quote or to derive a result step by step. Without symbol: the names the file defines.',
+    parameters: obj({ file: str('Path in the repository, e.g. "src/core/rv.js".'), symbol: str('Function or constant name, e.g. "semiAmplitude".') }, ['file']) },
   { name: 'read_file', group: 'files', readOnly: true,
     description: 'Look inside a file as text. Small files come back whole; large ones as a summary (lines, columns, numeric range of each column) plus the first lines. To use a data file, do not copy its rows: pass its name to load_light_curve, load_radial_velocities or set_timings.',
     parameters: obj({ name: str('File name from list_files.'), max_chars: int('Most characters of content to return (default 2000).', { minimum: 200, maximum: 20000 }), offset: int('Start at this character (to read on).', { minimum: 0 }) }, ['name']) },
@@ -253,12 +262,31 @@ function checkObject(args, schema, path, errors) {
  * Check (and gently repair) the arguments of a call. Returns { args, error }: error is null when the call can
  * run, otherwise one sentence listing every problem and the arguments the tool takes.
  */
+/**
+ * String arrays as small models write them, put right before the arguments are checked:
+ *   ["a\",\"b\",\"c"]  (the whole list escaped into one string)  -> ["a", "b", "c"]
+ *   "a, b, c" or "[\"a\", \"b\"]"  (a string where a list belongs)    -> ["a", "b", "c"]
+ * Only where the schema says array of strings; nothing else is touched.
+ */
+function repairArrays(args, schema) {
+  if (!schema || schema.type !== 'object' || !schema.properties || typeOf(args) !== 'object') return args;
+  const split = (s) => String(s).split(/"\s*,\s*"|\\"\s*,\s*\\"/).flatMap((x) => x.split(/\s*,\s*(?=[A-Za-z_])/)).map((x) => x.replace(/^[\s"'\[\\]+|[\s"'\]\\]+$/g, '')).filter(Boolean);
+  for (const [k, sub] of Object.entries(schema.properties)) {
+    const v = args[k];
+    if (sub && sub.type === 'array' && sub.items && sub.items.type === 'string') {
+      if (typeof v === 'string') args[k] = split(v);
+      else if (Array.isArray(v) && v.some((x) => typeof x === 'string' && /"\s*,\s*"|^\s*\[|\\"/.test(x))) args[k] = v.flatMap((x) => (typeof x === 'string' ? split(x) : [x]));
+    } else if (sub && sub.type === 'object' && typeOf(v) === 'object') args[k] = repairArrays(v, sub);
+  }
+  return args;
+}
+
 export function checkArgs(spec, input) {
   let args = input;
   if (typeof args === 'string') { try { args = args.trim() ? JSON.parse(args) : {}; } catch { return { args: {}, error: `the arguments of ${spec.name} were not valid JSON. ${takes(spec)}` }; } }
   if (args === undefined || args === null) args = {};
   if (typeOf(args) !== 'object') return { args: {}, error: `the arguments of ${spec.name} must be a JSON object. ${takes(spec)}` };
-  args = JSON.parse(JSON.stringify(args));
+  args = repairArrays(JSON.parse(JSON.stringify(args)), spec.parameters);
   const errors = [];
   checkObject(args, spec.parameters, 'args', errors);
   return { args, error: errors.length ? `${errors.join('; ')}. ${takes(spec)} Send the call again, corrected.` : null };

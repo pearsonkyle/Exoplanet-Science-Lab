@@ -30,6 +30,8 @@ TASKS = [
     dict(id=6, page='', ask='Show me where WASP-43 b is in the sky right now from Kitt Peak (latitude 31.96, longitude -111.60).'),
     dict(id=7, page='analyze/?skipintro', attach=attach, ask='Fit the transit in the file I attached. The planet is HD 80606 b. Then give me the light-curve figure.'),
     dict(id=8, page='analyze/?skipintro', ask='Load the single-transit example, save the analysis under the name "old", then delete the saved analysis "old".'),
+    dict(id=9, page='analyze/?skipintro', attach=attach, ask='I attached a TESS light curve of HD 80606 b. Set up the project: get the system parameters and priors from the catalogue, fit the transit, explain the results, then search the residuals for another periodic signal. Finish with the standard report.'),
+    dict(id=10, page='methods/', ask='How does this site compute the equilibrium temperature? Give the exact equation and the assumptions behind it.'),
 ]
 if only: TASKS = [t for t in TASKS if str(t['id']) in only.split(',')]
 TASKS = [t for t in TASKS if not ('attach' in t and not t['attach'])]
@@ -65,7 +67,7 @@ with sync_playwright() as p:
         js(pg, '(o) => window.__eslAssistant.configure(o)', dict(base=endpoint, model=os.environ.get('ESL_LLM_MODEL', ''), apiKey=os.environ.get('ESL_LLM_KEY', '')) if endpoint else {})
         if t['id'] == TASKS[0]['id']: print('model:', js(pg, '() => window.__eslAssistant.settings.model'), '· context', js(pg, '() => window.__eslAssistant.settings.context'))
         if not t.get('keep'): js(pg, '() => window.__eslAssistant.newChat()')
-        if t.get('attach'): pg.set_input_files('#assistant input[type=file]', t['attach']); pg.wait_for_timeout(400)
+        if t.get('attach'): pg.set_input_files('#assistant input.ai-file', t['attach']); pg.wait_for_timeout(400)
         n0 = js(pg, '() => window.__eslAssistant.log.length', default=0)
         print('\n' + '=' * 100 + f"\nTASK {t['id']} on /{t['page']}  USER: {t['ask']}" + (f"   [attached {os.path.basename(t['attach'])}]" if t.get('attach') else ''))
         pg.fill('.ai-input', t['ask']); pg.click('.ai-send'); t0 = time.time(); pages = [js(pg, '() => window.__eslAssistant.page')]; quiet = 0
@@ -96,6 +98,9 @@ with sync_playwright() as p:
         print('afterwards:', json.dumps(info))
         tally.append(dict(task=t['id'], pages=' -> '.join(pages), answered=info.get('answered'), steps=steps, seconds=round(secs, 1), number_check=(info.get('check') or {}).get('ok'), files=len(info.get('files') or []), failed_calls=sum(1 for e in log if e['type'] == 'tool_end' and not e['ok'] and not e.get('denied'))))
         pg.screenshot(path=os.path.join(out, f"task{t['id']}.png"))
+        # the conversation as training data (src/assistant/sft.js), one JSON line per task
+        rec = js(pg, '() => window.__eslAssistant.trainingRecord()', default=None)
+        if rec: open(os.path.join(out, 'conversations.jsonl'), 'a').write(json.dumps(rec).replace(endpoint or '\0', '<endpoint>') + '\n')
     open(os.path.join(out, 'transcript.md'), 'w').write((js(pg, '() => window.__eslAssistant.transcript()', default='') or '').replace(endpoint or '\0', '<endpoint>'))
     b.close()
 print('\nTALLY')

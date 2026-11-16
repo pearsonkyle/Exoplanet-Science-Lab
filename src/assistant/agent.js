@@ -102,6 +102,10 @@ NUMBERS (the app checks your answer against the tool results)
 - For model comparison give each run's ln Z and Δ ln Z as returned, then the "reading", "verdict" and "cautions" in the software's words. Do not interpret an evidence difference yourself, and never compute one.
 - An answer whose numbers do not match the tool results gets the app's own table attached under it.
 
+METHODS AND EQUATIONS
+- For "how is X calculated", "what does the model assume" or "how accurate is it": call explain_method with the question, then answer from its text. Quote its equations exactly. For the code itself call read_source with a file from its "code" list and the function name.
+- Write equations in LaTeX between $...$ (inline) or $$...$$ (on their own line): the chat renders them. A derivation from first principles is welcome: start from the definitions explain_method gives and go step by step in symbols. Numbers in it still come from tool results only.
+
 ANALYZE PAGE
 - Parameter keys: rprs (Rp/R*), ars (a/R*), inc (degrees), per (days), tmid (mid-transit time, days), ecc, omega (degrees), mplanet (Jupiter masses). Limb darkening: ld0..ld3. Airmass slope: a2 (a2@2 for the second epoch). Velocities: rvlin, rvquad, jit@rv1. Star: mstar, rstar, teff, feh. Keys of a second or later planet carry its letter: per@c, rprs@c.
 - a/R* (ars) is never fitted. With Kepler mode on it follows from the stellar mass and radius, the period and the planet mass; with it off, ars is a fixed number.
@@ -118,10 +122,22 @@ RECIPES
 - Analyse a planned night (analyze, after plan_open_transit with "analyze"): the planet is loaded on arrival; simulate_light_curve with mid_transit "planned" (the planned night of PROJECT); set_free rprs, inc, tmid; run_fit; get_figure light_curve; then give Rp/R* and tmid exactly as run_fit returned them.
 - Look up parameters and priors (analyze): lookup_planet loads a system with its catalogue values and uncertainties; get_state lists every parameter with its value, whether it is free and its prior; set_prior changes one. Quote priors as get_state gives them.
 - Reduce images (photometry page): photometry_frames, photometry_examine_star or photometry_focus_map to check the stars and the focus, photometry_pick_stars, photometry_run, then photometry_send_to_analyze.
+- A whole project from the user's data (analyze), one step at a time, telling the user what each step found: (1) load the file (load_light_curve or load_radial_velocities, with "planet" when the user named it); (2) lookup_planet for the system's parameters and catalogue priors, then get_state to see them; (3) set_free for the parameters the data constrain (transit: rprs, inc, tmid; velocities: mplanet, and per, ecc, omega when the data cover the orbit, plus jit@rv1 for each instrument) and set_prior where the user or the catalogue gives one; (4) run_fit; (5) explain_results; (6) residual_periodogram to look for another periodic signal, and, if its verdict calls a peak a candidate, add_planet with that period, run_fit and compare_runs; (7) write_report. If the user asked for only some of these, do only those.
 - Write up (analyze, at the end): write_report gives the standard project report with its BibTeX, session and figures; say which files were written and what the report asks the user to check.
 - Files: export_file writes single outputs (session, report, python, CSV tables); get_figure makes a figure; write_file is for your own text. Only say a file was saved when a tool result shows its name.
 
 Keep answers short: what was done, the result with its caveats, and at most one suggestion for what to do next.`;
+
+/**
+ * Parts of a request a small model often leaves out, with the tools that do them (agent: the checklist nudge).
+ * A part counts as asked when the user's words match `asked`, and as done when one of its tools ran without an error.
+ * (Figures have their own nudge; a fit is not on the list, because "set up a fit but do not run it" is a common request.)
+ */
+export const REQUEST_PARTS = [
+  { what: 'an explanation of the results', asked: /\b(explain|interpret|what (?:do|does) (?:the|these) .*mean|meaning)\b/i, tools: ['explain_results'] },
+  { what: 'a search for another periodic signal', asked: /\b(another|second|additional|other|more|hidden)\b[^.]{0,40}\b(signal|planet|period|periodicit)|\bperiodogram\b|\bsearch (?:the )?residuals\b/i, tools: ['residual_periodogram', 'timing_periodogram'] },
+  { what: 'a report', asked: /\breport\b|\bwrite[- ]?up\b|\bsummari[sz]e (?:the|it|everything)/i, tools: ['write_report', 'export_file'] },
+];
 
 /** The tool list for a server without native tool calls: one line per tool, and how to call one in text. */
 export function textProtocol(specs) {
@@ -143,7 +159,7 @@ export function slimSpecs(specs, level = 1) {
   return specs.map((t) => ({ ...t, description: firstSentences(t.description, dN), parameters: { ...slim(t.parameters), description: undefined } }));
 }
 /** The tools a model with a very small window gets: enough for the common workflows. */
-export const CORE_TOOLS = ['load_example', 'lookup_planet', 'set_parameters', 'describe_data', 'load_light_curve', 'load_radial_velocities', 'simulate_light_curve', 'set_free', 'set_prior', 'set_kepler', 'choose_data', 'run_fit', 'get_results', 'explain_results', 'compare_runs', 'run_experiment', 'get_figure', 'export_file', 'search_catalog', 'list_files', 'read_file'];
+export const CORE_TOOLS = ['load_example', 'lookup_planet', 'set_parameters', 'describe_data', 'load_light_curve', 'load_radial_velocities', 'simulate_light_curve', 'set_free', 'set_prior', 'set_kepler', 'choose_data', 'run_fit', 'get_results', 'explain_results', 'compare_runs', 'run_experiment', 'residual_periodogram', 'add_planet', 'explain_method', 'read_source', 'get_state', 'write_report', 'get_figure', 'export_file', 'search_catalog', 'list_files', 'read_file'];
 /** For a very small window (under 9k tokens) the core is smaller still. */
 export const TINY_TOOLS = ['load_example', 'lookup_planet', 'set_parameters', 'describe_data', 'load_light_curve', 'load_radial_velocities', 'set_timings', 'set_free', 'set_prior', 'set_sampler', 'run_fit', 'get_results', 'explain_results', 'compare_runs', 'run_experiment', 'fit_ephemeris', 'export_file', 'list_files', 'read_file', 'write_file'];
 /** A page whose tool definitions are longer than this (characters of JSON) shows its core tools and lists the rest under more_tools. */
@@ -154,7 +170,7 @@ const gist = (t) => { const d = String(t.description || '').split(/(?<=[.:;])\s/
 /** The harness's own tools: read the rest of a cut result; add the definitions of tools that are not shown. */
 export const READ_RESULT = { name: 'read_result', readOnly: true, description: 'Read the full text of a tool result that was cut (its end says "read_result"). Give the call id; read on with offset.',
   parameters: { type: 'object', properties: { id: { type: 'string', description: 'The id named in the cut result, e.g. "call_7".' }, offset: { type: 'integer', description: 'Start at this character (default 0).', minimum: 0 }, max_chars: { type: 'integer', description: 'How many characters (default 4000).', minimum: 200, maximum: 20000 } }, required: ['id'], additionalProperties: false } };
-export const moreToolsSpec = (hidden, short = false) => ({ name: 'more_tools', readOnly: true, description: `More tools of this page, not listed above to keep the prompt short. Call more_tools with the names you need and their definitions are added; or call one directly if you know its arguments. ${hidden.map((t) => (short ? t.name : `${t.name} (${gist(t)})`)).join('; ')}.`,
+export const moreToolsSpec = (hidden, short = false) => ({ name: 'more_tools', readOnly: true, description: short ? `More tools: call more_tools with the names to add them, or call one directly. ${hidden.map((t) => t.name).join(', ')}.` : `More tools of this page, not listed above to keep the prompt short. Call more_tools with the names you need and their definitions are added; or call one directly if you know its arguments. ${hidden.map((t) => `${t.name} (${gist(t)})`).join('; ')}.`,
   parameters: { type: 'object', properties: { names: { type: 'array', items: { type: 'string' }, description: 'Tool names from the list.' } }, required: ['names'], additionalProperties: false } });
 
 // ---- calls written as text -------------------------------------------------------------------------------------
@@ -201,6 +217,13 @@ export function parseTextCalls(text, names) {
 
 // ---- the agent -------------------------------------------------------------------------------------------------
 /** "do not run it", "don't start the fit yet", "without running": a request that says so gets no fit, whatever the model decides. */
+/**
+ * A request that only asks something ("How is K computed? Derive it."): it changes nothing, so the tools that change
+ * the analysis are refused for it. Asking words first, and no word of an action anywhere in it.
+ */
+export const isQuestionOnly = (text) => /^\s*(how|what|why|which|where|when|who|whose|is|are|was|does|do|did|can you explain|explain|tell me|describe|derive|show me how|give me the (?:equation|formula))\b/i.test(text)
+  && !/\b(fit|load|run|set(?:\s+up)?|open|plan|simulate|add|remove|change|save|export|delete|try|compare|use|switch|free|fix|apply|search|find|look\s+(?:\w+\s+)?up|lookup|go to|navigate|attach)\b(?!\s+(?:by|from|in|with)\s+(?:the|this)\s+(?:site|code|model))/i.test(String(text).replace(/^\s*\S+/, ''));
+
 export const NOT_RUN = /\b(?:do not|don['’]?t|without|no need to|not yet|before you)\s+(?!forget|hesitate)(?:\w+\s+){0,2}?(?:run(?:ning)?|start(?:ing)?|launch(?:ing)?)\b/i;
 const CHARS_PER_TOKEN = 3.2;
 const hashOf = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36) + ':' + s.length; };
@@ -218,7 +241,7 @@ const storeResult = (id, name, text, n) => (text.length > n ? { id, name, text: 
  *         halt { halt }, error { message }, done { steps, seconds, reason: 'answered' | 'cap' | 'stopped' | 'error' | 'navigate' }
  */
 export function createAgent(config) {
-  const cfg = { maxSteps: 12, maxTokens: 1500, temperature: 0.2, protocol: 'auto', stream: true, primer: PRIMER, contextLimit: null, apiKey: '', historyBudget: HISTORY_BUDGET, tiers: true, ...config };
+  const cfg = { maxSteps: 12, maxTokens: 3000, temperature: 0.2, protocol: 'auto', stream: true, primer: PRIMER, contextLimit: null, apiKey: '', historyBudget: HISTORY_BUDGET, tiers: true, ...config };
   const f = cfg.fetch || globalThis.fetch.bind(globalThis), emit = (ev) => { try { cfg.onEvent && cfg.onEvent(ev); } catch { /* a listener's problem */ } };
   let tools = cfg.tools;
   // what the server turned out to support; each flag is dropped once, on the server's own refusal
@@ -263,7 +286,7 @@ export function createAgent(config) {
 
   /** The message list for the next request. `plan` says how much of the history to keep whole. */
   function build(plan) {
-    const text = !cap.native, sp = specs(), primer = level() === 2 ? cfg.primer.replace(/\n\nRECIPES\n[\s\S]*?(?=\n\nKeep answers short)/, '') : cfg.primer;   // a very small window gets the rules without the recipes
+    const text = !cap.native, sp = specs(), primer = level() === 2 ? cfg.primer.replace(/\n\nRECIPES\n[\s\S]*?(?=\n\nKeep answers short)/, '').replace(/\n\nMETHODS AND EQUATIONS\n[\s\S]*?(?=\n\nANALYZE PAGE)/, '') : cfg.primer;   // a very small window gets the rules without the recipes and the methods notes
     const msgs = [{ role: 'system', content: primer + (text ? '\n\n' + textProtocol(sp) : '') }];
     const kept = turns.slice(plan.dropTurns), gone = turns.slice(0, plan.dropTurns);
     const older = gone.length > 8 ? gone.length - 8 : 0;
@@ -289,12 +312,12 @@ export function createAgent(config) {
     });
     // the live state goes on the end of the last message, whatever its role: no server objects to that
     // (and the user's own words come after it, so the request is the last thing the model reads, not the state)
-    const last = msgs[msgs.length - 1], cur = kept[kept.length - 1], card = tools.stateCard(); cardChars = card.length;
+    const last = msgs[msgs.length - 1], cur = kept[kept.length - 1], card = tools.stateCard(); cardChars = card.length; lastCard = card;
     if (last.role === 'user' && cur && !cur.steps.length && last.content.endsWith(cur.user)) last.content = last.content.slice(0, last.content.length - cur.user.length) + card + '\n\nTHE USER\'S REQUEST:\n' + cur.user;
     else last.content = (last.content ? last.content + '\n\n' : '') + card + (cur ? `\n\nThe user's request, for reference: "${cutShort(cur.user, 400)}"` : '');
     return { msgs, sp, fixedChars: msgs[0].content.length + cardChars + (cap.native ? JSON.stringify(openAITools(sp)).length : 0) };
   }
-  let cardChars = 0;
+  let cardChars = 0, lastCard = '';   // lastCard: the state card of the latest request, kept with the step it produced (export)
   const sizeOf = ({ msgs, sp }) => Math.ceil((msgs.reduce((a, m) => a + (m.content || '').length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0) + 12, 0) + (cap.native ? JSON.stringify(openAITools(sp)).length : 0)) / ratio);
   /** The prompt, cut down step by step until it fits the budget: older results to a line, then oldest turns to a summary, then older steps of this request. */
   function fitPrompt() {
@@ -345,11 +368,14 @@ export function createAgent(config) {
     return out;
   }
   /** Ask the model once. Degrades (usage option, streaming, native tools) when the server refuses a feature, and remembers it. */
-  async function complete(signal, maxTokens = cfg.maxTokens) {
+  async function complete(signal, maxTokens = cfg.maxTokens, answerOnly = false) {
     for (let attempt = 0; attempt < 5; attempt++) {
       const p = fitPrompt();
-      const body = { model: cfg.model, messages: p.msgs, temperature: cfg.temperature, max_tokens: maxTokens };
-      if (cap.native) { body.tools = openAITools(p.sp); body.tool_choice = 'auto'; }
+      // the answer's room: at most a quarter of a known context window (an 8k server gets 2k), never under 800
+      const room = limit() ? Math.min(maxTokens, Math.max(800, Math.floor(limit() / 4))) : maxTokens;
+      const body = { model: cfg.model, messages: p.msgs, temperature: cfg.temperature, max_tokens: room };
+      // answerOnly: the tools stay in the prompt (it stays cached) but the model may not call one: it must answer
+      if (cap.native) { body.tools = openAITools(p.sp); body.tool_choice = answerOnly ? 'none' : 'auto'; }
       if (cap.stream) { body.stream = true; if (cap.usage) body.stream_options = { include_usage: true }; }
       try {
         const res = await post(body, signal);
@@ -392,7 +418,7 @@ export function createAgent(config) {
       for (;;) {
         if (signal.aborted) return end('stopped');
         if (steps >= cfg.maxSteps) { turn.capped = true; emit({ type: 'cap', steps }); return end('cap'); }
-        let out = await complete(signal);
+        let out = await complete(signal, cfg.maxTokens, !!turn.forceAnswer);
         if (out.finish === 'length' && !out.content && !out.calls.length) out = await complete(signal, cfg.maxTokens * 2);   // it ran out of room while thinking
         steps++;
         let calls = out.calls.map((c) => { let args = {}; try { args = c.arguments ? JSON.parse(c.arguments) : {}; } catch { args = c.arguments; } return { name: c.name, args }; }), content = out.content || '';
@@ -406,19 +432,31 @@ export function createAgent(config) {
           if (!nudged && turn.steps.length && /\b(i will|i'll|let me|i am going to|i'm going to)\b/i.test(tail) && !/\?\s*$/.test(tail) && !/\b(if you|would you|let me know|happy to)\b/i.test(tail)) { nudged = true; (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: `[From the app, not the user] Your answer ends with "${cutShort(tail, 160)}", but that was not done. Do it now with a tool call, then give the whole answer again; or answer without promising it.` }); continue; }
           // a figure the user asked for and no figure made in this request: once, make it
           const wantsFig = /\b(figure|plot|graph|chart)\b/i.test(turn.user) && !/\b(no|without|don'?t (?:need|want))\s+(?:a\s+|any\s+)?(figure|plot|graph)/i.test(turn.user), hasFig = tools.specs.some((t) => t.name === 'get_figure');
+          // a request with several parts (fit, explain, search for another signal, report) and an answer that skips some:
+          // once, name the parts that were asked for and not done. Small models tend to stop after the fit.
+          if ((turn.listChecked || 0) < 2 && turn.steps.length) {
+            const done = new Set(turn.steps.flatMap((st) => st.calls.map((c, k) => (st.results[k] && !/^(ERROR|DENIED)/.test(st.results[k].text) ? c.name : null)).filter(Boolean)));
+            const missing = REQUEST_PARTS.filter((r) => r.asked.test(turn.user) && r.tools.some((n) => names().includes(n)) && !r.tools.some((n) => done.has(n)));
+            // a second reminder only when the first got something done (fewer parts missing than then)
+            if (missing.length && (!turn.listChecked || missing.length < turn.listMissing)) { turn.listChecked = (turn.listChecked || 0) + 1; turn.listMissing = missing.length; (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: `[From the app, not the user] The request also asked for: ${missing.map((r) => `${r.what} (${r.tools.find((n) => names().includes(n))})`).join('; ')}. None of these was done yet. Do them now, one tool call at a time, then give the whole answer; if one cannot be done, say why.` }); emit({ type: 'note', text: `The request also asked for ${missing.map((r) => r.what).join(', ')}: the assistant was asked to do ${missing.length > 1 ? 'them' : 'it'}.` }); continue; }
+          }
           if (wantsFig && hasFig && !turn.figChecked && turn.steps.length && !turn.steps.some((st) => st.results.some((r) => r.name === 'get_figure' && !/^(ERROR|DENIED)/.test(r.text)))) { turn.figChecked = true; (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: '[From the app, not the user] The user asked for a figure and none was made in this request. Call get_figure now (which "light_curve" unless another plot was asked for), then give the whole answer again.' }); emit({ type: 'note', text: 'The request asked for a figure and none was made: the assistant was asked to make it.' }); continue; }
           // an answer that names a file nobody wrote ("I saved session.json"): one chance to write it or take the claim back
           const have = tools.fileNames ? tools.fileNames().map((n) => n.toLowerCase()) : null;
           const ghost = have ? [...new Set((content.match(/[\w][\w.()-]*\.(?:json|md|csv|py|tex|png|txt|yaml)\b/gi) || []).filter((n) => !have.includes(n.toLowerCase())))] : [];
           if (ghost.length && !turn.fileChecked && turn.steps.length) { turn.fileChecked = true; (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: `[From the app, not the user] Your answer mentions ${ghost.join(', ')}, but no such file exists (files: ${have.join(', ') || 'none'}). If you meant to give the user that file, write it now with export_file or write_file; otherwise answer again without claiming it.` }); emit({ type: 'note', text: `The answer mentioned ${ghost.join(', ')}, which does not exist; the assistant was asked to write it or correct itself.` }); continue; }
           if (ghost.length && turn.fileChecked) emit({ type: 'note', text: `Check: the answer below mentions ${ghost.join(', ')}, but no such file was written.` });
+          turn.modelFinal = content.trim();   // the model's own words, before the app adds its table (export)
           const extra = content.trim() && cfg.checkNumbers !== false ? numberCheck(content, turn) : '';
           if (extra) { content = content.trim() + extra; emit({ type: 'note', text: 'The answer quoted numbers that differ from the tool results (or dropped an uncertainty): the app\'s own table was added under it.' }); }
+          if (out.reasoning) turn.finalReasoning = out.reasoning;
+          turn.finalState = lastCard;   // what the model saw (export)
           turn.final = content.trim() || '(The model returned an empty answer.' + (cap.native ? ')' : ' With the JSON-in-text tool protocol this happens when the server strips the model\'s own tool-call syntax: if the server supports tool calling, let the assistant use it.)');
           emit({ type: 'assistant', text: turn.final, final: true });
           return end('answered');
         }
-        const step = { content: content.trim(), calls: [], results: [] };
+        // the model's reasoning is kept with its step (for the conversation export: training data needs it); it is not sent back
+        const step = { content: content.trim(), calls: [], results: [], state: lastCard, ...(out.reasoning ? { reasoning: out.reasoning } : {}) };
         turn.steps.push(step);
         if (step.content) emit({ type: 'assistant', text: step.content, final: false });
         for (const c of calls) {
@@ -433,7 +471,8 @@ export function createAgent(config) {
           else {
             const reason = tools.confirmFor(c.name, typeof c.args === 'object' && c.args ? c.args : {}), spec = tools.specs.find((t) => t.name === c.name);
             if (spec) active.add(c.name);   // a tool the model called directly stays shown
-            if (spec && spec.long && NOT_RUN.test(turn.user)) { text = `ERROR: the user asked not to run a fit in this request ("${cutShort((turn.user.match(NOT_RUN) || [''])[0], 60)}"). The set-up is all that was asked: do not call ${c.name}; finish and say the fit was not run.`; }
+            if (spec && !spec.readOnly && c.name !== 'navigate' && isQuestionOnly(turn.user)) { text = `ERROR: the user asked a question ("${cutShort(turn.user, 80)}"), so nothing should be changed: do not call ${c.name}. Answer from what the read-only tools and the Methods (explain_method) give.`; }
+            else if (spec && spec.long && NOT_RUN.test(turn.user)) { text = `ERROR: the user asked not to run a fit in this request ("${cutShort((turn.user.match(NOT_RUN) || [''])[0], 60)}"). The set-up is all that was asked: do not call ${c.name}; finish and say the fit was not run.`; }
             else
             // one "no" stands for the rest of the request: the user is not asked again, and a second attempt ends the request
             if (reason && turn.denied) { denied = true; turn.deniedTwice = true; text = 'DENIED: the user already declined this in the current request.'; }
@@ -441,6 +480,9 @@ export function createAgent(config) {
             else {
               const r = await tools.call(c.name, c.args, { signal, onProgress: (p) => emit({ type: 'tool_progress', id, progress: p }) });
               ok = r.ok; text = r.text; data = r.data; if (r.table) table = r.table; if (r.halt) halt = r.halt;
+              // the arguments as they ran (repaired by the tool layer, e.g. a list written as one escaped string): what the
+              // model sees in its history from now on, and what a training export records
+              if (r.args && typeof r.args === 'object' && !Array.isArray(r.args)) step.calls[step.calls.length - 1].args = r.args;
             }
           }
           if (!/^ERROR: this exact call/.test(text)) {
@@ -450,8 +492,17 @@ export function createAgent(config) {
             repeats = key === lastKey && text === lastText ? repeats + 1 : 0; lastKey = key; lastText = text; }
           step.results.push({ ...storeResult(id, c.name, text, c.name === READ_RESULT.name ? 21000 : resultCap()), ...(table ? { table: cutText(table, 2400) } : {}) });
           emit({ type: 'tool_end', id, name: c.name, args: c.args, ok, denied, text, data, ms: Date.now() - t1 });
-          if (halt) break;   // the page is about to change: nothing more runs here
+          // a model that keeps sending a call the guard has already refused is stuck: three in a row end the request
+          turn.blocked = /^ERROR: this exact call/.test(text) ? (turn.blocked || 0) + 1 : 0;
+          if (halt || turn.blocked >= 3) break;   // halt: the page is about to change, nothing more runs here
         }
+        // going round in circles: a run of calls that read, or failed, with nothing changed. Once a nudge to answer, then the next request
+        // is sent with tool_choice "none" so the model has to write the answer from what it has read
+        for (let k = 0; k < step.calls.length; k++) { const sp = tools.specs.find((t) => t.name === step.calls[k].name), r = step.results[k]; turn.reads = (sp && sp.readOnly) || step.calls[k].name === READ_RESULT.name || step.calls[k].name === 'more_tools' || /^(ERROR|DENIED)/.test(r ? r.text : '') ? (turn.reads || 0) + 1 : 0; }   // a refused or failed call changes nothing either: only a successful change resets the count
+        if (turn.reads >= 6 && !turn.readNudged) { turn.readNudged = true; (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: '[From the app, not the user] You have read enough to answer: the results above hold what the request needs. Answer the user now, without calling more tools, unless something the request asks for has not been done at all.' }); emit({ type: 'note', text: 'The assistant kept reading: it was asked to answer from what it has.' }); }
+        else if (turn.reads >= 9 && turn.readNudged && cap.native) turn.forceAnswer = true;
+        if (turn.blocked >= 3 && cap.native && !turn.forceAnswer) { turn.forceAnswer = true; turn.blocked = 0; emit({ type: 'note', text: 'The assistant was repeating a refused call: it was asked to answer from what it has.' }); }
+        if (turn.blocked >= 3) { const last = step.calls[step.calls.length - 1]; turn.final = `I got stuck: I kept repeating the same ${last ? last.name.replace(/_/g, ' ') : 'call'} call without making progress, so I stopped. The last real result is in the steps above. Tell me how to go on, or rephrase the request.`; emit({ type: 'note', text: 'The assistant repeated a refused call three times in a row: the request was stopped (the steps it had left were not used).' }); emit({ type: 'assistant', text: turn.final, final: true }); return end('stuck'); }
         if (halt) { turn.halted = halt; emit({ type: 'halt', halt }); return end(halt.reason || 'halt'); }
         if (turn.deniedTwice) { turn.final = 'I stopped here: you declined that action, so nothing was replaced or deleted. Tell me how you would like to continue.'; emit({ type: 'assistant', text: turn.final, final: true }); return end('answered'); }
       }
@@ -487,7 +538,7 @@ export function createAgent(config) {
     /** A new request from the user. Resolves with how the loop ended: 'answered', 'cap', 'stopped' or 'error'. */
     send(text) { const turn = { user: String(text), steps: [], final: null, notes: [] }; turns.push(turn); emit({ type: 'user', text: turn.user }); return run(turn); },
     /** Carry on after the step cap (the "Continue" button). */
-    resume() { const turn = turns[turns.length - 1]; if (!turn) throw new Error('nothing to continue'); turn.capped = false; turn.halted = null; return run(turn); },
+    resume() { const turn = turns[turns.length - 1]; if (!turn) throw new Error('nothing to continue'); turn.capped = false; turn.halted = null; turn.blocked = 0; return run(turn); },
     stop() { if (abort) abort.abort(); },
     reset() { turns.length = 0; trimmedNote = ''; active.clear(); },
     /** Put back a conversation saved on another page (plain data: the turns as `turns` holds them). */

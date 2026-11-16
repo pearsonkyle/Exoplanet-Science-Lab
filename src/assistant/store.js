@@ -6,6 +6,8 @@
 //                 change inside the site, or the assistant could not continue after navigating).
 //   conversation  localStorage, capped in size: the agent's turns, the events the panel draws, the action log.
 //   files         IndexedDB (attachments and files the assistant wrote, text or binary).
+//   history       IndexedDB: past conversations, kept when the user starts a new one or saves one, to open again
+//                 or export (sft.js). Each: { id, title, at, page, model, turns, log, actions }.
 //   project       localStorage: the project as the tool results told it (project.js), carried across pages and
 //                 conversations until the user clears it.
 //
@@ -49,13 +51,13 @@ export function createStore({ local = globalThis.localStorage, session = globalT
   /** { turns, log, actions, open, pending, allowAll }; an old pending request is dropped (the user has moved on). */
   function loadChat() {
     const c = read(local, KEYS.chat) || {};
-    const out = { turns: Array.isArray(c.turns) ? c.turns : [], log: Array.isArray(c.log) ? c.log : [], actions: Array.isArray(c.actions) ? c.actions : [], open: !!c.open, pending: c.pending || null, allowAll: !!c.allowAll };
+    const out = { id: c.id || null, turns: Array.isArray(c.turns) ? c.turns : [], log: Array.isArray(c.log) ? c.log : [], actions: Array.isArray(c.actions) ? c.actions : [], open: !!c.open, pending: c.pending || null, allowAll: !!c.allowAll };
     if (out.pending && !(now() - out.pending.at < PENDING_MAX_AGE)) out.pending = null;
     return out;
   }
   /** Save the conversation; when it is too large for the storage, the oldest requests go first. Returns false when nothing could be written. */
   function saveChat(c) {
-    const out = { turns: c.turns || [], log: (c.log || []).filter((e) => e.type !== 'assistant_delta' && e.type !== 'tool_progress').slice(-MAX_LOG).map(slimEvent), actions: (c.actions || []).slice(-60), open: !!c.open, pending: c.pending || null, allowAll: !!c.allowAll };
+    const out = { id: c.id || null, turns: c.turns || [], log: (c.log || []).filter((e) => e.type !== 'assistant_delta' && e.type !== 'tool_progress').slice(-MAX_LOG).map(slimEvent), actions: (c.actions || []).slice(-60), open: !!c.open, pending: c.pending || null, allowAll: !!c.allowAll };
     for (let i = 0; i < 40; i++) {
       const text = JSON.stringify(out);
       if (text.length <= MAX_CHAT) { try { local.setItem(KEYS.chat, text); return true; } catch { /* over quota: cut further */ } }
@@ -72,12 +74,13 @@ export function createStore({ local = globalThis.localStorage, session = globalT
   const db = () => (dbp ||= new Promise((resolve) => {
     if (!idb) return resolve(null);
     try {
-      const req = idb.open('esl-assistant', 1);
-      req.onupgradeneeded = () => { req.result.createObjectStore('files', { keyPath: 'name' }); };
+      const req = idb.open('esl-assistant', 2);
+      // version 2 adds the conversation history; version 1's files are kept
+      req.onupgradeneeded = () => { const d = req.result; if (!d.objectStoreNames.contains('files')) d.createObjectStore('files', { keyPath: 'name' }); if (!d.objectStoreNames.contains('chats')) d.createObjectStore('chats', { keyPath: 'id' }); };
       req.onsuccess = () => resolve(req.result); req.onerror = () => resolve(null); req.onblocked = () => resolve(null);
     } catch { resolve(null); }
   }));
-  const tx = async (mode, fn) => { const d = await db(); if (!d) return null; return new Promise((resolve) => { try { const t = d.transaction('files', mode), r = fn(t.objectStore('files')); t.oncomplete = () => resolve(r && r.result !== undefined ? r.result : true); t.onerror = () => resolve(null); t.onabort = () => resolve(null); } catch { resolve(null); } }); };
+  const tx = async (mode, fn, store = 'files') => { const d = await db(); if (!d) return null; return new Promise((resolve) => { try { const t = d.transaction(store, mode), r = fn(t.objectStore(store)); t.oncomplete = () => resolve(r && r.result !== undefined ? r.result : true); t.onerror = () => resolve(null); t.onabort = () => resolve(null); } catch { resolve(null); } }); };
   const files = {
     all: async () => (await tx('readonly', (s) => s.getAll())) || [],
     put: (rec) => tx('readwrite', (s) => s.put(rec)),
@@ -85,10 +88,18 @@ export function createStore({ local = globalThis.localStorage, session = globalT
     clear: () => tx('readwrite', (s) => s.clear()),
   };
 
+  /** Past conversations. list() is newest first and leaves the turns out. */
+  const history = {
+    list: async () => ((await tx('readonly', (s) => s.getAll(), 'chats')) || []).map(({ turns, log, actions, ...h }) => ({ ...h, requests: (turns || []).length })).sort((a, b) => b.at - a.at),
+    get: async (id) => (await tx('readonly', (s) => s.get(id), 'chats')) || null,
+    put: (rec) => tx('readwrite', (s) => s.put(rec), 'chats'),
+    remove: (id) => tx('readwrite', (s) => s.delete(id), 'chats'),
+  };
+
   // ---- project -------------------------------------------------------------------------------------------------
   const loadProject = () => ({ ...emptyProject(), ...(read(local, KEYS.project) || {}) });
   const saveProject = (p) => write(local, KEYS.project, p);
   const clearProject = () => { try { local.removeItem(KEYS.project); } catch { /* nothing to clear */ } };
 
-  return { loadSettings, saveSettings, loadChat, saveChat, clearChat, peek, files, loadProject, saveProject, clearProject };
+  return { loadSettings, saveSettings, loadChat, saveChat, clearChat, peek, files, history, loadProject, saveProject, clearProject };
 }

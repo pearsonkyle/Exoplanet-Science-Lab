@@ -231,7 +231,7 @@ main().catch((err) => { console.error(err); const el = document.getElementById('
         if (!ranked.length && !checks.length) return { found: 0, note: `Nothing on the Validation page matches "${query}".`, topics: done().map((t) => `${t.id}: ${t.title}`) };
         return { found: ranked.length + checks.length, topics: ranked.slice(0, limit).map((x) => topicOut(x.t)), other_topics: ranked.slice(limit).map((x) => `${x.t.id}: ${x.t.title}`), live_checks: checks.length ? checks : undefined };
       } },
-    { name: 'validation_open', description: 'Scroll the Validation page to a topic or section and open it, so the user sees the chart and the table behind the numbers.',
+    { name: 'validation_open', readOnly: true, description: 'Scroll the Validation page to a topic or section and open it, so the user sees the chart and the table behind the numbers.',
       parameters: obj({ topic: T('Topic id from validation_find, or a section: transit, orbit, rv, fits.') }, ['topic']),
       run({ topic }) { const id = vid(String(topic).replace(/^#?(val-)?/, '')); if (!document.getElementById(id)) throw new Error(`there is no "${id}" on this page: validation_find lists the topics`); if (decodeURIComponent(location.hash.slice(1)) === id) openTarget(); else location.hash = id; return { opened: id }; } },
     // the Methods tab: what each technique computes and how, in the page's own words, and the BibTeX to cite it

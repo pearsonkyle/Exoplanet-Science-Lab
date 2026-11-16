@@ -18,14 +18,19 @@ import * as ops from './ops.js';
 import { loadIndex, searchNames } from '../core/catalog.js';
 import { LD_LAWS } from '../core/limbdark.js';
 import { projectReport } from '../core/report.js';
+import { explainMethod, extractSymbol, SOURCE_FILE } from './knowledge.js';
 
 export { TOOL_SPECS };
 const sig = ops.sig;
 const cut = (s, n) => (s.length > n ? s.slice(0, n) + `… [${s.length - n} chars cut]` : s);
 const priorText = (p) => (!p ? '' : p.type === 'normal' ? `normal(${sig(p.a, 9)}, sd ${sig(p.b, 4)})` : `uniform(${sig(p.a, 9)} .. ${sig(p.b, 9)})`);
 
+// read_source: the code as published on GitHub (the browser), or the files of this checkout (the MCP server passes readSource)
+const REPO_RAW = 'https://raw.githubusercontent.com/pearsonkyle/Exoplanet-Science-Lab/main', REPO_BLOB = 'https://github.com/pearsonkyle/Exoplanet-Science-Lab/blob/main';
+
 export function createTools(ctx) {
   const { api, files, page = null, fetchJson = null, where = 'browser' } = ctx;
+  const readSource = ctx.readSource || defaultReadSource;
   const has = (m) => typeof api[m] === 'function';
   const specs = [...toolsFor(where).filter((t) => !t.needs || has(t.needs)), ...describedTools(api)], runs = [];
   let catalog = null, nextRun = 1, lastSearch = null;
@@ -195,16 +200,25 @@ export function createTools(ctx) {
           });
           kept.push(ops.dataLine(ops.describeData(before).find((x) => x.handle === 'light_curve')));
         }
-        if (rv0.length) { d.data.radial_velocity = rv0; d.fit.use = { ...d.fit.use, rv: !!(before.fit.use || {}).rv }; d.kepler = d.kepler || before.kepler; kept.push(`${rv0.length} velocity set(s)`); }
+        if (rv0.length) { d.data.radial_velocity = rv0; d.fit.use = { ...d.fit.use, rv: !!(before.fit.use || {}).rv, ...(keepLC ? {} : { lc: false }) }; d.kepler = d.kepler || before.kepler; kept.push(`${rv0.length} velocity set(s)`); }   // no real light curve: the simulated stand-in stays out of the fit
         if (tim0.length) { const letters = d.planets.map((x) => x.letter); d.data.timing = tim0.map((r) => (letters.includes(r.planet) ? r : { ...r, planet: letters[0] })); kept.push(`${tim0.length} mid-transit times`); }
         api.importSession(d);
+      }
+      // velocities and no light curve: start from the orbit, not from a transit set-up the data cannot measure
+      let rvSetup = null;
+      if (!keepLC && rv0.length && !tim0.length) {
+        const st = api.state(), keys = st.parameters.map((p) => p.key), want = ['mplanet', 'per', 'ecc', 'omega', 'tmid', ...keys.filter((k) => /^jit@rv\d+$/.test(k))].filter((k) => keys.includes(k));
+        for (const p of st.parameters) if (p.free && !want.includes(p.key)) api.setFree(p.key, false);
+        for (const k of want) api.setFree(k, true);
+        rvSetup = want;
       }
       const s = api.state(), val = (k) => sig((s.parameters.find((p) => p.key === k) || {}).value, 10), tp = (s.parameters.find((p) => p.key === 'tmid') || {}).prior;
       return { loaded: s.name, planets: s.planets, period_d: val('per'), rprs: val('rprs'), mid_transit: sig(val('tmid') + s.lightCurve.timeReference, 12), star: { teff: s.star.teff, rstar: s.star.rstar, mstar: s.star.mstar }, kepler_mode: s.kepler,
         kept_data: kept.length ? kept : undefined, data: kept.length ? undefined : dataLines(),
         tmid_note: moved ? `T mid was moved ${moved.orbits} orbits from the catalogue epoch onto the data; its prior is ${priorText(tp)} days from the time reference. A catalogue ephemeris drifts over many orbits: if the fitted tmid sits at an edge of that prior, widen it with set_prior.` : undefined,
         free: s.parameters.filter((p) => p.free).map((p) => p.key), note: 'Values are from the NASA Exoplanet Archive snapshot with wide priors.' + (kept.length ? ' The observations that were loaded are kept.' : ' No observations were fetched: any light curve shown is a simulated stand-in.'),
-        next: kept.length ? 'Choose free parameters with set_free (usually rprs, inc, tmid), then run_fit.' : 'Load the user\'s data (load_light_curve with an attached file) or simulate_light_curve, then run_fit.' };
+        ...(rvSetup ? { set_up: `Only velocities are loaded, so the orbit was set up for them: free ${rvSetup.join(', ')} (rprs and inc cannot be measured without a light curve).` } : {}),
+        next: rvSetup ? 'The set-up is ready for the velocities: check the priors with get_state if needed, then run_fit.' : kept.length ? 'Choose free parameters with set_free (usually rprs, inc, tmid), then run_fit.' : 'Load the user\'s data (load_light_curve with an attached file) or simulate_light_curve, then run_fit.' };
     },
     new_session({ name }) {
       if (!ctx.blankSession) throw new Error('new_session is not available here');
@@ -299,9 +313,25 @@ export function createTools(ctx) {
     },
     async load_radial_velocities(args) {
       const { text, name } = await sourceText(args, 'RV'), pv = ops.previewRV(text, name);
-      const sets = api.addRadialVelocities(text, name), s = api.state();
-      return { added: pv.sets, all_sets: sets, reader_notes: pv.notes, in_fit: { light_curve: s.lightCurve.inFit, radial_velocity: s.rvInFit }, kepler_mode: s.kepler, free: s.parameters.filter((p) => p.free).map((p) => p.key),
-        next: 'Velocities measure the planet mass (mplanet), e and omega. Each set has a jitter (jit@rv1, ...) that can be freed. run_fit when ready.' };
+      const sets = api.addRadialVelocities(text, name); let s = api.state(), standIn = false;
+      // a simulated stand-in light curve (lookup_planet shows one) must not join a fit of real velocities
+      if (s.lightCurve.synthetic && s.lightCurve.inFit && has('setUse')) { api.setUse({ lc: false }); s = api.state(); standIn = true; }
+      // a transit set-up left free by lookup_planet (rprs, inc) cannot be measured by velocities alone: fix it now
+      let fixedNow = [];
+      if (!s.lightCurve.inFit && !s.timing.inFit) {
+        fixedNow = s.parameters.filter((p) => p.free && /^(rprs|inc|ld\d|a2|dilution)(@|$)/.test(p.key)).map((p) => p.key); for (const k of fixedNow) api.setFree(k, false);
+        // and the orbit set up for the velocities (the same as lookup_planet does when velocities are already loaded)
+        const keys = s.parameters.map((p) => p.key); for (const k of ['mplanet', 'per', 'ecc', 'omega', 'tmid', ...keys.filter((x) => /^jit@rv\d+$/.test(x))]) if (keys.includes(k)) api.setFree(k, true);
+        s = api.state();
+      }
+      const jit = s.parameters.map((p) => p.key).filter((k) => /^jit@rv\d+$/.test(k)), free = s.parameters.filter((p) => p.free).map((p) => p.key);
+      // with no light curve in the fit, a transit set-up (rprs, inc free) cannot be measured: say exactly what to free instead
+      const onlyRV = !s.lightCurve.inFit, suggest = ['mplanet', 'per', 'ecc', 'omega', 'tmid', ...jit];
+      return { added: pv.sets, all_sets: sets, reader_notes: pv.notes, in_fit: { light_curve: s.lightCurve.inFit, radial_velocity: s.rvInFit }, kepler_mode: s.kepler, free, jitter_keys: jit,
+        ...(standIn ? { light_curve_note: 'The simulated stand-in light curve was taken out of the fit: only real data are fitted.' } : {}),
+        ...(fixedNow.length ? { now_fixed: `${fixedNow.join(', ')}: velocities alone cannot measure ${fixedNow.length > 1 ? 'them' : 'it'}, so ${fixedNow.length > 1 ? 'they were' : 'it was'} fixed.` } : {}),
+        ...(onlyRV ? { suggested_free: suggest } : {}),
+        next: onlyRV ? `Only velocities are in the fit, so the orbit was set up for them: free ${free.join(', ')} (the planet mass, period, e, omega, the time of transit, which sets the orbital phase, and each instrument's extra noise). Check the priors with get_state if needed, then run_fit.` : 'Velocities add the planet mass (mplanet), e and omega to the fit. Each set has a jitter (' + jit.join(', ') + ') that can be freed with set_free. run_fit when ready.' };
     },
     async set_timings(args) {
       const { text } = await sourceText(args, 'timings'), pv = ops.previewTimings(text);
@@ -337,15 +367,22 @@ export function createTools(ctx) {
       api.setUse(use); const s = api.state();
       return { in_fit: { light_curve: s.lightCurve.inFit, radial_velocity: s.rvInFit, timing: s.timing.inFit } };
     },
-    set_free({ free = [], fixed = [] }) {
+    set_free({ free = [], fixed = [] }) {   // reassigned below
       if (!free.length && !fixed.length) throw new Error('give "free" and/or "fixed": lists of parameter keys');
       const ars = free.filter((k) => k.split('@')[0] === 'ars');
       if (ars.length) throw new Error('a/R* (ars) is never fitted. Turn Kepler mode on (set_kepler) and free mstar or rstar instead; or leave ars fixed.');
+      fixed = fixed.filter((k) => k.split('@')[0] !== 'ars' && !free.includes(k));   // a/R* is always fixed; a key in both lists is taken as free
       needKeys([...free, ...fixed], { star: false });
+      // with only velocities in the fit, transit-shape parameters cannot be measured: leave them fixed and say so
+      const st0 = api.state(), lcOff = !st0.lightCurve.inFit && !st0.timing.inFit;
+      const blind = lcOff ? free.filter((k) => /^(rprs|inc|ld\d|a2|dilution)(@|$)/.test(k)) : [];
+      if (blind.length) { free = free.filter((k) => !blind.includes(k)); fixed = [...new Set([...fixed, ...blind])]; }
       for (const k of free) api.setFree(k, true);
       for (const k of fixed) api.setFree(k, false);
       const s = api.state();
-      return { free: s.parameters.filter((p) => p.free).map((p) => `${p.key} ~ ${priorText(p.prior)}`), fixed_now: fixed.map((k) => `${k} = ${sig((s.parameters.find((p) => p.key === k) || {}).value, 8)}`), next: 'run_fit when the set-up is right. Priors can be changed with set_prior.' };
+      return { free: s.parameters.filter((p) => p.free).map((p) => `${p.key} ~ ${priorText(p.prior)}`), fixed_now: fixed.map((k) => `${k} = ${sig((s.parameters.find((p) => p.key === k) || {}).value, 8)}`),
+        ...(blind.length ? { left_fixed: `${blind.join(', ')}: no light curve is in the fit, so the velocities cannot measure ${blind.length > 1 ? 'them' : 'it'}; kept fixed.` } : {}),
+        next: 'run_fit when the set-up is right. Priors can be changed with set_prior.' };
     },
     set_prior({ key, type, a, b }) {
       needKeys([key], { star: true });
@@ -363,6 +400,16 @@ export function createTools(ctx) {
     async run_fit({ label }, { onProgress, signal } = {}) {
       const s = api.state(), free = s.parameters.filter((p) => p.free);
       if (!free.length) throw new Error('nothing is free. Choose what to fit with set_free, e.g. {"free": ["rprs", "inc", "tmid"]}.');
+      // a simulated stand-in in the fit while the user attached their own data: fitting it would report on fake data
+      if (s.lightCurve.inFit && s.lightCurve.synthetic) {
+        const att = files.list().filter((f) => f.origin === 'attached' && !/\.fits?$|\.fz$|\.json$/i.test(f.name));
+        if (att.length) throw new Error(`the light curve in the fit is the simulated stand-in, but the user attached ${att.map((f) => f.name).join(', ')}. Load the user's data first: load_light_curve {"file": "${att[0].name}"} (or load_radial_velocities for velocities), then run_fit.`);
+      }
+      // parameters no data in the fit can measure would only return their priors, and a small model reports them as results
+      if (!s.lightCurve.inFit && !s.timing.inFit) {
+        const blind = free.map((p) => p.key).filter((k) => /^(rprs|inc|ld\d|a2|ars|dilution)(@|$)/.test(k));
+        if (blind.length) { const jit = s.parameters.map((p) => p.key).filter((k) => /^jit@rv\d+$/.test(k)); throw new Error(`${blind.join(', ')} ${blind.length > 1 ? 'are' : 'is'} free but no light curve is in the fit, so the data cannot measure ${blind.length > 1 ? 'them' : 'it'}: the "result" would be the prior. Fix the free list first, e.g. set_free {"free": ${JSON.stringify(['mplanet', 'per', 'ecc', 'omega', 'tmid', ...jit])}}, then run_fit.`); }
+      }
       if (s.running) throw new Error('a fit is already running: wait for it or stop_fit');
       const { result, rec } = await fit(label, onProgress, signal);
       const flat = /flat/i.test(result.stop_reason || ''), twin = rec && runs.find((x) => x.id !== rec.id && x.model === rec.model && x.dataKey === rec.dataKey);
@@ -378,6 +425,8 @@ export function createTools(ctx) {
     // ---- results --------------------------------------------------------------------------------------------
     get_results({ derived, keys }) { return ops.summarizeResult(api.results(), { derived, keys }); },
     explain_results() { return ops.explainResult(doc(true)); },
+    residual_periodogram(args) { return ops.residualPeriodogramOf(doc(false), args || {}); },
+    ...knowledgeHandlers(readSource),
     get_derived({ planet }) {
       const want = planet ? sfxOf(planet) : null, mine = (k) => !want || (k.split('@')[1] || '') === want.sfx;
       if (has('derived')) {
@@ -513,7 +562,7 @@ export function createTools(ctx) {
     undo({ redo }) { const r = redo ? api.redo() : api.undo(); const s = api.state(); return { done: r === false ? false : true, note: r === false ? `nothing to ${redo ? 'redo' : 'undo'}` : undefined, system: s.name, has_result: s.hasResult }; },
 
     // ---- files ----------------------------------------------------------------------------------------------
-    ...fileHandlers(files, where),
+    ...fileHandlers(files, where, (a) => H.read_source(a)),
   };
 
   /** The sentence the user is asked to confirm before a call runs, or null when it may simply run. */
@@ -578,11 +627,35 @@ export function createTools(ctx) {
   return { specs, names: specs.map((t) => t.name), handlers: H, missing, call, confirmFor, stateCard, runs, comparison, fileNames: () => files.list().map((f) => f.name), resetRuns() { runs.length = 0; nextRun = 1; } };
 }
 
+/**
+ * explain_method and read_source: the Methods document and the site's own code, on every page and in the MCP server.
+ * readSource(path) -> text; the default reads the published copy on GitHub.
+ */
+export function knowledgeHandlers(readSource = defaultReadSource) {
+  return {
+    async explain_method(args) { const content = await import('../methods/content.js'); return explainMethod(content, args || {}); },
+    async read_source({ file, symbol }) {
+      // a Methods section names some files with a hint: "src/core/session.js (summarizeFit)"
+      const hint = /\(([A-Za-z_$][\w$]*)\)\s*$/.exec(String(file || '')); if (hint && !symbol) symbol = hint[1];
+      const f = String(file || '').replace(/\s*\(.*\)\s*$/, '').trim().replace(/^\.?\//, '');
+      if (!SOURCE_FILE.test(f)) throw new Error('read_source opens the site\'s own code only: a path such as "src/core/rv.js" (see the "code" of a Methods section)');
+      const text = await readSource(f);
+      if (!symbol) { const r = extractSymbol(text, '\u0000'); return { file: f, lines: text.split('\n').length, defines: r.symbols }; }
+      const r = extractSymbol(text, String(symbol).trim());
+      return r.error ? { file: f, error: r.error, defines: r.symbols } : { file: f, symbol: r.name, line: r.line, code: r.text, source: `${REPO_BLOB}/${f}#L${r.line}` };
+    },
+  };
+}
+const defaultReadSource = async (f) => { const r = await fetch(`${REPO_RAW}/${f}`, { credentials: 'omit' }); if (!r.ok) throw new Error(`${f}: not found (HTTP ${r.status}); the file list is in the Methods section's "code"`); return r.text(); };
+export const KNOWLEDGE_TOOLS = ['explain_method', 'read_source'];
+
 /** list_files, read_file and write_file on a file store: the same on every page of the site and in the MCP server. */
-export function fileHandlers(files, where = 'browser') {
+export function fileHandlers(files, where = 'browser', readSourceTool = null) {
   return {
     list_files() { const all = files.list(); return { files: all.map((f) => ({ name: f.name, size_bytes: f.size, origin: f.origin, about: f.about })), note: all.length ? undefined : (where === 'browser' ? 'No files yet. The user can attach files with the paperclip or by dropping them on the chat.' : 'The workspace is empty.') }; },
     async read_file({ name, max_chars = 2000, offset = 0 }) {
+      // a path of the site's own code is not an attached file: read_source opens it (models mix the two up)
+      if (readSourceTool && SOURCE_FILE.test(String(name || '').replace(/^\.?\//, '')) && !files.list().some((f) => f.name === name)) return readSourceTool({ file: name });
       const text = await files.readText(name), about = ops.describeText(text, name);
       if (offset >= text.length && text.length) throw new Error(`offset ${offset} is past the end of ${name} (${text.length} characters)`);
       const part = text.slice(offset, offset + max_chars), whole = offset === 0 && text.length <= max_chars;

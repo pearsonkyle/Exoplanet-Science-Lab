@@ -2,11 +2,30 @@
 // renderLightCurve() is a pure drawing routine so the same code produces the
 // on-screen plot and the exported figures (light or dark).
 
+import { tokens, alpha, mix, groupPalette } from '../site/theme.js';
+
 export const LC_THEMES = {
   dark: { bg: '#0b0f18', grid: '#1b2334', frame: null, text: '#8491ad', title: '#dfe6f3', data: 'rgba(201,211,230,0.42)', err: null, bin: '#ffffff', model: '#5fd4ff', band: 'rgba(180,140,255,0.30)', cursor: '#ffc56b', res: 'rgba(201,211,230,0.5)', font: 'ui-monospace, Menlo, monospace', sans: 'system-ui, sans-serif' },
   // white figure in the manner of EXOTIC's final light curve: grey points with error bars, blue bins, red model
   light: { bg: '#ffffff', grid: '#e9e9e9', frame: '#000000', text: '#111111', title: '#000000', data: 'rgba(60,60,60,0.45)', err: 'rgba(60,60,60,0.16)', bin: '#1f5fbf', model: '#d62728', band: 'rgba(214,39,40,0.20)', cursor: null, res: 'rgba(60,60,60,0.5)', font: 'Helvetica, Arial, sans-serif', sans: 'Helvetica, Arial, sans-serif' },
 };
+
+// The screen theme follows the site theme (src/site/theme.js): LC_THEMES.screen is LC_THEMES.dark in the Dark theme
+// and a theme built from the site's colour tokens in the others. Exports keep asking for 'dark' or 'light' by name.
+const screenCache = {};
+function screenTheme() {
+  const t = tokens();
+  if (t.theme === 'dark') return LC_THEMES.dark;
+  if (screenCache[t.theme]) return screenCache[t.theme];
+  const base = t.light ? LC_THEMES.light : LC_THEMES.dark;
+  const th = t.light
+    ? { ...base, bg: t.panel, grid: mix(t.panel, t.line, 0.6), frame: t.line2, text: t.dim, title: t.text, font: LC_THEMES.dark.font, sans: LC_THEMES.dark.sans }
+    : { ...base, bg: t.panel, grid: mix(t.panel, t.line, 0.85), text: t.dim, title: t.text, data: alpha(t.data, 0.42), bin: t.strong, model: t.model, band: alpha(t.post, 0.3), cursor: t.star, res: alpha(t.data, 0.5) };
+  const g = groupPalette(t); if (g) th.groups = g;
+  return (screenCache[t.theme] = th);
+}
+Object.defineProperty(LC_THEMES, 'screen', { get: screenTheme, enumerable: false });
+if (typeof window !== 'undefined') window.addEventListener('esl-theme', () => { for (const k in screenCache) delete screenCache[k]; });
 
 // One colour per observation (light-curve epoch or velocity instrument). Dark: tuned for the app's
 // background. Light: the cycle EXOTIC's multi-light-curve figures use, so exported figures match its style.
@@ -15,7 +34,7 @@ export const GROUP_COLORS = {
   light: ['#000000', '#1f5fbf', '#2a9d3c', '#e88b00', '#7b3fb5', '#808080', '#d6249f', '#00a6b8', '#7fbf00'],
 };
 /** Colour of group g in a theme (themes are told apart by their background). */
-export const groupColor = (th, g) => { const c = GROUP_COLORS[th.frame ? 'light' : 'dark']; return c[g % c.length]; };
+export const groupColor = (th, g) => { const c = th.groups || GROUP_COLORS[th.frame ? 'light' : 'dark']; return c[g % c.length]; };
 
 export function niceTicks(lo, hi, n) {
   const span = hi - lo; if (!(span > 0)) return [lo];
@@ -194,6 +213,7 @@ export class LightCurvePlot {
     this.opts = {};      // view options handed to the renderer: point and model opacity, bins, colour by observation
     this.alt = null;     // { data, render(ctx, W, H, data, theme, opts) }: another panel drawn in place of the light curve
     new ResizeObserver(() => this.draw()).observe(canvas);
+    window.addEventListener('esl-theme', () => this.draw());
     let down = null, moved = false, pinch = null;
     const touches = new Map();   // pointers on the canvas: two of them pinch the time axis
     const pos = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
@@ -251,7 +271,7 @@ export class LightCurvePlot {
     if (!W || !H || !this.d) return;
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.lay = this.alt ? this.alt.render(this.ctx, W, H, this.alt.data, LC_THEMES.dark, this.opts) : renderLightCurve(this.ctx, W, H, this.d, this.view, LC_THEMES.dark, this.opts);
+    this.lay = this.alt ? this.alt.render(this.ctx, W, H, this.alt.data, LC_THEMES.screen, this.opts) : renderLightCurve(this.ctx, W, H, this.d, this.view, LC_THEMES.screen, this.opts);
   }
   /** Off-screen render of the current view for export. */
   exportCanvas(theme, title, tRef, W = 900, H = 540, scale = 3) {

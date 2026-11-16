@@ -1,8 +1,9 @@
 // Plots of the spectroscopy page: pure render functions (ctx, W, H, data, theme), so the screen and the exported
 // PNG draw the same thing. renderPanel and the dark theme are those of the photometry page.
-import { renderPanel, niceTicks, PHOT_THEME } from '../photometry/plots.js';
+import { renderPanel, niceTicks, PHOT_THEME, PHOT_DARK } from '../photometry/plots.js';
 
-export const SPEC_THEME = PHOT_THEME;
+export const SPEC_THEME = PHOT_THEME;   // the screen theme (follows the site theme)
+export const SPEC_DARK = PHOT_DARK;     // a dark figure for export, whatever the site theme
 /** For exported figures: dark text on white. */
 export const PRINT_THEME = { bg: '#ffffff', frame: '#444b5c', grid: '#e3e6ee', text: '#3a4152', strong: '#10131a', data: '#30384c', model: '#0b6fb8', star: '#b36b00', ok: '#16794a', warn: '#a85a00', bad: '#c0293b', post: '#6a3fc4', font: '11px ui-monospace, "SF Mono", Menlo, Consolas, monospace' };
 const fmt = (v, step) => v.toFixed(Math.max(0, Math.min(8, Math.ceil(-Math.log10(step) + 0.01))));

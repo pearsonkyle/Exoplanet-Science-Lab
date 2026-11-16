@@ -12,7 +12,8 @@
 // No DOM here: the page object, the file store and the way to change page are passed in, so the Node tests run it.
 
 import { checkArgs, lintSpecs } from './toolspec.js';
-import { fileHandlers } from './tools.js';
+import { fileHandlers, knowledgeHandlers, KNOWLEDGE_TOOLS } from './tools.js';
+import { TOOL_SPECS } from './toolspec.js';
 import * as ops from './ops.js';
 import { projectCard, capabilities } from './project.js';
 
@@ -73,7 +74,8 @@ const jsonText = (data) => JSON.stringify(data, (k, v) => (v === undefined || v 
 export function createSiteTools({ page, root, analyzer = null, analyzerApi = null, pageApi = null, files, maxNavigations = 6, project = null, pageProblem = null }) {
   if (!PAGES[page]) throw new Error(`unknown page "${page}"`);
   const pageTools = (pageApi && Array.isArray(pageApi.tools) ? pageApi.tools : []).filter((t) => t && typeof t.run === 'function').map((t) => ({ group: page, ...t, parameters: t.parameters || obj({}) }));
-  const own = analyzer ? [] : FILE_SPECS, FH = fileHandlers(files, 'browser');
+  // pages other than the analyzer: the files of the conversation, and the Methods and the code (how something is computed)
+  const KH = knowledgeHandlers(), own = analyzer ? [] : [...FILE_SPECS, ...TOOL_SPECS.filter((t) => KNOWLEDGE_TOOLS.includes(t.name))], FH = { ...fileHandlers(files, 'browser', KH.read_source), ...KH };
   const specs = [NAVIGATE, ...pageTools.map(({ run, ...t }) => t), ...(analyzer ? analyzer.specs : []), ...own];
   // a page tool may not shadow another tool, and must be a well-formed declaration (reported, not thrown: the page still works)
   const seen = new Set(), problems = lintSpecs(specs.map((t) => ({ ...t, where: undefined }))).filter((p) => !/additional|no description/.test(p));

@@ -7,6 +7,9 @@
 // index.html, so the site works from any static host with no rewrite rules.
 
 import { mountTips } from './tips.js';
+import { THEMES, getTheme, setTheme, applyStoredTheme } from './theme.js';
+
+applyStoredTheme();   // the inline script in each page's <head> normally did this already, before first paint
 
 export const TAGLINE = 'scientific modeling and uncertainty quantification in your browser';
 
@@ -40,7 +43,36 @@ export function mountNav(el, active) {
   // the menu button stands in for the row of links when they do not fit (see fitNav)
   const menu = document.createElement('button'); menu.type = 'button'; menu.className = 'sitemenu'; menu.innerHTML = '<i aria-hidden="true"></i>';
   nav.id = 'sitenav'; menu.setAttribute('aria-label', 'Sections menu'); menu.setAttribute('aria-controls', 'sitenav'); menu.setAttribute('aria-expanded', 'false');
-  el.append(menu, nav);
+  // the theme: an icon button with a menu on a wide bar; in the folded menu, a row of choices under the links
+  const tbtn = document.createElement('button'); tbtn.type = 'button'; tbtn.className = 'sitetheme'; tbtn.id = 'sitetheme';
+  tbtn.title = 'Theme'; tbtn.setAttribute('aria-label', 'Theme'); tbtn.setAttribute('aria-haspopup', 'menu'); tbtn.setAttribute('aria-expanded', 'false'); tbtn.setAttribute('aria-controls', 'sitethemes');
+  tbtn.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg>';
+  const tmenu = document.createElement('div'); tmenu.className = 'sitethemes'; tmenu.id = 'sitethemes'; tmenu.setAttribute('role', 'menu'); tmenu.setAttribute('aria-label', 'Theme'); tmenu.hidden = true;
+  const trow = document.createElement('div'); trow.className = 'sitethemerow'; trow.setAttribute('role', 'group'); trow.setAttribute('aria-label', 'Theme');
+  trow.innerHTML = '<span class="st-label">Theme</span>';
+  const item = (t, inRow) => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.theme = t.id; b.title = t.hint;
+    b.innerHTML = `<i class="st-swatch st-${t.id}" aria-hidden="true"></i><span>${t.label}</span>`;
+    if (!inRow) b.setAttribute('role', 'menuitemradio');
+    b.addEventListener('click', () => { setTheme(t.id); if (!inRow) closeT(true); });
+    return b;
+  };
+  for (const t of THEMES) { tmenu.append(item(t, false)); trow.append(item(t, true)); }
+  const sync = () => { const cur = getTheme(); for (const b of [...tmenu.children, ...trow.querySelectorAll('button')]) { const on = b.dataset.theme === cur; b.classList.toggle('on', on); b.setAttribute(b.getAttribute('role') === 'menuitemradio' ? 'aria-checked' : 'aria-pressed', String(on)); } };
+  const openT = () => { tmenu.hidden = false; tbtn.setAttribute('aria-expanded', 'true'); el.classList.add('themes-open'); sync(); (tmenu.querySelector('.on') || tmenu.firstChild).focus(); };
+  const closeT = (focus) => { if (tmenu.hidden) return; tmenu.hidden = true; tbtn.setAttribute('aria-expanded', 'false'); el.classList.remove('themes-open'); if (focus) tbtn.focus(); };
+  tbtn.addEventListener('click', () => (tmenu.hidden ? openT() : closeT(false)));
+  tmenu.addEventListener('keydown', (e) => {
+    const items = [...tmenu.children], i = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus(); }
+    else if (e.key === 'Escape') { e.stopPropagation(); closeT(true); }
+    else if (e.key === 'Tab') closeT(false);
+  });
+  document.addEventListener('pointerdown', (e) => { if (!tmenu.hidden && !tmenu.contains(e.target) && !tbtn.contains(e.target)) closeT(false); });
+  window.addEventListener('esl-theme', sync);
+  sync();
+  nav.append(trow);
+  el.append(tbtn, tmenu, menu, nav);
   compactNav(el, menu, nav);
 }
 
@@ -78,7 +110,7 @@ export function mountAssistant() {
   b.id = 'esl-ai-launch'; b.type = 'button'; b.title = 'Assistant: ask it to set this page up or run an experiment';
   b.setAttribute('aria-label', 'Open the assistant'); b.setAttribute('aria-haspopup', 'dialog'); b.setAttribute('aria-expanded', 'false');
   const small = matchMedia('(max-width: 560px)').matches;   // on a phone: smaller and nearer the corner, so it covers less of the page
-  b.style.cssText = `position:fixed;right:${small ? 8 : 16}px;bottom:${small ? 8 : 16}px;z-index:70;width:${small ? 40 : 44}px;height:${small ? 40 : 44}px;border-radius:50%;border:1px solid #5fd4ff88;background:#0b1422e6;color:#e9f8ff;cursor:pointer;display:grid;place-items:center;box-shadow:0 4px 18px #000a;padding:0`;
+  b.style.cssText = `position:fixed;right:${small ? 8 : 16}px;bottom:${small ? 8 : 16}px;z-index:70;width:${small ? 40 : 44}px;height:${small ? 40 : 44}px;border-radius:50%;border:1px solid color-mix(in srgb, var(--model) 53%, transparent);background:color-mix(in srgb, var(--pop) 90%, transparent);color:var(--on);cursor:pointer;display:grid;place-items:center;box-shadow:0 4px 18px var(--shadow);padding:0`;
   b.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M8 10h8M8 13h5"/></svg>';
   let mod = null;
   const open = async (auto) => {

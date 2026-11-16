@@ -6,6 +6,8 @@
 <title>Plan · Exoplanet Science Lab</title>
 <meta name="description" content="Plan exoplanet transits, secondary eclipses and phase-curve windows from your site: times, altitude, darkness and coverage of each event.">
 <meta name="esl-root" content="../">
+<!-- the site theme before first paint (src/site/theme.js) -->
+<script>try{var t=localStorage.getItem('esl.theme');if(t&&t!=='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="stylesheet" href="../src/site/site.css">
 <link rel="stylesheet" href="../src/plan/plan.css">
 </head>
@@ -101,10 +103,10 @@
         <div class="p-views tabset" role="tablist" aria-label="View">
           <button type="button" role="tab" data-view="list">List</button><button type="button" role="tab" data-view="grid">Charts</button><button type="button" role="tab" data-view="eph">Ephemerides</button>
         </div>
+        <button type="button" class="btn" id="p-resetall" title="Clear the list and results and put every setting back to its default">Reset</button>
         <label for="p-sort">Sort <select id="p-sort"><option value="time">time</option><option value="score">score</option><option value="sigma">least certain timing</option><option value="depth">deepest</option><option value="mag">brightest</option></select></label>
       </div>
       <div class="p-note" id="p-note"></div>
-      <details class="p-about" id="p-about"><summary>How this is computed</summary><div id="p-about-body"></div></details>
       <div class="p-list" id="p-list"></div>
     </section>
     <aside class="p-detail" id="p-detail" hidden></aside>

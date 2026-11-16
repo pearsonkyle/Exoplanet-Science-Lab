@@ -9,7 +9,7 @@ import { expandSpectral } from '../core/ldspec.js';
 import { MISSION_BANDS, TELESCOPES, bandsOf } from '../core/missionbands.js';
 import * as SP from '../core/spectroscopy.js';
 import { fitCanvas } from '../photometry/plots.js';
-import { SPEC_THEME, PRINT_THEME, renderCubeImage, renderSpectrum, renderLightCurve, renderChannelGrid, renderNoise, renderBinnedRms } from './plots.js';
+import { SPEC_THEME, SPEC_DARK, PRINT_THEME, renderCubeImage, renderSpectrum, renderLightCurve, renderChannelGrid, renderNoise, renderBinnedRms } from './plots.js';
 
 const h = (tag, props = {}, ...kids) => {
   const el = document.createElement(tag);
@@ -476,7 +476,7 @@ function exportAs(kind, o = {}) {
   if (kind === 'ecsv') { const t = SP.spectrumToECSV(P.spectrum, meta()); if (save) download(t, 'text/plain', stem() + '_spectrum.ecsv'); return t; }
   if (kind === 'png') {
     const W = o.width || 1200, H = o.height || 640, cv = Object.assign(document.createElement('canvas'), { width: W * 2, height: H * 2 }), ctx = cv.getContext('2d'); ctx.scale(2, 2);
-    renderSpectrum(ctx, W, H, specData(), o.theme === 'dark' ? SPEC_THEME : PRINT_THEME);
+    renderSpectrum(ctx, W, H, specData(), o.theme === 'dark' ? SPEC_DARK : PRINT_THEME);
     if (save) cv.toBlob((b) => download(b, 'image/png', stem() + '_spectrum.png'), 'image/png');
     return cv.toDataURL('image/png');
   }

@@ -11,7 +11,7 @@ import { crossMatch, rankWithCatalog, contamination } from '../core/fieldstars.j
 import { parseASU, VIZIER_MIRRORS, describeFailure } from '../core/rvsources.js';
 import { loadIndex, lookupHost } from '../core/catalog.js';
 import { readHeaderOnly } from './pipeline.js';
-import { PHOT_THEME } from './plots.js';
+import { PHOT_DARK } from './plots.js';   // marks drawn on the (dark) image keep their bright colours in every theme
 
 const NOVA = 'https://nova.astrometry.net/upload';
 const fx = (v, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : '–');
@@ -258,18 +258,18 @@ export function createFieldTools(ctx) {
         const s = F.gaia[k]; if (!(s.g <= gl)) break;
         const [x, y] = W.skyToPix(s.ra, s.dec); if (!(x > -2 && y > -2 && x < P.cur.width + 1 && y < P.cur.height + 1)) continue;
         const [sx, sy] = v.toScreen(x, y), r = Math.max(3, 7 - 0.35 * (s.g - 8));
-        c.strokeStyle = s.variable ? PHOT_THEME.bad : matched.has(k) ? '#5fd4ffcc' : '#5fd4ff66';
+        c.strokeStyle = s.variable ? PHOT_DARK.bad : matched.has(k) ? '#5fd4ffcc' : '#5fd4ff66';
         c.beginPath(); c.moveTo(sx, sy - r); c.lineTo(sx + r, sy); c.lineTo(sx, sy + r); c.lineTo(sx - r, sy); c.closePath(); c.stroke();
       }
     }
-    if (F.ranked && P.frame === 0) F.ranked.slice(0, 8).forEach((q, i) => { const [sx, sy] = v.toScreen(q.x, q.y); c.fillStyle = q.usable ? PHOT_THEME.ok : PHOT_THEME.text; c.fillText(String(i + 1), sx + 7, sy + 12); });
+    if (F.ranked && P.frame === 0) F.ranked.slice(0, 8).forEach((q, i) => { const [sx, sy] = v.toScreen(q.x, q.y); c.fillStyle = q.usable ? PHOT_DARK.ok : PHOT_DARK.text; c.fillText(String(i + 1), sx + 7, sy + 12); });
     const t = F.target;
     if (t && !t.unknown) {
       const [x, y] = W.skyToPix(t.ra, t.dec);
       if (Number.isFinite(x)) {
-        const [sx, sy] = v.toScreen(x, y); c.strokeStyle = PHOT_THEME.star; c.lineWidth = 2;
+        const [sx, sy] = v.toScreen(x, y); c.strokeStyle = PHOT_DARK.star; c.lineWidth = 2;
         for (const [a, b] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) { c.beginPath(); c.moveTo(sx + a * 9, sy + b * 9); c.lineTo(sx + a * 17, sy + b * 17); c.stroke(); }
-        c.fillStyle = PHOT_THEME.star; c.fillText(t.name, sx + 12, sy - 12);
+        c.fillStyle = PHOT_DARK.star; c.fillText(t.name, sx + 12, sy - 12);
       }
     }
     c.restore();

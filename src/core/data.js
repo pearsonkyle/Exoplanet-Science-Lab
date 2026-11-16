@@ -455,3 +455,25 @@ export function parseRV(text, name = 'RV') {
   sets.sort((a, b) => a.t[0] - b.t[0]);
   return { sets, notes, timeStandard: tsd.key };
 }
+
+/**
+ * Factors that scale error bars so the reduced chi-squared of a model is 1, one factor per epoch, keeping every
+ * error bar's size relative to the others (sigma_i -> beta_k sigma_i, not a single value for all points).
+ * f, e: data and errors; pred: the model at each point; epoch: epoch index per point (or null for one epoch);
+ * nEpochs: how many epochs; kFree: free parameters of the fit. One baseline normalisation per epoch is counted as a
+ * parameter as well. The degrees of freedom N - k are shared among epochs in proportion to their points, so
+ * beta_k^2 = chi2_k / (n_k (N - k) / N) and the total chi2 / (N - k) becomes exactly 1.
+ * Returns { beta: [..], before: chi2 / dof, dof } or null when an error bar is zero or missing.
+ */
+export function errorScaleFactors(f, e, pred, epoch, nEpochs = 1, kFree = 0) {
+  const N = f.length, ne = Math.max(1, nEpochs), chi = new Float64Array(ne), cnt = new Float64Array(ne);
+  for (let i = 0; i < N; i++) {
+    if (!(e[i] > 0) || !Number.isFinite(e[i])) return null;
+    const k = epoch ? epoch[i] : 0, r = (f[i] - pred[i]) / e[i];
+    chi[k] += r * r; cnt[k]++;
+  }
+  const k = kFree + ne, dof = N - k;
+  if (!(dof > 0)) return null;
+  const beta = Array.from(chi, (c, j) => (cnt[j] ? Math.sqrt(c / (cnt[j] * dof / N)) : 1));
+  return { beta, before: chi.reduce((a, b) => a + b, 0) / dof, dof };
+}

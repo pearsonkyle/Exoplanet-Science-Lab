@@ -4,7 +4,7 @@
 // sentences, never the data arrays.
 
 import { fitEphemeris, assignEpochs, parseTimings, MS_PER_YEAR } from '../core/ephemeris.js';
-import { timingPeriodogram } from '../core/periodogram.js';
+import { timingPeriodogram, lombScargle, falseAlarmProbability, falseAlarmLevel } from '../core/periodogram.js';
 import { synthesize, parseLightCurve, parseRV, combineEpochs, removeEpoch, nearestEpoch } from '../core/data.js';
 import { buildProblem, PLANET_FIELDS, planetKey } from '../core/model.js';
 import { LD_LAWS } from '../core/limbdark.js';
@@ -236,6 +236,96 @@ export function periodogramOf(doc, { planet, bootstrap = 0 } = {}) {
     peaks: p1 ? p1.peaks.slice(0, 3).map((p) => ({ period_epochs: sig(p.period, 5), period_days: sig(p.periodDays, 6), power: sig(p.power, 4), false_alarm_probability: sig(p.fap, 3), ...(p.fapBootstrap !== undefined ? { false_alarm_bootstrap: sig(p.fapBootstrap, 3) } : {}) })) : [],
     models: (pg.models || []).filter(Boolean).map((m) => ({ model: m.name, k: m.k, chi2: sig(m.chi2, 5), bic: sig(m.bic, 6), ...(m.terms && m.terms.length ? { period_days: sig(m.terms[0].periodDays, 6), amplitude_min: sig(m.terms[0].amp * 1440, 3), amplitude_err_min: sig(m.terms[0].ampErr * 1440, 2) } : {}) })),
     significant: !!pg.significant, recommended: pg.models && pg.models[pg.recommended] ? pg.models[pg.recommended].name : 'linear', verdict: pg.verdict, notes: pg.notes || [] };
+}
+
+// ---- a periodic signal left in the residuals ---------------------------------------------------------------------
+/**
+ * Generalised Lomb-Scargle periodogram of the residuals of the current model (light curve or radial velocities, each
+ * velocity set about its own zero point, errors with the fitted jitter added), with Baluev false-alarm probabilities.
+ * data: 'auto' (velocities when there are any, else the light curve) | 'rv' | 'lc'. Periods in days.
+ * The strongest peaks are compared with the known planets' periods (and their harmonics) and the 1-day alias.
+ */
+/** chi2 left after a weighted least-squares fit of a sinusoid of period P plus one offset per group (instrument). */
+function chi2WithSinusoid(t, y, dy, grp, P) {
+  const ng = Math.max(...grp) + 1, m = ng + 2, A = Array.from({ length: m }, () => new Float64Array(m)), b = new Float64Array(m), w = 2 * Math.PI / P;
+  const row = (i) => { const r = new Float64Array(m); r[grp[i]] = 1; r[ng] = Math.sin(w * t[i]); r[ng + 1] = Math.cos(w * t[i]); return r; };
+  for (let i = 0; i < t.length; i++) { const r = row(i), wi = 1 / (dy[i] * dy[i]); for (let a = 0; a < m; a++) { b[a] += wi * r[a] * y[i]; for (let c = 0; c < m; c++) A[a][c] += wi * r[a] * r[c]; } }
+  // Gauss-Jordan with partial pivoting (m is a handful)
+  const x = b.slice();
+  for (let c = 0; c < m; c++) {
+    let p = c; for (let r = c + 1; r < m; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]]; [x[c], x[p]] = [x[p], x[c]];
+    if (!(Math.abs(A[c][c]) > 1e-300)) continue;
+    for (let r = 0; r < m; r++) if (r !== c) { const f = A[r][c] / A[c][c]; if (!f) continue; for (let k = c; k < m; k++) A[r][k] -= f * A[c][k]; x[r] -= f * x[c]; }
+  }
+  const coef = Array.from(x, (v, c) => (Math.abs(A[c][c]) > 1e-300 ? v / A[c][c] : 0));
+  let c2 = 0; for (let i = 0; i < t.length; i++) { const r = row(i); let mdl = 0; for (let a = 0; a < m; a++) mdl += r[a] * coef[a]; c2 += ((y[i] - mdl) / dy[i]) ** 2; }
+  return c2;
+}
+
+export function residualPeriodogramOf(doc, { data = 'auto', min_period, max_period, peaks: npk = 5 } = {}) {
+  validateSession(doc);
+  const spec = specFromSession(doc), prob = buildProblem({ ...spec, free: [] }), det = prob.detail([]);
+  if (!det) throw new Error('the model cannot be evaluated at the current values (an impossible geometry or limb darkening): fix the set-up first');
+  const vals = valuesFromSession(doc);
+  const haveRV = !!(det.rv && det.rv.length && spec.rv && spec.rv.length), haveLC = !!spec.data;
+  const which = data === 'auto' ? (haveRV ? 'rv' : 'lc') : data;
+  let t = [], y = [], dy = [], grp = [], unit;
+  if (which === 'rv') {
+    if (!haveRV) throw new Error('no radial velocities are loaded (or they are not used in the fit): load them first');
+    spec.rv.forEach((D, k) => { const X = det.rv[k], jit = X.jitter || 0; for (let i = 0; i < D.t.length; i++) { t.push(D.t[i]); y.push(D.v[i] - X.gamma - X.model[i]); dy.push(Math.hypot(D.e[i], jit)); grp.push(k); } });
+    unit = 'm/s';
+  } else {
+    if (!haveLC) throw new Error('no light curve is loaded: load one first');
+    const L = spec.data; for (let i = 0; i < L.t.length; i++) { const full = det.base && det.transit ? det.base[i] * det.transit[i] : det.model[i]; t.push(L.t[i]); y.push((L.f[i] - full) * 1e6); dy.push(L.e[i] * 1e6); grp.push(0); }
+    unit = 'ppm';
+  }
+  const n = t.length; if (n < 8) throw new Error(`only ${n} points: too few for a periodogram`);
+  const order = t.map((_, i) => i).sort((a, b) => t[a] - t[b]); t = order.map((i) => t[i]); y = order.map((i) => y[i]); dy = order.map((i) => dy[i]); grp = order.map((i) => grp[i]);
+  const span = t[n - 1] - t[0], steps = t.slice(1).map((v, i) => v - t[i]).filter((v) => v > 0).sort((a, b) => a - b), cad = steps[steps.length >> 1] || span / n;
+  const pmin = Math.max(min_period || (which === 'rv' ? 1.05 : 4 * cad), 2 * cad), pmax = Math.min(max_period || (which === 'rv' ? 2 * span : span / 2), 10 * span);
+  if (!(pmax > pmin)) throw new Error(`no periods to search between ${pmin} and ${pmax} d for a span of ${sig(span, 4)} d`);
+  // a grid uniform in frequency, five samples per peak width 1/span, capped so the cost stays near 2e7 sine pairs
+  const f0 = 1 / pmax, f1 = 1 / pmin, nf = Math.max(200, Math.min(Math.ceil((f1 - f0) * span * 5), Math.floor(2e7 / n), 200000));
+  const freqs = Float64Array.from({ length: nf }, (_, i) => f0 + (f1 - f0) * i / (nf - 1));
+  const T = Float64Array.from(t), Y = Float64Array.from(y), E = Float64Array.from(dy);
+  const pow = lombScargle(T, Y, E, freqs), ctx = { t: T, dy: E, fmax: f1 };
+  // local maxima, strongest first, one per peak width
+  const loc = []; for (let i = 1; i < nf - 1; i++) if (pow[i] >= pow[i - 1] && pow[i] > pow[i + 1]) loc.push(i);
+  loc.sort((a, b) => pow[b] - pow[a]);
+  const picked = []; for (const i of loc) { if (picked.every((j) => Math.abs(freqs[i] - freqs[j]) > 1.5 / span)) picked.push(i); if (picked.length >= npk) break; }
+  const known = planetSuffixes(doc).map((sx, k) => ({ letter: doc.planets[k].letter, per: planetValuesOf(vals, sx, doc.kepler).per })).filter((p) => p.per > 0);
+  // two periods are the same signal when their frequencies differ by less than the resolution 1/span
+  const same = (P, Q) => Math.abs(1 / P - 1 / Q) < 1.5 / span;
+  const notes = (P) => {
+    const out = [];
+    for (const k of known) {
+      if (same(P, k.per)) out.push(`the period of planet ${k.letter}`);
+      else for (const m of [2, 3]) { if (same(P, k.per / m)) out.push(`1/${m} of planet ${k.letter}'s period (a harmonic)`); if (same(P, k.per * m)) out.push(`${m} x planet ${k.letter}'s period`); }
+      if (which === 'rv' && (Math.abs(1 / P - Math.abs(1 - 1 / k.per)) < 1.5 / span || Math.abs(1 / P - (1 + 1 / k.per)) < 1.5 / span)) out.push(`a 1-day alias of planet ${k.letter}`);
+    }
+    if (Math.abs(1 / P - 1) < 1.5 / span || Math.abs(1 / P - 2) < 1.5 / span) out.push('near 1 day or 1/2 day: the daily sampling, not necessarily the star');
+    if (which === 'rv' && Math.abs(P - 365.25) < 20) out.push('near one year: the yearly sampling or a barycentric-correction problem');
+    return out;
+  };
+  const list = picked.map((i) => { const P = 1 / freqs[i], fap = falseAlarmProbability(pow[i], ctx); return { period_days: sig(P, 6), power: sig(pow[i], 4), false_alarm_probability: sig(fap, 3), ...(notes(P).length ? { note: notes(P).join('; ') } : {}) }; });
+  const lvl = { '10%': sig(falseAlarmLevel(0.1, ctx), 4), '1%': sig(falseAlarmLevel(0.01, ctx), 4), '0.1%': sig(falseAlarmLevel(0.001, ctx), 4) };
+  let s2 = 0, c2 = 0; for (let i = 0; i < n; i++) { s2 += y[i] * y[i]; c2 += (y[i] / dy[i]) ** 2; }
+  // residuals much larger than their error bars: the noise is not what the errors say (missing jitter, activity, a poor
+  // model), and the white-noise false-alarm probabilities below are then far too small
+  // judged after the best peak's sinusoid is taken out (the power is the fraction of the weighted variance it explains),
+  // so a strong real signal does not count as noise
+  const chi2n = c2 / n, after = list[0] ? chi2WithSinusoid(t, y, dy, grp, list[0].period_days) / n : chi2n, noisy = after > 2;
+  const best = list[0], sigf = best && best.false_alarm_probability < 0.01 && !best.note;
+  const caution = noisy ? ` Caution: even without that peak the residuals are ${sig(Math.sqrt(after), 3)} times their error bars (chi2/N = ${sig(after, 3)}), so the noise is not white and these false-alarm probabilities are too small. ${which === 'rv' ? 'Free each instrument\'s jitter (set_free jit@rv1, jit@rv2, ...), run the fit again, then repeat this search.' : 'Rescale the errors or fit a noise model first, then repeat this search.'}` : '';
+  return {
+    data: which === 'rv' ? `${n} radial velocities, residuals of the current model (each set about its own zero point; errors include the fitted jitter)` : `${n} light-curve points, residuals of the current model`,
+    span_days: sig(span, 5), searched_periods_days: [sig(pmin, 4), sig(pmax, 5)], frequencies: nf, residual_rms: `${sig(Math.sqrt(s2 / n), 4)} ${unit}`, median_error: `${sig(E.slice().sort()[n >> 1], 4)} ${unit}`,
+    peaks: list, power_at_false_alarm: lvl, known_periods_days: known.map((k) => ({ planet: k.letter, period: sig(k.per, 8) })),
+    chi2_per_point: sig(chi2n, 4), chi2_per_point_without_best_peak: sig(after, 4),
+    verdict: !best ? 'no peak found' : sigf && noisy ? `The strongest peak is at ${best.period_days} d (formal false-alarm probability ${best.false_alarm_probability}), but it cannot be called a signal yet.${caution}` : sigf ? `The strongest peak, at ${best.period_days} d, has a false-alarm probability of ${best.false_alarm_probability} (below 1%) and matches no known period: a candidate signal. Check it is not stellar activity (rotation, its harmonics) and test it by adding a planet with that period (add_planet, then a fit) and comparing the evidence with compare_runs.` : best.false_alarm_probability < 0.01 ? `The strongest peak (${best.period_days} d, FAP ${best.false_alarm_probability}) is ${best.note}: not a new signal.` : `No significant periodic signal: the strongest peak (${best.period_days} d) has a false-alarm probability of ${best.false_alarm_probability}.${caution}`,
+    method: 'Generalised (floating-mean) Lomb-Scargle with the errors as weights; false-alarm probability by Baluev (2008), which assumes white noise: correlated noise or a poor fit makes it too optimistic.',
+  };
 }
 
 // ---- the model at the current values ---------------------------------------------------------------------------

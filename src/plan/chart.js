@@ -5,6 +5,7 @@
 // nightData(ev, site, opts, frame) adds the target; renderAltitude / renderSkyTrack draw it with a theme, full
 // size or compact (the small multiples of the grid view, which share their axes within a night).
 import { altAz, sunAltAz, moonAltAz, twilight, noonBefore, airmass, moonIllumination, refraction } from '../core/observability.js';
+import { getTheme } from '../site/theme.js';
 
 // Text colours against what they are drawn on (WCAG 2.1 contrast ratio, the contrast() helper below): `text` 16.5:1
 // and `dim` 9.4:1 on the panel, where the axis labels are; captions inside the plot sit on a dark plate (at least
@@ -20,6 +21,17 @@ export const THEME = {
 };
 /** Colour of each kind of event (observability.js EVENT_KINDS): the window on the charts, the badge in the list. */
 export const KIND_COLOUR = { transit: '#6fdcff', eclipse: '#ffc56b', phase: '#f39bd6', custom: '#c9d3e6' };
+// The charts are pictures of the sky, so they stay dark in the Dark, Dusk and Light site themes (on Light the canvases
+// get a dark backing in plan.css). The Night theme (src/site/theme.js) turns them red and amber, changed in place so
+// plan/main.js, which imports THEME and KIND_COLOUR, draws in the new colours at its next paint (a resize follows).
+const DARK_CHART = { theme: { ...THEME, sky: [...THEME.sky] }, kinds: { ...KIND_COLOUR } };
+const NIGHT_CHART = {
+  theme: { text: '#f5b39a', dim: '#d08268', line: '#4a1a12', panel: '#140404', target: '#ff7a52', targetCore: '#ffd2bf', moon: '#ffc070', warn: '#ffb347', bad: '#ff5a5a', ok: '#d9a03f', twi: '#e68a9a',
+    sky: ['#5a2216', '#43180f', '#2e0f09', '#1d0805', '#0b0202'], grid: 'rgba(255,140,110,0.18)', gridFaint: 'rgba(255,140,110,0.10)' },
+  kinds: { transit: '#ff7a52', eclipse: '#ffb347', phase: '#e68a9a', custom: '#e0927a' },
+};
+function followSite() { const c = getTheme() === 'night' ? NIGHT_CHART : DARK_CHART; Object.assign(THEME, c.theme, { sky: [...c.theme.sky] }); Object.assign(KIND_COLOUR, c.kinds); }
+if (typeof window !== 'undefined') { followSite(); window.addEventListener('esl-theme', followSite); }
 const KIND_WORD = { transit: 'transit', eclipse: 'eclipse', phase: 'phase window', custom: 'phase window' };
 const rgba = (hex, a) => `rgba(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(',')},${a})`;
 const skyBand = (sunAlt) => (sunAlt > -0.833 ? 0 : sunAlt > -6 ? 1 : sunAlt > -12 ? 2 : sunAlt > -18 ? 3 : 4);

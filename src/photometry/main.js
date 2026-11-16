@@ -11,7 +11,7 @@ import { ImageViewer } from './viewer.js';
 import { createInspector } from './inspect.js';
 import { createFieldTools } from './wcs.js';
 import { rankComparisons, saturationLevel, psfShape } from '../core/imexam.js';
-import { renderPanel, fitCanvas, PHOT_THEME, renderFov } from './plots.js';
+import { renderPanel, fitCanvas, PHOT_THEME, PHOT_DARK, renderFov } from './plots.js';   // PHOT_DARK: marks on the image
 import { renderPsd, renderRmsBin, renderPixelMap, renderPixelResponse, durationLabel } from './diagnostics.js';
 import { BUCKET, tessProducts, keplerProducts, k2Products, chooseProducts, fetchBytes, resolveTarget } from './mast.js';
 import { expandZips, ZIP_NAME } from '../core/zip.js';
@@ -395,12 +395,12 @@ function drawOverlay(c, v) {
       c.stroke(); c.setLineDash([]);
     };
     const pm = pipelineMask(t), selMask = P.result && P.sel >= 0 ? P.result.opt.tried[P.sel].mask : null;
-    if (pm && !selMask) outline(pm, PHOT_THEME.star);
+    if (pm && !selMask) outline(pm, PHOT_DARK.star);
     if (pm && selMask) outline(pm, '#ffc56b66', [3, 3]);
-    if (selMask) outline(selMask, PHOT_THEME.ok);
-    if (P.customMask.some((x) => x)) outline(P.customMask, PHOT_THEME.model, [5, 3]);
+    if (selMask) outline(selMask, PHOT_DARK.ok);
+    if (P.customMask.some((x) => x)) outline(P.customMask, PHOT_DARK.model, [5, 3]);
     const tg = P.tpfTarget || (P.result && P.result.opt.target);
-    if (tg) { const [sx, sy] = v.toScreen(tg.x, tg.y); c.strokeStyle = PHOT_THEME.bad; c.beginPath(); c.moveTo(sx - 6, sy); c.lineTo(sx + 6, sy); c.moveTo(sx, sy - 6); c.lineTo(sx, sy + 6); c.stroke(); }
+    if (tg) { const [sx, sy] = v.toScreen(tg.x, tg.y); c.strokeStyle = PHOT_DARK.bad; c.beginPath(); c.moveTo(sx - 6, sy); c.lineTo(sx + 6, sy); c.moveTo(sx, sy - 6); c.lineTo(sx, sy + 6); c.stroke(); }
     return;
   }
   for (const s of P.detected) { const [sx, sy] = v.toScreen(s.x, s.y); c.strokeStyle = '#8491ad88'; c.lineWidth = 1; c.beginPath(); c.arc(sx, sy, 4, 0, 6.2832); c.stroke(); }
@@ -411,7 +411,7 @@ function drawOverlay(c, v) {
     let x = s.x, y = s.y, known = P.frame === 0;
     if (M && k != null) { x = M.x[k * M.nS + i]; y = M.y[k * M.nS + i]; known = true; }
     else if (lp) { x = lp[2 * i]; y = lp[2 * i + 1]; known = true; }
-    const [sx, sy] = v.toScreen(x, y), col = i ? PHOT_THEME.model : PHOT_THEME.star;
+    const [sx, sy] = v.toScreen(x, y), col = i ? PHOT_DARK.model : PHOT_DARK.star;
     c.globalAlpha = known ? 1 : 0.35; c.strokeStyle = col; c.lineWidth = 1.5; c.setLineDash([]);
     c.beginPath(); c.arc(sx, sy, Math.max(3, rA * v.scale), 0, 6.2832); c.stroke();
     c.setLineDash([4, 4]); c.lineWidth = 1; c.beginPath(); c.arc(sx, sy, rIn * v.scale, 0, 6.2832); c.stroke(); c.beginPath(); c.arc(sx, sy, rOut * v.scale, 0, 6.2832); c.stroke(); c.setLineDash([]);

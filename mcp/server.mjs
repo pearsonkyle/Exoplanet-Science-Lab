@@ -21,7 +21,7 @@ import { createTools } from '../src/assistant/tools.js';
 import { createDocApi, blankSession } from '../src/assistant/docApi.js';
 import { describeText } from '../src/assistant/ops.js';
 
-const HERE = dirname(fileURLToPath(import.meta.url)), PUBLIC = resolve(HERE, '../public');
+const HERE = dirname(fileURLToPath(import.meta.url)), PUBLIC = resolve(HERE, '../public'), REPO = resolve(HERE, '..');
 const log = (...a) => process.stderr.write('[esl-mcp] ' + a.join(' ') + '\n');
 const MAX_FILE = 30e6;
 
@@ -101,7 +101,9 @@ export function createEslServer({ workspace, session } = {}) {
   const fetchText = async (p) => { const f = resolve(PUBLIC, p); if (!f.startsWith(PUBLIC + sep)) throw new Error('bad path'); return readFileSync(f, 'utf8'); };
   const fetchJson = async (name) => JSON.parse(await fetchText('catalog/' + name));
   const api = createDocApi({ fetchText, fetchJson, store: workspaceStore(files), session });
-  const tools = createTools({ api, files, fetchJson, where: 'mcp', blankSession });
+  // read_source: the files of this checkout (the browser reads the published copy on GitHub)
+  const readSource = async (f) => { const p = resolve(REPO, f); if (!p.startsWith(REPO + sep)) throw new Error('bad path'); return readFileSync(p, 'utf8'); };
+  const tools = createTools({ api, files, fetchJson, where: 'mcp', blankSession, readSource });
   const server = new Server({ name: 'exoplanet-science-lab', version: '0.1.0' }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.specs.map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters, annotations: { readOnlyHint: !!t.readOnly, destructiveHint: !!t.confirm, openWorldHint: false, title: t.name.replace(/_/g, ' ') } })),

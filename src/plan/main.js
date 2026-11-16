@@ -225,21 +225,24 @@ function scoreHtml(s) {
 }
 /**
  * Altitude of the star over the region of interest (and half an hour each side) as a small SVG: twilight shaded,
- * the event window tinted in the colour of its kind, the altitude limit dashed, the track bold where observable.
+ * the event window tinted in the colour of its kind, the altitude limit dashed; the track is thin, and bold only inside
+ * the observation window (the region of interest) where it is also observable.
  */
 function sparkline(ev) {
   const s = site(), t0 = ev.roiStart - 0.5 / 24, t1 = ev.roiEnd + 0.5 / 24, n = 40, W = 120, H = 30, x = (t) => ((t - t0) / (t1 - t0) * W).toFixed(1), y = (a) => (H - 1 - Math.max(0, Math.min(90, a)) / 90 * (H - 2)).toFixed(1);
   const pts = [];
   const hz = A.info && A.info.opts.horizon;
-  for (let i = 0; i <= n; i++) { const t = t0 + (t1 - t0) * i / n, h = O.altAz(ev.target.ra, ev.target.dec, t, s); pts.push({ t, alt: h.alt, clear: !hz || h.alt + O.refraction(h.alt) > hz(h.az), sun: O.sunAltAz(t, s).alt }); }
+  const ts = [...Array.from({ length: n + 1 }, (_, i) => t0 + (t1 - t0) * i / n), ev.roiStart, ev.roiEnd].sort((a, b) => a - b);
+  for (const t of ts) { const h = O.altAz(ev.target.ra, ev.target.dec, t, s); pts.push({ t, alt: h.alt, clear: !hz || h.alt + O.refraction(h.alt) > hz(h.az), sun: O.sunAltAz(t, s).alt }); }
   let tw = '', obs = '', line = '', on = false;
   // twilight: one rectangle per run of samples with the Sun above the limit
-  for (let i = 0, a = -1; i <= n; i++) {
-    const lit = i < n && (pts[i].sun > P.sun || pts[i + 1].sun > P.sun);
+  const m = pts.length - 1;
+  for (let i = 0, a = -1; i <= m; i++) {
+    const lit = i < m && (pts[i].sun > P.sun || pts[i + 1].sun > P.sun);
     if (lit && a < 0) a = i;
     if (!lit && a >= 0) { tw += `<rect x="${x(pts[a].t)}" y="0" width="${((pts[i].t - pts[a].t) / (t1 - t0) * W).toFixed(1)}" height="${H}" class="sp-tw"/>`; a = -1; }
   }
-  for (const p of pts) { line += `${line ? 'L' : 'M'}${x(p.t)} ${y(p.alt)}`; const ok = p.alt >= P.minAlt && p.sun <= P.sun && p.clear; obs += ok ? `${on ? 'L' : 'M'}${x(p.t)} ${y(p.alt)}` : ''; on = ok; }
+  for (const p of pts) { line += `${line ? 'L' : 'M'}${x(p.t)} ${y(p.alt)}`; const ok = p.t >= ev.roiStart - 1e-9 && p.t <= ev.roiEnd + 1e-9 && p.alt >= P.minAlt && p.sun <= P.sun && p.clear; obs += ok ? `${on ? 'L' : 'M'}${x(p.t)} ${y(p.alt)}` : ''; on = ok; }
   return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${tw}<rect x="${x(ev.ingress)}" y="0" width="${(Math.max(0.8, (ev.egress - ev.ingress) / (t1 - t0) * W)).toFixed(1)}" height="${H}" fill="${KIND_COLOUR[ev.kind]}" class="sp-ev"/>` +
     `<line x1="0" x2="${W}" y1="${y(P.minAlt)}" y2="${y(P.minAlt)}" class="sp-lim"/><path d="${line}" class="sp-all"/><path d="${obs}" class="sp-ok"/></svg>`;
 }
@@ -375,6 +378,7 @@ function downloadCsv() {
 // ------------------------------------------------------------------------------------------------ drawing
 
 function draw() {
+  if (A.cleared) { drawCleared(); return; }
   const I = A.info;
   const ev = A.events.slice();
   if (P.sort === 'score') ev.sort((a, b) => b.score.total - a.score.total || a.mid - b.mid);
@@ -382,7 +386,7 @@ function draw() {
   else if (P.sort === 'depth') ev.sort((a, b) => (b.target.depth || 0) - (a.target.depth || 0) || a.mid - b.mid);
   else if (P.sort === 'mag') ev.sort((a, b) => (fin(a.target.mag) ? a.target.mag : 99) - (fin(b.target.mag) ? b.target.mag : 99) || a.mid - b.mid);
   A.shown = ev.slice(0, MAX_SHOWN);
-  const nFull = ev.filter((e) => e.full).length, nShort = ev.filter((e) => !e.full && e.transitFull).length, nPart = ev.length - nFull - nShort, drift = ev.filter((e) => e.sigma * 1440 > 10).length;
+  const nFull = ev.filter((e) => e.full).length, nShort = ev.filter((e) => !e.full && e.transitFull).length, nPart = ev.length - nFull - nShort;
   const ks = kindsOn(), byKind = ks.length > 1 ? ' <span class="more">(' + ks.map((k) => { const m = ev.filter((e) => e.full && e.kind === k).length; return `${m} ${{ transit: 'transit', eclipse: 'eclipse', phase: 'phase window', custom: 'custom window' }[k]}${m === 1 ? '' : 's'}`; }).join(', ') + ')</span>' : '';
   const noun = ks.length === 1 ? { transit: 'transit', eclipse: 'eclipse', phase: 'phase-curve window', custom: 'phase window' }[ks[0]] : 'event';
   $('p-count').innerHTML = `<b>${nFull} observable ${noun}${nFull === 1 ? '' : 's'}</b>${byKind}` + (nShort ? ` <span class="more">· ${nShort} short baseline</span>` : '') + (nPart ? ` <span class="more">· ${nPart} partial</span>` : '') +
@@ -401,13 +405,30 @@ function draw() {
   const notes = [];
   if (Object.keys(A.failed).length) notes.push(`<span class="hl" role="alert">Not loaded, so not listed: ${esc(failedText())}. Change a setting or reload to try again.</span>`);
   if (!P.chosen && !single) notes.push(`Showing <b>${esc(FALLBACK_SITE.name)}</b> until you pick a site.`);
-  if (drift) notes.push(`<span class="hl">${drift} with a time uncertain by more than 10 min</span> (their region is widened by 1σ; sort by “least certain timing”).`);
   const asm = ev.filter((e) => e.assumed).length; if (asm) notes.push(`<span class="hl">${asm} eclipse${asm === 1 ? '' : 's'} assume${asm === 1 ? 's' : ''} a circular orbit</span> (marked e?).`);
-  const left = I.skipped.noMag + I.skipped.noDuration; if (left) notes.push(`${left} target${left === 1 ? '' : 's'} left out: ${[I.skipped.noMag ? `${I.skipped.noMag} without a magnitude` : '', I.skipped.noDuration ? `${I.skipped.noDuration} without a duration` : ''].filter(Boolean).join(', ')}.`);
   $('p-note').innerHTML = notes.join(' ');
   summaries();
   drawSite();
   drawDetail();
+}
+
+/** After Reset: settings back to their defaults, no list until asked for (or until a setting changes). */
+function drawCleared() {
+  A.shown = [];
+  $('p-count').innerHTML = '<b>Cleared</b><span class="of"> · settings back to their defaults</span>';
+  $('p-note').innerHTML = '';
+  const list = $('p-list'); list.className = 'p-list v-' + P.view;
+  list.innerHTML = `<div class="p-empty p-cleared"><p>The list and results are cleared. Choose a site, dates and limits, or show the transits for ${esc(curSite() ? curSite().name : 'the default site')} now.</p><button type="button" class="btn primary" id="p-show">Show transits</button></div>`;
+  $('p-show').addEventListener('click', () => { A.cleared = false; draw(); });
+  summaries(); drawSite(); drawDetail();
+}
+function resetAll() {
+  for (const k of Object.keys(P)) delete P[k];
+  Object.assign(P, JSON.parse(JSON.stringify(DEFAULTS)), { disc: DM.parseFilter(DEFAULTS.disc) });
+  A.open.clear(); A.selected = null; A.cleared = true;
+  fillForm();
+  const o = curSite(); if (o && globe) globe.lookAt(o.lat, o.lon);
+  recompute(0, true);
 }
 
 function summaries() {
@@ -417,19 +438,8 @@ function summaries() {
   $('p-limits-sum').textContent = `alt ≥ ${P.minAlt}° · Sun ≤ ${P.sun === -0.833 ? '0' : P.sun}° · ${P.base} h`;
   $('p-targets-sum').textContent = (['nea', 'toi', 'eu'].filter((k) => P.src[k]).map((k) => SOURCES.find((x) => x.id === k).short).join(' + ') || 'none') + (P.disc === DM.GROUP_IDS ? '' : ' · ' + DM.GROUPS.filter((g) => P.disc.includes(g.id)).map((g) => g.short).join(' '));
   $('p-crit-t').title = plain(`Observable = ${criteria()}.`);
-  $('p-about-body').innerHTML = aboutHtml();
 }
 const plain = (html) => html.replace(/<[^>]+>/g, '');
-/** The explanations that used to sit beside the controls, in one place. */
-function aboutHtml() {
-  const unk = A.events.filter((e) => !e.target.hasErr).length;
-  return `<p><b>Observable</b> means ${criteria()}. Rows in bold are fully observable; for the others the coverage bar shows what is lost (<i class="k-tw"></i> twilight, <i class="k-lo"></i> too low).</p>` +
-    '<p><b>Score</b> (0–100): coverage of the event 50 + dark baseline 20 + altitude 20 (0 at your limit, full at 60°) + Moon 10 (full when it is down or more than 40° away, less the brighter and closer it is). It ranks observing conditions only; it knows nothing about the telescope, the depth or the star.</p>' +
-    '<p><b>Eclipses</b> are timed from the transit ephemeris and the orbit: mid-eclipse at true anomaly 270° − ω (transit at 90° − ω, the batman and Winn 2010 convention), plus the light-travel time across the orbit. A planet without a catalogued eccentricity is taken as circular (phase 0.5) and marked <span class="as">e?</span>. The eclipse duration is the transit duration scaled by Winn (2010) eqs. 14 and 16 (0.3% for e ≤ 0.3, 8% at e = 0.9, against a brute-force contact search). Timing errors combine T₀, P, e and ω as uncorrelated.</p>' +
-    `<p><b>Phase windows</b> cover ${P.phSpan === 1 ? 'a full orbit' : P.phSpan + ' of an orbit'} centred on the ${P.phCenter} for planets with P ≤ ${P.phMaxPer} d; <b>custom</b> windows run from phase ${P.cFrom} to ${P.cTo} (0 = mid-transit, phase measured in time). A window is its own region of interest: no baseline is added.</p>` +
-    `<p>Times are converted from BJD<sub>TDB</sub> to UTC at the Earth and shown in ${esc(F.tzLabel)}; altitudes are geometric (no refraction); values marked <span class="est">~</span> are estimated from other parameters${unk ? `; ${unk} listed event${unk === 1 ? ' has' : 's have'} no errors on P or T₀, so no timing margin` : ''}.</p>`;
-}
-
 // ---- the site card: globe, where and what the site is, tonight, and the links the crawler found working
 function resourcesHtml(c) {
   const R = A.obs.resources, r = R && c && R.sites[c.id];
@@ -577,7 +587,7 @@ function chooseSite(id) {
 }
 const numOr = (v, d) => (v === '' || !fin(+v) ? d : +v);
 let timer = 0;
-function recompute(delay = 0) { save(); clearTimeout(timer); timer = setTimeout(async () => { await ensureSources(); compute(); }, delay); }
+function recompute(delay = 0, keepCleared = false) { if (!keepCleared) A.cleared = false; save(); clearTimeout(timer); timer = setTimeout(async () => { await ensureSources(); compute(); }, delay); }
 function changed(e) {
   const id = e.target.id;
   if (id === 'p-obs') chooseSite(e.target.value);
@@ -622,7 +632,8 @@ $('p-kinds').addEventListener('click', (e) => {
   if (on && P.events.length === 1) return;                                     // one kind stays on
   setKinds(on ? P.events.filter((x) => x !== k) : [...P.events, k]); recompute();
 });
-$('p-tonight').addEventListener('click', () => { P.date = 'auto'; save(); fillForm(); compute(); });
+$('p-tonight').addEventListener('click', () => { P.date = 'auto'; A.cleared = false; save(); fillForm(); compute(); });
+$('p-resetall').addEventListener('click', resetAll);
 $('p-reset').addEventListener('click', () => { for (const k of LIMIT_KEYS) P[k] = DEFAULTS[k]; fillForm(); recompute(); });
 document.querySelector('.p-views').addEventListener('click', (e) => { const b = e.target.closest('button[data-view]'); if (!b) return; P.view = b.dataset.view; save(); draw(); });
 $('p-geo').addEventListener('click', () => {
@@ -631,7 +642,7 @@ $('p-geo').addEventListener('click', () => {
   msg.textContent = 'Asking the browser…';
   navigator.geolocation.getCurrentPosition((pos) => {
     P.lat = +pos.coords.latitude.toFixed(4); P.lon = +pos.coords.longitude.toFixed(4); P.elev = fin(pos.coords.altitude) ? Math.round(pos.coords.altitude) : 0;
-    P.obs = 'custom'; P.tz = 'browser'; P.chosen = true; save(); fillForm(); compute(); if (globe) globe.lookAt(P.lat, P.lon);
+    P.obs = 'custom'; P.tz = 'browser'; P.chosen = true; A.cleared = false; save(); fillForm(); compute(); if (globe) globe.lookAt(P.lat, P.lon);
     msg.textContent = 'Using this device\'s position (it stays in this browser).';
   }, (err) => { msg.textContent = err.code === 1 ? 'Permission was not given. Type the coordinates instead.' : 'The position could not be determined. Type the coordinates instead.'; }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 3600000 });
 });
@@ -692,7 +703,7 @@ start().catch((err) => { status('Could not load the catalogues: ' + err.message)
 {
   const T = (description, extra = {}) => ({ type: 'string', description, ...extra }), N = (description, extra = {}) => ({ type: 'number', description, ...extra }), obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
   const key = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''), plain = (html) => html.replace(/<[^>]+>/g, '');
-  const apply = async () => { save(); fillForm(); await ensureSources(); compute(); };
+  const apply = async () => { A.cleared = false; save(); fillForm(); await ensureSources(); compute(); };
   const isoMin = (jd) => new Date(Math.round((jd - 2440587.5) * 1440) * 60000).toISOString().slice(0, 16) + 'Z';   // to the nearest minute, as the list shows
   const siteText = () => `${curSite() ? curSite().name : 'custom site'} (${Math.abs(P.lat).toFixed(3)}° ${P.lat >= 0 ? 'N' : 'S'}, ${Math.abs(P.lon).toFixed(3)}° ${P.lon >= 0 ? 'E' : 'W'}, ${Math.round(P.elev || 0)} m)`;
   const datesText = () => (single ? 'the next 12 months' : `${P.date === 'auto' ? 'tonight' : P.date}${A.info ? ` (first night ${F.day(A.info.jd0)})` : ''}, ${P.nights} night${P.nights > 1 ? 's' : ''}`);

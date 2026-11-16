@@ -1,6 +1,18 @@
 // Plots of the photometry page: pure render functions taking a theme, so screen and export can share them.
 
+import { tokens } from '../site/theme.js';
+
 export const PHOT_THEME = { bg: '#0b0f18', frame: '#2b3550', grid: '#1e2638', text: '#8491ad', strong: '#dfe6f3', data: '#c9d3e6', model: '#5fd4ff', star: '#ffc56b', ok: '#6fe3a5', warn: '#ffb454', bad: '#ff6b7a', post: '#b48cff', font: '11px ui-monospace, "SF Mono", Menlo, Consolas, monospace' };
+
+/** The Dark screen theme, unchanged whatever the site theme (exports that ask for a dark figure use this). */
+export const PHOT_DARK = Object.freeze({ ...PHOT_THEME });
+// PHOT_THEME is the screen theme: it follows the site theme (src/site/theme.js), changed in place so every module
+// that imported it draws in the new colours at its next redraw (the theme change is followed by a resize event).
+function followSite() {
+  const t = tokens();
+  Object.assign(PHOT_THEME, t.theme === 'dark' ? PHOT_DARK : { bg: t.panel, frame: t.line2, grid: t.line, text: t.dim, strong: t.text, data: t.data, model: t.model, star: t.star, ok: t.ok, warn: t.warn, bad: t.bad, post: t.post });
+}
+if (typeof window !== 'undefined') { followSite(); window.addEventListener('esl-theme', followSite); }
 
 export function niceTicks(lo, hi, n = 5) {
   const span = hi - lo || 1, raw = span / n, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p, step = (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p, out = [];

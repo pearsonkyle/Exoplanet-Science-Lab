@@ -176,7 +176,9 @@ function harness(script, extra = {}) {
   check('step cap: stops after the allowed steps and says so', end === 'cap' && capped === 3 && h.events.some((e) => e.type === 'cap' && e.steps === 3));
   check('a call repeated with the same result is refused the third time', ends.length === 3 && ends[0].ok && ends[1].ok && !ends[2].ok && /exact call was (just|already) made/.test(ends[2].text));
   h.f.seen.length = 0; const end2 = await h.agent.resume();
-  check('"continue" resumes the same request for another round of steps', end2 === 'cap' && h.f.seen.length === 3 && h.f.seen[0].body.messages.filter((m) => m.role === 'tool').length === 3);
+  check('"continue" resumes the same request; a model that only repeats a refused call is told to answer', end2 === 'cap' && h.f.seen.length === 3 && h.f.seen[0].body.messages.filter((m) => m.role === 'tool').length === 3 && h.events.some((e) => e.type === 'note' && /asked to answer from what it has/.test(e.text)));
+  h.f.seen.length = 0; await h.agent.resume();
+  check('the request after that is sent with tool_choice "none": the model has to answer', h.f.seen.length >= 1 && h.f.seen[0].body.tool_choice === 'none');
 }
 {
   const asked = [];
@@ -273,7 +275,7 @@ function fakePlan() {
   const fl = memoryFiles(), plan = fakePlan(), P = createSiteTools({ page: 'plan', root: ROOT, pageApi: plan, files: fl });
   const an = createTools({ api: fakeApi(), files: fl, where: 'browser' }), A = createSiteTools({ page: 'analyze', root: ROOT, analyzer: an, analyzerApi: null, files: fl });
   const H = createSiteTools({ page: 'home', root: ROOT, files: fl });
-  check('tools per page: the planner has navigate, its own tools and the file tools; the analyzer its own; the landing page navigate and files', P.problems.length === 0 && P.names.join() === 'navigate,plan_set_site,plan_list_transits,plan_open_transit,plan_clear_all,list_files,read_file,write_file' && A.names[0] === 'navigate' && A.names.includes('run_fit') && A.names.filter((n) => n === 'list_files').length === 1 && !A.names.includes('plan_set_site') && H.names.join() === 'navigate,list_files,read_file,write_file', `${P.names.length} / ${A.names.length} / ${H.names.length} tools`);
+  check('tools per page: the planner has navigate, its own tools, the file tools and the Methods/code tools; the analyzer its own; the landing page navigate, files and Methods', P.problems.length === 0 && P.names.join() === 'navigate,plan_set_site,plan_list_transits,plan_open_transit,plan_clear_all,list_files,read_file,write_file,explain_method,read_source' && A.names[0] === 'navigate' && A.names.includes('run_fit') && A.names.filter((n) => n === 'list_files').length === 1 && !A.names.includes('plan_set_site') && H.names.join() === 'navigate,list_files,read_file,write_file,explain_method,read_source', `${P.names.length} / ${A.names.length} / ${H.names.length} tools`);
   const wrong = await P.call('run_fit', {}), wrong2 = await A.call('plan_set_site', { observatory: 'x' }), same = await P.call('navigate', { page: 'plan' }), badp = await P.call('navigate', { page: 'observe', params: { zoom: 3 } });
   check('a tool of another page is refused with where to find it; so is navigating to the page one is on, or with an unknown parameter', !wrong.ok && /tool of the analyze page: call navigate/.test(wrong.text) && !wrong2.ok && /tool of the plan page/.test(wrong2.text) && !same.ok && /already on the plan page/.test(same.text) && !badp.ok && /no address parameter zoom/.test(badp.text));
   const nav = await P.call('navigate', { page: 'analyze', params: { planet: 'WASP-43 b' } }), open = await P.call('plan_open_transit', { index: 1, in: 'observe' });

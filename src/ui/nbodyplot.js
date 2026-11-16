@@ -242,5 +242,5 @@ export function drawNbody(cv, kind, d, opt = {}) {
   const scale = opt.scale || Math.min(window.devicePixelRatio || 1, 2);
   cv.width = Math.round(W * scale); cv.height = Math.round(H * scale); cv._cssW = W; cv._cssH = H;
   const ctx = cv.getContext('2d'); ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  (kind === 'grid' ? renderGridMap : kind === 'orbit' ? renderOrbitTop : renderNbodyOC)(ctx, W, H, d, LC_THEMES[opt.theme || 'dark'], opt);
+  (kind === 'grid' ? renderGridMap : kind === 'orbit' ? renderOrbitTop : renderNbodyOC)(ctx, W, H, d, LC_THEMES[opt.theme || 'screen'], opt);
 }

@@ -180,7 +180,7 @@ export function chart(parent, kind, spec, opts = {}) {
   if (opts.label) { cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', opts.label); }
   // stored specs name colours as 'var:esl', 'var:s1', ...: resolve them against the theme
   const col = (c) => (typeof c === 'string' && c.startsWith('var:') ? (/^s\d$/.test(c.slice(4)) ? th.s[Number(c[5]) - 1] : th[c.slice(4)]) || th.dim : c);
-  const resolve = (sp) => { for (const k of ['series', 'rows']) for (const q of sp[k] || []) { if (q.color) q.color = col(q.color); for (const it of q.items || []) it.color = col(it.color); } return sp; };
+  const resolve = (sp) => { for (const k of ['series', 'rows']) for (const q of sp[k] || []) { if (q.color) { q._color ??= q.color; q.color = col(q._color); } for (const it of q.items || []) { it._color ??= it.color; it.color = col(it._color); } } return sp; };
   let geo = null, cur = resolve(spec), hover = null;
   const H = () => (typeof opts.height === 'function' ? opts.height(box.clientWidth) : opts.height || 240);
   function render() {
@@ -231,6 +231,8 @@ export function chart(parent, kind, spec, opts = {}) {
   }
   function onLeave() { tip.style.display = 'none'; if (hover) { hover = null; render(); } }
   cv.addEventListener('pointermove', onMove); cv.addEventListener('pointerdown', onMove); cv.addEventListener('pointerleave', onLeave);
+  // the site theme changed (src/site/theme.js): read the colours again and redraw
+  window.addEventListener('esl-theme', () => { Object.assign(th, themeFrom(parent.closest('#val') || document.body)); cur = resolve(cur); legend(); render(); });
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => render()).observe(box); else window.addEventListener('resize', render);
   legend(); render();
   return { update(s) { cur = resolve(s); hover = null; legend(); render(); }, el: box };

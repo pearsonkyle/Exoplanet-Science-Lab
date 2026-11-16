@@ -11,7 +11,7 @@ import { LD_LAWS, toClaret, checkProfile, intensity, kippingToQuadratic, quadrat
 import { orbitElements, eventTimes } from './core/kepler.js';
 import { makeTransit } from './core/transit.js';
 import { PRIOR_TYPES, validatePrior } from './core/priors.js';
-import { applyDetrend } from './core/data.js';
+import { applyDetrend, errorScaleFactors } from './core/data.js';
 import { alignColumns, DETREND_COLUMNS } from './core/detrend.js';
 import { synthesize, parseLightCurve, nearestEpoch, TIME_SYSTEMS, FLUX_UNITS, TIME_STANDARDS, combineEpochs, removeEpoch, splitByOrbit, foldTimes, epochList, parseRV } from './core/data.js';
 import { weightedQuantiles, resampleIndices, makeRng } from './core/stats.js';
@@ -1274,7 +1274,7 @@ function buildSystemTab() {
     const b = ms.res.best, cvm = h('canvas', { id: 'mooncanvas' });
     el.append(h('p', { class: 'note callout' + (ms.res.fap > 0.05 ? ' warn' : ''), html: `Moon search: the strongest candidate has period <b>${b.permoon.toFixed(4)} d</b>, phase ${b.phmoon.toFixed(3)}, Rm/R★ ${b.rmoon.toFixed(4)}, signal-to-noise <b>${b.snr.toFixed(1)}</b>. In ${ms.res.nullMax.length} searches of noise alone the largest reached ${Math.max(...ms.res.nullMax).toFixed(1)} (false-alarm probability ${ms.res.fap < 0.02 ? 'below ' + (1 / (1 + ms.res.nullMax.length)).toFixed(2) : ms.res.fap.toFixed(2)}). ${ms.res.fap > 0.05 ? 'That is not a detection.' : 'Periods that differ from it by one orbit of the planet per transit fit almost as well: ' + ms.res.peaks.slice(0, 3).map((p) => `${p.permoon.toFixed(3)} d (${p.snr.toFixed(1)})`).join(', ') + '.'}` }), cvm,
       h('div', { class: 'btnrow' }, h('button', { class: 'btn', disabled: ms.res.fap > 0.2, onclick: () => { pushUndo(); setMoonValues({ rmoon: Number(b.rmoon.toFixed(5)), permoon: Number(b.permoon.toFixed(5)), phmoon: Number(b.phmoon.toFixed(4)), mmoon: 0, imoon: 0 }); buildPanels(); refresh(); flash('Moon added from the search'); } }, 'Use this moon in the model'), h('button', { class: 'chip small', onclick: () => { S.moonSearch = null; buildSystemTab(); } }, 'dismiss')));
-    requestAnimationFrame(() => { const W = cvm.clientWidth, H = cvm.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 2); if (!W) return; cvm.width = W * dpr; cvm.height = H * dpr; const c = cvm.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); renderMoonSearch(c, W, H, { ...ms.res, label: `${planetLabel()} · moon search` }, LC_THEMES.dark, {}); });
+    requestAnimationFrame(() => { const W = cvm.clientWidth, H = cvm.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 2); if (!W) return; cvm.width = W * dpr; cvm.height = H * dpr; const c = cvm.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); renderMoonSearch(c, W, H, { ...ms.res, label: `${planetLabel()} · moon search` }, LC_THEMES.screen, {}); });
   }
   const kp0 = h('input', { type: 'checkbox', checked: S.kepler });
   kp0.addEventListener('change', () => { pushUndo(); setKepler(kp0.checked); });
@@ -1449,7 +1449,7 @@ function figureFor(view) {
   if (view === 'lc' || view === 'residuals') {
     if (!model || !model.valid || !lcPlot.d) throw new Error('there is no valid model at the current parameters (the planet does not transit, or the limb darkening profile is not physical), so there is nothing to draw the data against');
     const d = { ...lcPlot.d, cursor: null }, vw = S.view === 'lc' && lcPlot.zoomed && !lcPlot.alt ? lcPlot.view : autoView(d, d.x0, d.x1), tRef = S.data.tRef || 0;
-    if (view === 'lc') return { data: d, title: `${planetLabel()} — ${S.data.name}`, render: (c, W, H, dd, th, o) => renderLightCurve(c, W, H, dd, vw, th, { ...o, tRef }) };
+    if (view === 'lc') return { data: d, title: S.data.name && S.data.name.startsWith(planetLabel()) ? S.data.name : `${planetLabel()} — ${S.data.name}`, render: (c, W, H, dd, th, o) => renderLightCurve(c, W, H, dd, vw, th, { ...o, tRef }) };
     return { data: d, title: `${planetLabel()} — residuals`, render: (c, W, H, dd, th, o) => renderResiduals(c, W, H, dd, th, { ...o, x0: vw.x0, x1: vw.x1 }) };
   }
   if (view === 'timing') {
@@ -1734,7 +1734,7 @@ function buildDataTab() {
     el.append(h('div', { class: 'field' }, h('span', {}, 'Time system'), sel('time', TIME_SYSTEMS, d.timeSystem)), h('div', { class: 'field', title: 'What the times are: where the clock is (Earth, Sun, solar-system barycentre) and which scale it keeps. JD and HJD in UTC are converted to BJD_TDB with the host’s position (System tab, or the catalogue).' }, h('span', {}, 'Time standard'), sel('tstd', TIME_STANDARDS, d.timeStandard || 'unknown')), h('div', { class: 'field' }, h('span', {}, 'Flux units'), sel('flux', FLUX_UNITS, d.fluxUnits)));
   }
   el.append(h('p', { class: 'note' }, S.exptimeMin > 0 ? `Exposure taken as ${Number(S.exptimeMin.toFixed(2))} min (${Math.abs(S.exptimeMin - cad) < 0.02 * cad ? 'the cadence' : 'from the file or example'}): the model is averaged over it when that is long enough to blur ingress and egress.` : 'The model is evaluated at each time stamp, with no averaging over the exposure.'));
-  el.append(h('div', { class: 'btnrow' }, h('button', { class: 'btn', title: 'Set every error bar to the white-noise level measured from the residuals of the current model', onclick: rescaleErrors }, 'Rescale errors to residual scatter')), h('p', { class: 'note', id: 'rescalemsg' }));
+  el.append(h('div', { class: 'btnrow' }, h('button', { class: 'btn', title: 'Multiply the error bars by one factor (per epoch) so that the reduced χ² of the current model is 1; their relative sizes are kept', onclick: rescaleErrors }, 'Rescale errors so χ²/dof = 1')), h('p', { class: 'note', id: 'rescalemsg' }));
   el.append(h('p', { class: 'note' }, 'The evidence depends on the error bars, so runs are only compared when they used the same data and errors.'));
 
   el.append(h('h3', {}, 'Use your own data'));
@@ -1820,19 +1820,20 @@ function rvArchiveBlock() {
 function rescaleErrors() {
   const say = (t, bad) => { const e = $('#rescalemsg'); if (e) { e.innerHTML = t; e.style.color = bad ? 'var(--bad)' : ''; } flash(bad ? 'Errors not rescaled' : 'Errors rescaled'); };
   if (!model || !model.valid) return say('Nothing changed. Rescaling needs a valid model to take residuals from: on the System tab, make sure the planet transits and the limb darkening badge reads “physical profile”.', true);
-  const before = Float64Array.from(S.data.e).sort()[S.data.e.length >> 1], chiBefore = model.chi2 / S.data.t.length;
+  const d = S.data, n = d.t.length, ne = nEpochs();
+  const pred = Float64Array.from(d.f, (_, i) => model.base[i] * model.tr[i]);
+  // the fit's own free parameters (S.free also remembers keys of models that are switched off)
+  const factors = errorScaleFactors(d.f, d.e, pred, d.epoch, ne, fitParams().filter((p) => S.free[p.key]).length);
+  if (!factors) return say('Nothing changed: some error bars are zero or missing, so they cannot be scaled by a common factor.', true);
   pushUndo();
-  const d = S.data, n = d.t.length, ne = nEpochs(), e = new Float64Array(n), sig = [];
-  for (let k = 0; k < ne; k++) {   // each epoch has its own noise level
-    const r = []; for (let i = 0; i < n; i++) if (!d.epoch || d.epoch[i] === k) r.push(Math.abs(d.f[i] - model.base[i] * model.tr[i]));
-    r.sort((a, b) => a - b); sig.push(1.4826 * r[r.length >> 1]);
-  }
-  for (let i = 0; i < n; i++) e[i] = sig[d.epoch ? d.epoch[i] : 0];
-  S.data = { ...d, e, notes: [...(d.notes || []).filter((x) => !x.startsWith('errors rescaled')), `errors rescaled to ${sig.map((v) => (v * 1e6).toFixed(0)).join(', ')} ppm (robust scatter of residuals${ne > 1 ? ', epoch by epoch' : ''})`] };
+  // every error bar keeps its size relative to the others in its epoch: each is multiplied by its epoch's factor
+  const e = Float64Array.from(d.e, (x, i) => x * factors.beta[d.epoch ? d.epoch[i] : 0]);
+  const fmt = (b) => '×' + b.toFixed(3);
+  S.data = { ...d, e, notes: [...(d.notes || []).filter((x) => !x.startsWith('errors rescaled')), `errors rescaled ${factors.beta.map(fmt).join(', ')} so that χ²/dof = 1${ne > 1 ? ', epoch by epoch' : ''}`] };
   S.fit = null; S.dataId++; S.range = 'full'; buildPanels(); refresh();
-  const after = Float64Array.from(S.data.e).sort()[n >> 1], same = Math.abs(after / before - 1) < 0.02;
-  say((same ? `The error bars already matched the scatter (${(after * 1e6).toFixed(0)} ppm): they moved by less than 2%.` : `Error bars set to <b>${sig.map((v) => (v * 1e6).toFixed(0)).join(', ')} ppm</b>${ne > 1 ? ' (one value per epoch)' : ''}, from a median of ${(before * 1e6).toFixed(0)} ppm. χ²/N was ${chiBefore.toFixed(2)} and is now about 1.`)
-    + ' The scatter is measured about the model on screen, so a poor model inflates it: rescale after the model fits, then run the fit again. Undo (Ctrl/⌘+Z) brings the old error bars back.' + (same ? '' : ' Earlier runs used the old error bars, so their evidences are no longer comparable.'));
+  const same = factors.beta.every((b) => Math.abs(b - 1) < 0.02);
+  say((same ? `The error bars already matched the scatter (χ²/dof ${factors.before.toFixed(2)}): every factor is within 2% of 1.` : `Error bars multiplied by <b>${factors.beta.map(fmt).join(', ')}</b>${ne > 1 ? ' (one factor per epoch)' : ''}; their relative sizes are kept. χ²/dof was ${factors.before.toFixed(2)} (${factors.dof.toFixed(0)} degrees of freedom) and is now 1.00.`)
+    + ' The residuals are measured about the model on screen, so a poor model inflates them: rescale after the model fits, then run the fit again. Undo (Ctrl/⌘+Z) brings the old error bars back.' + (same ? '' : ' Earlier runs used the old error bars, so their evidences are no longer comparable.'));
 }
 
 // ---- Fit tab ------------------------------------------------------------------
@@ -1981,7 +1982,7 @@ function buildTiming() { timingRedraw = buildTimingTab($('#tab-timing'), { S, h,
 function setNbody(o) { S.nbody = o; S.fit = null; S.range = 'full'; if (o) { S.use = { ...S.use, timing: true }; } buildPanels(); }
 /** What the Dynamics block and the companion search (src/ui/dynamics.js) work with. */
 function dynamicsApp() {
-  return { S, h, pushUndo, flash, rebuild: buildTiming, label: planetLabel, theme: LC_THEMES.dark, star: starNow,
+  return { S, h, pushUndo, flash, rebuild: buildTiming, label: planetLabel, get theme() { return LC_THEMES.screen; }, star: starNow,
     planets: () => S.planets.map((p) => ({ ...p, ...planetValues(S.values, p.sfx) })), setNbody, addCompanion };
 }
 /** Put the companion found by the perturber search into the model as a planet, with the N-body model on and its mass, period and phase free. */
@@ -2645,6 +2646,8 @@ function setLayoutSizes(o = {}) {
   afterLayoutChange();
 }
 function afterLayoutChange() { if (S.fit && S.fit.redraw) S.fit.redraw(); if (timingRedraw) timingRedraw(); refresh(); }
+// a new site theme (src/site/theme.js): the posterior, the timing plots and the light curve take its colours
+window.addEventListener('esl-theme', () => requestAnimationFrame(afterLayoutChange));
 function setupResizer() {
   const app = $('#app'), grip = $('#grip'), lcg = $('#lcgrip'), mq = window.matchMedia(STACKED);
   const setW = (w) => { const v = Math.round(Math.min(Math.max(w, 340), Math.max(360, window.innerWidth - 360))); app.style.setProperty('--panelw', v + 'px'); return v; };

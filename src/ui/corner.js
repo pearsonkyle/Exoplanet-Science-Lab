@@ -1,11 +1,21 @@
 // Corner plot of a weighted posterior sample with 1, 2 and 3 sigma regions.
 
 import { weightedQuantiles, resampleIndices, makeRng } from '../core/stats.js';
+import { tokens, alpha, mix } from '../site/theme.js';
 
 const THEMES = {
   dark:  { bg: '#111726', cell: '#0b0f18', text: '#dfe6f3', dim: '#8491ad', line: '#e9e0ff', mark: '#ffc56b', z: ['rgba(196,160,255,0.98)', 'rgba(140,105,215,0.70)', 'rgba(105,85,170,0.38)'], tail: 'rgba(105,85,170,0.14)', frame: null, font: 'ui-monospace, Menlo, monospace', out: 'rgba(132,145,173,0.35)', contour: ['#ffffff', '#d9c8ff', '#a78be0'] },
   light: { bg: '#ffffff', cell: '#ffffff', text: '#000000', dim: '#333333', line: '#000000', mark: '#d62728', z: ['rgba(31,95,191,0.95)', 'rgba(31,95,191,0.55)', 'rgba(31,95,191,0.25)'], tail: 'rgba(31,95,191,0.08)', frame: '#000000', font: 'Helvetica, Arial, sans-serif', out: 'rgba(120,120,120,0.30)', contour: ['#000000', '#222222', '#555555'] },
 };
+// With no theme asked for (the screen), the corner follows the site theme (src/site/theme.js); exports name 'dark' or 'light'.
+function screenTheme() {
+  const t = tokens();
+  if (t.theme === 'dark') return THEMES.dark;
+  if (t.light) return { ...THEMES.light, bg: t.panel, cell: t.panel, font: THEMES.dark.font };
+  return { ...THEMES.dark, bg: t.panel2, cell: t.panel, text: t.text, dim: t.dim, line: mix(t.post, t.strong, 0.75), mark: t.star,
+    z: [alpha(t.post, 0.98), alpha(mix(t.post, t.panel, 0.3), 0.7), alpha(mix(t.post, t.panel, 0.45), 0.38)], tail: alpha(mix(t.post, t.panel, 0.45), 0.14),
+    out: alpha(t.dim, 0.35), contour: [t.strong, mix(t.post, t.strong, 0.6), t.post] };
+}
 // Points are coloured by their likelihood on the viridis scale, as in EXOTIC's posterior plots. On white
 // figures the scale runs the way EXOTIC's does (dark = highest likelihood, yellow = lowest); on the dark
 // screen theme it is reversed so the best points are the bright ones. The colour bar in the legend says which.
@@ -20,7 +30,7 @@ const P2D = [0.3935, 0.8647, 0.9889];
 const sig = (v, e) => { const dg = Math.min(8, Math.max(0, 1 - Math.floor(Math.log10(Math.max(1e-12, e))))); return v.toFixed(dg); };
 
 export function drawCorner(cv, post, labels, marks, opt = {}) {
-  const th = THEMES[opt.theme || 'dark'], d = post.ndim, n = post.n;
+  const th = opt.theme ? THEMES[opt.theme] : screenTheme(), d = post.ndim, n = post.n;
   const scale = opt.scale || Math.min(window.devicePixelRatio || 1, 2);
   const W = opt.width || cv.clientWidth || 380, padL = 8, top = opt.title ? 52 : 36;
   const cell = Math.floor((W - padL - 8) / d), H = top + cell * d + 28;

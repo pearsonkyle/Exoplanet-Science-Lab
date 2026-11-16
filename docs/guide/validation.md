@@ -750,6 +750,29 @@ added for each). A 4-billion-parameter model is not reliable on long multi-step 
 catches dropped uncertainties, not wrong units or wrong conclusions. Not checked: Safari, Firefox, a real https
 deployment, other model servers.
 
+*Round of 2026-11-16 (equations, Methods and code tools, residual periodogram, history and export).* New checks:
+`node test/assistant_knowledge.test.mjs` (22: Methods lookups land on the right section for seven questions;
+`extractSymbol` returns whole functions; `read_source` refuses paths outside the code; the residual periodogram
+finds a 17.3-day, 25 m/s signal injected into the HD 80606 velocities of a one-planet model at 17.299 d with a
+false-alarm probability of 1e-148, finds nothing in white noise alone (best FAP 0.70), names a peak at the known
+planet's period, and warns when the residuals are 2.4 times their errors; LaTeX found in text and dollar amounts
+left alone) and `node test/assistant_sft.test.mjs` (15: a conversation driven through the harness against a scripted
+model exported and read back; every tool call answered right after it, reasoning and state cards kept, the app's
+table left out). Harness changes found by running the owner's gemma4-e4b (LM Studio on the owner's Mac, q4 and q8
+quantisations; the VPN copy did not answer during this round): lists written as one escaped string are repaired;
+a velocity-only project starts from the orbit and refuses to fit Rp/R★ or i; a fit of the simulated stand-in is
+refused while the user's own file is attached; a call refused three times in a row first forces an answer
+(`tool_choice: "none"`), then stops; six steps without progress bring a reminder to answer; a request with parts
+left undone (explanation, residual search, report) is reminded of them, twice at most; a question cannot change the
+analysis. Live, after these changes: the velocity project of HD 80606 b (seven instruments, fit with six jitters,
+explanation, residual search, report) completed in 10 steps (K 467.6 +2.6 −2.1 m/s, e 0.93114, χ²/dof 0.96;
+best residual peak 2.435 d, FAP 0.025, not a signal); the light-curve project in the browser completed in 11 steps
+(Rp/R★ 0.0727 +0.0012 −0.0011, as Lab 2; report with BibTeX, session and figures); "how is K computed, derive it"
+was answered with the code's equation and a correct derivation once the derivation was added to the Methods (before
+that, the model's own algebra was wrong in two of two runs); "how is T_eq computed" on the Methods page was answered
+in 7 steps. Numbers the model rounds or recalls are still common (two to four per long answer), and the number
+check still has to append the app's table.
+
 ## The site
 
 Pages are real folders with their own `index.html` (no rewrite rules needed on a static host), sharing the
@@ -799,6 +822,23 @@ short plot; axis titles shorten to what fits; legends that would cover the data 
 headless screenshots of every worked example at four plot shapes (1260 × 210, 530 × 720, 680 × 640 and the 390 px
 phone) and by two extra `test/layout_check.py` states (plot made tall, plot made short: 91 of 91 checks pass). Not
 checked with a real finger or on a real phone.
+
+**Themes.** The site bar's theme button (a row in the folded phone menu) picks Dark (the default), Light, Dusk
+(blue-grey, lower contrast) or Night (red and amber with almost no blue, for the telescope). The choice is the
+`data-theme` attribute on `<html>`, kept in `localStorage` (`esl.theme`) and set by a one-line script in each page's
+`<head>` before the first paint; the operating system's light/dark setting is not followed, so a first visit is Dark.
+Colours are CSS variables (`src/site/site.css`); canvas plots on screen follow through `src/site/theme.js`
+(light curve, corner, O − C, periodogram and N-body plots, the photometry and spectroscopy panels, the Validation
+charts, the planner's charts in Night), while exported figures keep their own Dark and Light styles. The 3D view
+and the sky view stay dark; in Night the planner's globe, the all-sky camera, the FITS image and the home-page pictures
+are tinted red. Text contrast (WCAG 2.1, the worst of page, panel, raised panel and pop-up backgrounds): body text
+14.3, 14.0, 10.5 and 9.7 : 1 in Dark, Light, Dusk and Night; secondary text (`--dim`) 5.6, 6.3, 6.0, 5.5; the
+dimmest text on the reading pages 5.1, 4.9, 5.0, 4.8; accent, status and tinted text at least 5.3 in every
+theme. Checked by headless screenshots of the eight pages at 1440 and 390 px in each theme (no page errors), a
+switch on a live analyzer page (the light curve redraws), and `test/layout_check.py` (Dark). Not checked: the
+layout check in the other themes, every plot of the analyzer in every theme (some plots draw a few fixed colours, and
+the posterior points stay viridis in Night), Firefox and Safari (`color-mix()` is needed), the docs site, which keeps
+VitePress's own light/dark switch.
 
 **Animation rate.** The slider under the 3D view sets simulated time per second of real time on a logarithmic scale
 of round steps (30 s/s … 1 min/s, 5 min/s, 15 min/s, 1 h/s, 3 h/s, 6 h/s, 1 d/s … 100 d/s; `src/ui/rate.js`). Each
@@ -865,6 +905,32 @@ Accuracy of `src/core/astro.js` against astropy/ERFA with DE432s (`test/astro.te
 33″, Moon 12″, Mercury to Mars under 3′, Jupiter 8′ and Saturn 10′ (the limit of Standish's Keplerian elements),
 refraction 6″ above 10°; twilight times 1.0 s, rise and set 5.4 s. The ISS from the page agreed with
 python-sgp4 + astropy to 0.003°. The example planner link puts HAT-P-32 at altitude 64.086° (astropy 64.080°).
+
+**Survey image of a field.** A star or host card's "Survey image" button (or the chip offered below 2° field of
+view) opens a real image of the field: DSS2 colour or red, 2MASS, Pan-STARRS DR1, SDSS DR9, DESI Legacy DR10 or
+AllWISE HiPS tiles, resampled by the page onto a TAN plane about the target (512 px images, 5′ to 60′ wide, N/S/E/W
+add neighbouring images on the same plane, up to 4 × 4). Gaia DR3 stars from VizieR are overlaid with G, BP−RP,
+distance, position angle and ΔG from the target; stars within a chosen ΔG range, not variable and beyond 10″ are
+marked as possible comparison stars, optionally only inside a detector outline (arcmin, or pixel scale × pixels,
+turned by an angle). Drag measures separation and position angle; a scale bar and N/E arrows follow the zoom.
+`src/core/healpix.js` and `src/core/skyfield.js` (`test/skyfield.test.mjs`, 26 checks): HEALPix nested pixels
+against the analytic properties of Górski et al. (2005) (base-pixel centres exact; centre → pixel round trip for
+all 65,532 pixels of orders 0 to 6 and 20,000 random pixels at orders 12 to 25; ring latitudes and counts at orders
+1, 3, 5; parent = pixel / 4; χ² = 197 for 191 degrees of freedom over the 192 pixels of order 2 with 768,000
+uniform directions); cell pixel ↔ sky against astropy.wcs for six fields including RA wrap, 0.7° from the pole and
+−80° (2.3e−10″ and 9e−11 px); separation and position angle against SkyCoord for 60 pairs from 0.5″ to 170°
+(1.4e−11″, 3e−13°). The layout of pixels inside a HiPS tile (column = iy, row = ix in the face, south corner top
+left) is not in the code's own tests: it was found and is checked by `test/survey_check.py` (browser, network),
+which compares the page's resampled DSS2 red image with NASA SkyView's DSS2 Red image of the same field and
+centroids the Gaia stars 12 < G < 16 on it. 2026-11-16, tiles from IRSA, 1.76″ pixels: HAT-P-32 correlation 0.888
+(0.440 when shifted 3 px), Gaia offsets median 0.62″ (90%: 1.21″, 133 stars); WASP-12 0.940, 0.74″; Polaris
+(0.7° from the pole) 0.805, 0.66″; WASP-46 (dec −56°) 0.852, 0.99″. The other seven of the eight possible layouts
+correlate at 0.03 to 0.06. That day CDS (alasky, alaskybis) answered HTTP 404 or nothing for hips2fits, HiPS tiles
+and its VizieR mirror, so Pan-STARRS and Legacy Surveys (CDS-only) could not be shown and the hips2fits fallback
+(the same WCS passed as its `wcs` parameter) is unverified; IRSA and ESAC tiles and the CfA VizieR mirror send
+`Access-Control-Allow-Origin: *`. Rubin/LSST: the only HiPS found in the CDS registry is "Rubin First Look"
+(two press-release fields, 29 deg², 0.07% of the sky), not survey data, so it is not offered. Driven headlessly
+at 1440 × 900 and 390 × 844 (touch: tap a star, measure, extend east); not on a real phone.
 
 Not tested: AR on a real phone, pinch zoom, the geolocation prompt. Local times on the sky page are the browser's zone, the
 planner's are the site's. The star rendering was tuned by eye, not against Stellarium.

@@ -11,11 +11,13 @@
 import './assistant.css';
 import { createTools, memoryFiles } from './tools.js';
 import { createSiteTools, pageOf, PAGES } from './pages.js';
-import { createAgent, listModels, normalizeBase, describeError, SERVER_KINDS, HISTORY_BUDGET } from './agent.js';
+import { createAgent, listModels, normalizeBase, describeError, SERVER_KINDS, HISTORY_BUDGET, PRIMER } from './agent.js';
 import { createStore } from './store.js';
 import { PRESETS, CUSTOM, presetById, presetOf, diagnose, testConnection } from './presets.js';
 import { updateProject, projectCard, emptyProject } from './project.js';
 import { fitsHeaderText } from './ops.js';
+import { mathSegments, mathHtml } from './mathtext.js';
+import { toTrainingRecord, toJsonl, fromTrainingRecord, FORMAT } from './sft.js';
 
 const STARTERS = {
   home: ['Plan tonight\'s transits from Kitt Peak', 'Open the single-transit example and fit it', 'What has this site been validated against?'],
@@ -118,21 +120,25 @@ function build({ root, launcher }) {
   const input = h('textarea', { class: 'ai-input', rows: 2, placeholder: 'Ask for something: set this page up, run a fit, try two models…', 'aria-label': 'Message to the assistant' });
   const sendBtn = h('button', { class: 'ai-btn primary ai-send', type: 'button', onclick: () => submit() }, 'Send');
   const stopBtn = h('button', { class: 'ai-btn danger ai-stop', type: 'button', hidden: true, title: 'Stop the assistant (and a fit it is running)', onclick: () => agent && agent.stop() }, 'Stop');
-  const fileInput = h('input', { type: 'file', multiple: true, hidden: true, onchange: (e) => { attach(e.target.files); e.target.value = ''; } });
+  const fileInput = h('input', { type: 'file', class: 'ai-file', multiple: true, hidden: true, onchange: (e) => { attach(e.target.files); e.target.value = ''; } });
   const attachBtn = h('button', { class: 'ai-chip ai-attach', type: 'button', title: 'Attach files: light curves, velocities, timing lists (CSV or text), session files (JSON), FITS images. They stay in this browser.', 'aria-label': 'Attach files', onclick: () => fileInput.click() },
     h('span', { html: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.5 8.5a1.8 1.8 0 0 1-2.5-2.5l7.8-7.8"/></svg>' }), ' Attach');
   const ICON = {
     cog: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4h4"/><path d="M12 7.5V12l3 2"/></svg>',
     plus: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   };
   // header: Actions, Settings (cog) and New (+); the model and the tools are chosen inside Settings
   const setBtn = h('button', { class: 'ai-chip ai-icon ai-setbtn', type: 'button', title: 'Settings: model server, model and the tools the assistant may use', 'aria-label': 'Settings', 'aria-expanded': 'false', onclick: () => toggleSettings() }, h('span', { html: ICON.cog }));
   const logBtn = h('button', { class: 'ai-chip', type: 'button', title: 'What the assistant did, with undo', 'aria-expanded': 'false', onclick: () => toggleLog() }, 'Actions');
+  const histBtn = h('button', { class: 'ai-chip ai-icon', type: 'button', title: 'History: past conversations, to open again or export (also as training data)', 'aria-label': 'Conversation history', 'aria-expanded': 'false', onclick: () => toggleHistory() }, h('span', { html: ICON.clock }));
+  const histBox = h('div', { class: 'ai-log ai-history', hidden: true });
+  const importInput = h('input', { type: 'file', class: 'ai-import', accept: '.jsonl,.json,application/json', hidden: true, onchange: (e) => { importHistory(e.target.files[0]); e.target.value = ''; } });
   const root_ = h('section', { class: 'ai-panel', id: 'assistant', role: 'dialog', 'aria-label': 'Assistant', hidden: true },
-    el('div', 'ai-head', el('span', 'ai-title', 'Assistant'), h('span', { class: 'ai-page', title: 'The page the assistant is operating' }, page), el('span', 'ai-grow'), logBtn, setBtn,
+    el('div', 'ai-head', el('span', 'ai-title', 'Assistant'), h('span', { class: 'ai-page', title: 'The page the assistant is operating' }, page), el('span', 'ai-grow'), logBtn, histBtn, setBtn,
       h('button', { class: 'ai-chip ai-icon', type: 'button', title: 'New conversation (the page and the files are kept)', 'aria-label': 'New conversation', onclick: () => newChat() }, h('span', { html: ICON.plus })),
       h('button', { class: 'ai-chip ai-icon ai-close', type: 'button', 'aria-label': 'Close the assistant', title: 'Close (Esc)', onclick: () => hide() }, '✕')),
-    settings, logBox, msgs, status, filesRow,
+    settings, logBox, histBox, importInput, msgs, status, filesRow,
     el('div', 'ai-compose', input, el('div', 'ai-actions', attachBtn, fileInput, el('span', 'ai-grow'), stopBtn, sendBtn)));
   document.body.append(root_);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); } });
@@ -256,12 +262,14 @@ function build({ root, launcher }) {
 
   // ---- conversation ---------------------------------------------------------------------------------------------
   const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-  /** Just enough Markdown for an answer: paragraphs, lists, tables, rules, bold, inline code, fenced code. Everything is escaped first. */
+  /** Just enough Markdown for an answer: paragraphs, lists, tables, rules, bold, inline code, fenced code, and TeX ($...$, $$...$$, \\( \\), \\[ \\]) as MathML (mathtext.js). Text is escaped first. */
   function md(text) {
-    const inline = (s) => esc(s.replace(/\\([*_`#|])/g, (m, c) => `&#${c.charCodeAt(0)};`)).replace(/&amp;#(\d+);/g, '&#$1;').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>');
+    const inline = (s) => mathSegments(s).map((g) => (g.math ? mathHtml(g, esc) : inlineText(g.text))).join('');
+    const inlineText = (s) => esc(s.replace(/\\([*_`#|])/g, (m, c) => `&#${c.charCodeAt(0)};`)).replace(/&amp;#(\d+);/g, '&#$1;').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>');
     const out = []; let list = null, code = null, table = null;
     const endTable = () => { if (table) { out.push('<div class="ai-tw"><table><thead><tr>' + table[0].map((c) => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>' + table.slice(1).map((r) => '<tr>' + r.map((c) => `<td>${inline(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table></div>'); table = null; } };
-    for (const line of String(text).split('\n')) {
+    const src = String(text).replace(/\$\$([\s\S]+?)\$\$/g, (m, x) => '$$' + x.replace(/\s*\n\s*/g, ' ') + '$$').replace(/\\\[([\s\S]+?)\\\]/g, (m, x) => '\\[' + x.replace(/\s*\n\s*/g, ' ') + '\\]');
+    for (const line of src.split('\n')) {
       if (/^```/.test(line)) { endTable(); if (code) { out.push('<pre>' + esc(code.join('\n')) + '</pre>'); code = null; } else { if (list) { out.push(`</${list}>`); list = null; } code = []; } continue; }
       if (code) { code.push(line); continue; }
       if (/^\s*\|.*\|\s*$/.test(line)) { if (list) { out.push(`</${list}>`); list = null; } const cells = line.trim().slice(1, -1).split('|').map((c) => c.trim()); if (cells.every((c) => /^:?-{2,}:?$/.test(c))) continue; (table = table || []).push(cells); continue; }
@@ -287,7 +295,7 @@ function build({ root, launcher }) {
       h('p', {}, ready ? `Ask for anything this site can do. The assistant works through the same controls you have, on this page (${page}) and, when a request needs it, on the others; what it changes is listed under Actions and can be undone in the analyzer.` : 'The assistant can set pages up, run fits and experiments, and hand you the files. It needs a language model first: none is built in.'),
       ready ? el('div', 'ai-starters', ...(STARTERS[page] || STARTERS.home).map((t) => h('button', { class: 'ai-chip', type: 'button', onclick: () => { input.value = t; submit(); } }, t))) : h('button', { class: 'ai-btn primary', type: 'button', onclick: () => toggleSettings(true) }, 'Set up a model')));
   }
-  function newChat() { if (working) return; if (agent) agent.reset(); if (site) site.resetRuns(); chat.turns = []; log.length = 0; acts.length = 0; allowAll = false; pending = null; msgs.innerHTML = ''; status.textContent = ''; drawLog(); drawEmpty(); persist(); }
+  function newChat() { if (working) return; archive(); chat.id = null; if (agent) agent.reset(); if (site) site.resetRuns(); chat.turns = []; log.length = 0; acts.length = 0; allowAll = false; pending = null; msgs.innerHTML = ''; status.textContent = ''; drawLog(); drawEmpty(); persist(); drawHistory(); }
 
   const stepsEl = new Map(); let live = null, timer = null, replaying = false;
   const brief = (args) => { const s = JSON.stringify(args ?? {}); return s === '{}' ? '' : s.length > 80 ? s.slice(0, 80) + '…' : s; };
@@ -390,7 +398,7 @@ function build({ root, launcher }) {
     for (const a of [...acts].reverse()) ol.append(h('li', { class: a.undone ? 'undone' : '' }, el('span', 'ai-apage', a.page), el('b', '', a.name.replace(/_/g, ' ')), a.summary ? el('span', 'ai-asum', a.summary) : null, el('time', '', new Date(a.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })), a.undone ? el('em', '', 'undone') : null));
     logBox.append(ol);
   }
-  function toggleLog(on) { logBox.hidden = on === undefined ? !logBox.hidden : !on; logBtn.setAttribute('aria-expanded', String(!logBox.hidden)); if (!logBox.hidden) { settings.hidden = true; root_.classList.remove('setup'); } drawLog(); }
+  function toggleLog(on) { logBox.hidden = on === undefined ? !logBox.hidden : !on; logBtn.setAttribute('aria-expanded', String(!logBox.hidden)); if (!logBox.hidden) { settings.hidden = true; root_.classList.remove('setup'); toggleHistory(false); } drawLog(); }
   function undoLast() {
     if (!site || working) return;
     const r = site.undoAction(); if (!r.action) return;
@@ -399,8 +407,79 @@ function build({ root, launcher }) {
     drawLog(); persist();
   }
 
+  // ---- history: past conversations, kept in this browser (store.history), to open again or export ---------------
+  const titleOf = (turns) => { const u = (turns[0] && turns[0].user) || 'Conversation'; return u.length > 80 ? u.slice(0, 79) + '…' : u; };
+  /** The open conversation as a history record (nothing when it is empty). */
+  function currentRecord() {
+    const turns = agent ? agent.turns : chat.turns; if (!turns.length) return null;
+    chat.id = chat.id || `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    return { id: chat.id, title: titleOf(turns), at: Date.now(), page, model: S.model || '', turns: JSON.parse(JSON.stringify(turns)), log: log.slice(-400), actions: acts.map(({ live: _l, ...a }) => a) };
+  }
+  let histTimer = 0;
+  const archive = () => { const r = currentRecord(); return r ? store.history.put(r) : Promise.resolve(null); };
+  const archiveSoon = () => { clearTimeout(histTimer); histTimer = setTimeout(archive, 1500); };
+  /** A conversation as one training record (sft.js), with the tool schemas and the primer the assistant uses. */
+  function trainingRecord(rec) {
+    const info = agent ? agent.info() : {};
+    return toTrainingRecord({ turns: rec.turns, primer: PRIMER, specs: buildTools().specs, model: rec.model || S.model, protocol: info.native === false ? 'text' : 'native', page: rec.page, meta: { conversation_id: rec.id, title: rec.title, saved: new Date(rec.at).toISOString() } });
+  }
+  const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  async function exportRecords(recs, name) {
+    if (!recs.length) return;
+    saveFile(name, new Blob([toJsonl(recs.map(trainingRecord))], { type: 'application/x-ndjson' }));
+  }
+  async function openFromHistory(id) {
+    if (working) return;
+    const rec = await store.history.get(id); if (!rec) return;
+    await archive();
+    if (agent) agent.reset(); if (site) site.resetRuns();
+    chat.id = rec.id; chat.turns = rec.turns || []; log.length = 0; log.push(...(rec.log || [])); acts.length = 0; acts.push(...(rec.actions || []));
+    if (agent) agent.restore(chat.turns);
+    msgs.innerHTML = ''; replaying = true; try { for (const ev of log) onEvent(ev); } finally { replaying = false; }
+    if (!log.length) for (const t of chat.turns) { say('user', t.user); if (t.final) say('assistant', t.final); }
+    drawEmpty(); drawLog(); persist(); toggleHistory(false);
+    say('note', `Opened “${rec.title}” from the history. The page itself is as you left it: the conversation's earlier results may describe another analysis.`);
+  }
+  async function importHistory(file) {
+    if (!file) return;
+    try {
+      const text = await file.text(), lines = text.trim().split(/\n+/).filter(Boolean); let n = 0;
+      for (const line of lines) {
+        const rec = JSON.parse(line), m = rec.metadata || {}, turns = fromTrainingRecord(rec);
+        if (!turns.length) continue;
+        await store.history.put({ id: m.conversation_id || `c${Date.now().toString(36)}${n}`, title: m.title || titleOf(turns), at: Date.parse(m.saved || m.created) || Date.now(), page: m.page || page, model: m.model || '', turns, log: [], actions: [] }); n++;
+      }
+      say('note', n ? `Imported ${n} conversation${n > 1 ? 's' : ''} into the history.` : 'No conversation found in that file: it should be the JSONL the history exports.');
+      drawHistory();
+    } catch (err) { say('note', `Could not import ${file.name}: ${err.message}`); }
+  }
+  async function drawHistory() {
+    if (histBox.hidden) return;
+    await archive();
+    const list = await store.history.list();
+    histBox.innerHTML = '';
+    histBox.append(el('div', 'ai-loghead', el('b', '', 'Past conversations'),
+      h('button', { class: 'ai-chip', type: 'button', title: 'Every conversation in one JSONL file: OpenAI-style messages with reasoning and tool calls, and the tool schemas, for supervised fine-tuning (format ' + FORMAT + ')', disabled: !list.length, onclick: async () => exportRecords((await Promise.all(list.map((x) => store.history.get(x.id)))).filter(Boolean), `esl-conversations-${stamp()}.jsonl`) }, 'Export all'),
+      h('button', { class: 'ai-chip', type: 'button', title: 'Add conversations from a JSONL file exported here', onclick: () => importInput.click() }, 'Import')));
+    if (!list.length) { histBox.append(h('p', { class: 'ai-note' }, 'No conversations yet. Each one is kept here when you start a new one, and can be opened again or exported.')); return; }
+    const ol = el('ol', 'ai-acts ai-hlist');
+    for (const x of list) {
+      const cur = x.id === chat.id;
+      ol.append(h('li', { class: cur ? 'cur' : '' },
+        h('button', { class: 'ai-hopen', type: 'button', title: cur ? 'The open conversation' : 'Open this conversation', disabled: cur || working, onclick: () => openFromHistory(x.id) }, x.title),
+        el('span', 'ai-asum', `${x.requests} request${x.requests === 1 ? '' : 's'} · ${x.page} · ${new Date(x.at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}${x.model ? ' · ' + x.model : ''}`),
+        h('button', { class: 'ai-chip ai-hx', type: 'button', title: 'Download as JSONL training data', onclick: async () => { const r = await store.history.get(x.id); if (r) exportRecords([r], `esl-conversation-${x.id}.jsonl`); } }, 'Export'),
+        h('button', { class: 'ai-chip ai-hd', type: 'button', title: cur ? 'Start a new conversation first' : 'Delete from the history', 'aria-label': `Delete “${x.title}”`, disabled: cur, onclick: async () => { await store.history.remove(x.id); drawHistory(); } }, 'Delete')));
+    }
+    histBox.append(ol);
+  }
+  function toggleHistory(on) {
+    histBox.hidden = on === undefined ? !histBox.hidden : !on; histBtn.setAttribute('aria-expanded', String(!histBox.hidden));
+    if (!histBox.hidden) { logBox.hidden = true; logBtn.setAttribute('aria-expanded', 'false'); settings.hidden = true; root_.classList.remove('setup'); drawHistory(); }
+  }
+
   // ---- remembering ------------------------------------------------------------------------------------------------
-  function persist() { store.saveChat({ turns: agent ? agent.turns : chat.turns, log, actions: acts.map(({ live: _l, ...a }) => a), open: !root_.hidden, pending, allowAll }); }
+  function persist() { if ((agent ? agent.turns : chat.turns).length) archiveSoon(); store.saveChat({ id: chat.id, turns: agent ? agent.turns : chat.turns, log, actions: acts.map(({ live: _l, ...a }) => a), open: !root_.hidden, pending, allowAll }); }
   window.addEventListener('pagehide', () => { if (!navigateTo) persist(); });
   // the site's observing project was deleted (src/site/project.js reset): forget the project and the conversation
   window.addEventListener('esl-project-deleted', () => { if (working && agent) agent.stop(); project = emptyProject(); store.clearProject(); newChat(); say('note', 'The observing project was deleted: the assistant forgot it and started a new conversation.'); });
@@ -432,7 +511,9 @@ function build({ root, launcher }) {
   const handle = { show, hide, toggle, autoStart, ready, log, files, page, get tools() { return buildTools(); }, get agent() { return agent; }, settings: S, acts, get project() { return project; }, forgetProject() { project = emptyProject(); store.clearProject(); },
     /** The set-up card's own test, for scripted checks: { ok, kind, message, models }. */
     testConnection: (base = S.base) => testConnection(normalizeBase(base), { apiKey: S.apiKey, model: S.model, listModels }),
-    attachText: (name, text) => { files.add(name, text, 'attached'); drawFiles(); }, attach, transcript, send: (t) => { input.value = t; return submit(); }, undoLast, newChat, get working() { return working; },
+    attachText: (name, text) => { files.add(name, text, 'attached'); drawFiles(); }, attach, transcript,
+    /** The open conversation as one training record (sft.js), or null when it is empty: for scripted checks and data collection. */
+    trainingRecord: () => { const r = currentRecord(); return r ? trainingRecord(r) : null; }, send: (t) => { input.value = t; return submit(); }, undoLast, newChat, get working() { return working; },
     /** For scripted checks: use this server for the page's lifetime without typing it into the card. */
     configure: async (o = {}) => { Object.assign(S, Object.fromEntries(Object.entries(o).filter(([, v]) => v !== '' && v !== undefined && v !== null))); S.base = normalizeBase(S.base); S.preset = presetOf(S.base); if (!S.model && S.base) { models = await listModels(S.base, { apiKey: S.apiKey }); S.model = models[0].id; S.context = S.context || models[0].context; } apply(); toggleSettings(false); } };
   window.__eslAssistant = handle;   // for scripted checks (test/assistant_live.py)

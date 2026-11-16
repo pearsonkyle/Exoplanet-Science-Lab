@@ -4,9 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Exoplanet Science Lab</title>
-<meta name="description" content="Exoplanet Science Lab: scientific modeling and uncertainty quantification in your browser.">
+<meta name="description" content="Exoplanet Science Lab: plan, observe, reduce and fit exoplanet observations in your browser. An online FITS viewer and photometry pipeline (in place of DS9, IRAF imexam, AstroImageJ or EXOTIC), transit and radial-velocity fitting with nested sampling (as batman, RadVel, UltraNest), a transit planner, a planetarium sky view and the NASA Exoplanet Archive and exoplanet.eu catalogues side by side. Nothing to install.">
 <meta name="esl-root" content="./">
+<!-- the site theme before first paint (src/site/theme.js) -->
+<script>try{var t=localStorage.getItem('esl.theme');if(t&&t!=='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="stylesheet" href="./src/site/site.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Exoplanet Science Lab", "applicationCategory": "ScientificApplication", "operatingSystem": "Any (web browser)", "url": "https://pearsonkyle.github.io/Exoplanet-Science-Lab/", "codeRepository": "https://github.com/pearsonkyle/Exoplanet-Science-Lab", "license": "https://opensource.org/licenses/MIT", "author": {"@type": "Person", "name": "Kyle A. Pearson"}, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "description": "Plan, observe, reduce and fit exoplanet observations in the browser: an online FITS viewer and photometry pipeline, transit, radial-velocity and N-body models with nested sampling, a transit planner, a sky view and a merged NASA Exoplanet Archive / exoplanet.eu catalogue.", "featureList": ["Online FITS viewer with radial profiles, focus maps and region statistics (in the manner of DS9 and IRAF imexam)", "Photometry pipeline with aperture search and AAVSO Exoplanet Watch reports (as EXOTIC)", "Plate solving against Gaia DR3 without an API key", "Transit, eclipse, phase-curve and radial-velocity models (compared with batman, PyTransit, pylightcurve, RadVel)", "Nested sampling with Bayesian evidence", "N-body transit-timing variations (compared with REBOUND)", "Transit planner for 89 observatories", "Planetarium sky view with exoplanet hosts", "Python package and MCP server"]}</script>
 </head>
 <body class="page">
 <header id="sitebar" data-active=""></header>
@@ -17,7 +20,7 @@
   </section>
   <div class="cards art" id="sections"></div>
   <h2>Where to start</h2>
-  <p class="note">New here? Open <a href="./analyze/">Analyze</a> and pick a worked example: a single transit, the radial velocities of HD 80606 b, three planets of TOI-1873, or a hidden planet found from transit timing.</p>
+  <p class="note">New here? Open <a href="./analyze/">Analyze</a> and pick a worked example: a single transit, the radial velocities of HD 80606 b, three planets of TOI-1873, or a hidden planet found from transit timing. Coming from DS9, IRAF, AstroImageJ, EXOTIC, batman or RadVel? See <a href="./methods/#software">how each part compares</a>.</p>
   <h2>Docs and APIs</h2>
   <div class="cards docs">
     <a class="card" href="./docs/guide/getting-started.html"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><b>Getting started</b><span>Use it online, run it on your computer, install the Python package.</span></a>
@@ -26,19 +29,28 @@
     <a class="card" href="./docs/guide/mcp.html"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/></svg><b>MCP and your own LLM</b><span>Connect Claude Desktop, Claude Code or another agent; set up a local model for the assistant.</span></a>
   </div>
 </main>
-<footer class="sitefoot">Exoplanet Science Lab · models validated against EXOTIC, pylightcurve and published results (see <a href="./methods/#validation">Methods › Validation</a>) · <a href="./docs/">Documentation</a> · <a href="https://github.com/pearsonkyle/Exoplanet-Science-Lab">GitHub</a><br><span class="credit">Card art: NASA/JPL-Caltech and NASA Ames illustrations (TRAPPIST-1, Kepler, Kepler-16, 55 Cancri e), from <a href="https://images.nasa.gov">images.nasa.gov</a>.</span></footer>
+<footer class="sitefoot">Exoplanet Science Lab · models validated against EXOTIC, pylightcurve and published results (see <a href="./methods/#validation">Methods › Validation</a>) · <a href="./docs/">Documentation</a> · <a href="https://github.com/pearsonkyle/Exoplanet-Science-Lab">GitHub</a></footer>
 <script type="module">
 import { SECTIONS, siteRoot } from './src/site/nav.js';
-// card art: NASA illustrations (public domain / NASA media guidelines), credited in the footer
-const ART = { plan: 'TRAPPIST-1 transit, NASA/JPL-Caltech', observe: 'Kepler and the stars, NASA Ames', analyze: 'Kepler-16 eclipse, NASA/JPL-Caltech',
-  search: 'TRAPPIST-1 planets, NASA/JPL-Caltech', methods: '55 Cancri e, NASA/JPL-Caltech', docs: 'A hot Jupiter, NASA/JPL-Caltech' };
+// card art: captured from the site itself by tools/docs/home_art.py
+const ART = { plan: 'The transit planner and its observatory globe', observe: 'The sky view, and a FITS frame with its apertures', analyze: 'TESS transit of HD 80606 b: fit and posterior',
+  search: 'The catalogue table', methods: 'Relations the models rest on', docs: 'The Python package (lab 2)' };
+// the home page says a little more than the menu's one line, and a card can carry a second link
+const HOME = {
+  observe: { blurb: 'A view of your sky from where you are, at any time, and of the frames you take: an online FITS viewer and photometry pipeline.',
+    more: ['analyze/photometry/', 'Open the FITS viewer'] },
+  methods: { more: ['methods/#software', 'Compared with other software'] },
+};
 const box = document.getElementById('sections'), root = siteRoot();
 for (const s of SECTIONS) {
+  const home = HOME[s.id] || {}, wrap = document.createElement('div'); wrap.className = 'cardwrap';
   const a = document.createElement('a'); a.className = 'card'; a.href = new URL(s.href, root).href;
   const img = ART[s.id];
   a.innerHTML = (img ? `<img class="banner" src="${new URL('home/' + s.id + '.webp', root).href}" alt="" loading="lazy" title="${img}">` : '')
-    + `<div class="body"><b>${s.label}</b><span>${s.blurb}</span></div>`;
-  box.append(a);
+    + `<div class="body"><b>${s.label}</b><span>${home.blurb || s.blurb}</span></div>`;
+  wrap.append(a);
+  if (home.more) { const m = document.createElement('a'); m.className = 'more'; m.href = new URL(home.more[0], root).href; m.textContent = home.more[1] + ' →'; wrap.append(m); wrap.classList.add('hasmore'); }
+  box.append(wrap);
 }
 </script>
 </body>

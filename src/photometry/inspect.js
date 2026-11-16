@@ -4,7 +4,7 @@
 import { radialProfile, lineProfile, regionStats, pixelTable, psfShape, focusMap, saturationLevel } from '../core/imexam.js';
 import { fitPsf } from '../core/photometry.js';
 import { pixelScale } from '../core/fits.js';
-import { renderPanel, fitCanvas, PHOT_THEME } from './plots.js';
+import { renderPanel, fitCanvas, PHOT_THEME, PHOT_DARK } from './plots.js';   // PHOT_DARK: marks on the image
 
 export const TOOLS = [
   { id: 'pick', label: 'Stars', title: 'Pick the target and comparison stars: click a star to add it, click it again to remove it' },
@@ -97,18 +97,18 @@ export function createInspector(ctx) {
     c.save();
     if (I.tool === 'profile' && I.prof && I.prof.frame === P.frame) {
       const [sx, sy] = v.toScreen(I.prof.x, I.prof.y);
-      c.strokeStyle = PHOT_THEME.ok; c.lineWidth = 1.5; c.beginPath(); c.arc(sx, sy, I.prof.rmax * v.scale, 0, 6.2832); c.stroke();
+      c.strokeStyle = PHOT_DARK.ok; c.lineWidth = 1.5; c.beginPath(); c.arc(sx, sy, I.prof.rmax * v.scale, 0, 6.2832); c.stroke();
       c.setLineDash([4, 4]); c.lineWidth = 1; for (const r of [I.prof.rmax + 2, I.prof.rmax + 8]) { c.beginPath(); c.arc(sx, sy, r * v.scale, 0, 6.2832); c.stroke(); } c.setLineDash([]);
-      if (Number.isFinite(I.prof.hfd)) { c.strokeStyle = PHOT_THEME.star; c.beginPath(); c.arc(sx, sy, I.prof.hfd / 2 * v.scale, 0, 6.2832); c.stroke(); }
+      if (Number.isFinite(I.prof.hfd)) { c.strokeStyle = PHOT_DARK.star; c.beginPath(); c.arc(sx, sy, I.prof.hfd / 2 * v.scale, 0, 6.2832); c.stroke(); }
     }
     if (I.tool === 'cut' && I.cut) {
       const [ax, ay] = v.toScreen(I.cut.x0, I.cut.y0), [bx, by] = v.toScreen(I.cut.x1, I.cut.y1);
-      c.strokeStyle = PHOT_THEME.ok; c.lineWidth = 1.5; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
-      c.fillStyle = PHOT_THEME.ok; c.beginPath(); c.arc(ax, ay, 3.5, 0, 6.2832); c.fill();
+      c.strokeStyle = PHOT_DARK.ok; c.lineWidth = 1.5; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+      c.fillStyle = PHOT_DARK.ok; c.beginPath(); c.arc(ax, ay, 3.5, 0, 6.2832); c.fill();
     }
     if (I.tool === 'region' && I.region) {
       const [ax, ay] = v.toScreen(Math.min(I.region.x0, I.region.x1), Math.max(I.region.y0, I.region.y1)), [bx, by] = v.toScreen(Math.max(I.region.x0, I.region.x1), Math.min(I.region.y0, I.region.y1));
-      c.strokeStyle = PHOT_THEME.ok; c.lineWidth = 1.5; c.strokeRect(ax, ay, bx - ax, by - ay); c.fillStyle = '#6fe3a514'; c.fillRect(ax, ay, bx - ax, by - ay);
+      c.strokeStyle = PHOT_DARK.ok; c.lineWidth = 1.5; c.strokeRect(ax, ay, bx - ax, by - ay); c.fillStyle = '#6fe3a514'; c.fillRect(ax, ay, bx - ax, by - ay);
     }
     if (I.tool === 'focus' && I.focus && I.showFocus && I.focusFrame === P.frame) {
       const F = I.focus, [lo, hi] = focusRange(F);
@@ -121,7 +121,7 @@ export function createInspector(ctx) {
         c.beginPath(); c.ellipse(sx, sy, Math.max(2, s.fwhmMajor / 2 * k * 0.5), Math.max(1.5, s.fwhmMinor / 2 * k * 0.5), -a, 0, 6.2832); c.stroke();
         if (s.ellipticity > 0.08) { const L = 6 + 60 * s.ellipticity, dx = Math.cos(a) * L / 2, dy = -Math.sin(a) * L / 2; c.lineWidth = 2; c.beginPath(); c.moveTo(sx - dx, sy - dy); c.lineTo(sx + dx, sy + dy); c.stroke(); }
       }
-      if (F.summary.best) { const [bx, by] = v.toScreen(F.summary.best.x, F.summary.best.y); c.strokeStyle = PHOT_THEME.strong; c.lineWidth = 1.5; c.beginPath(); c.moveTo(bx - 8, by); c.lineTo(bx + 8, by); c.moveTo(bx, by - 8); c.lineTo(bx, by + 8); c.stroke(); }
+      if (F.summary.best) { const [bx, by] = v.toScreen(F.summary.best.x, F.summary.best.y); c.strokeStyle = PHOT_DARK.strong; c.lineWidth = 1.5; c.beginPath(); c.moveTo(bx - 8, by); c.lineTo(bx + 8, by); c.moveTo(bx, by - 8); c.lineTo(bx, by + 8); c.stroke(); }
     }
     c.restore();
   }

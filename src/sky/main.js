@@ -458,18 +458,19 @@ function transitHtml(sel) {
     const h = altAzAt(sel, t), alt = S.layers.atmosphere ? h.alt + A.refraction(h.alt) : h.alt, sun = A.sunAltitude(t, lat, lon, S.elev) * DEG;
     return { name, t, alt, az: h.az, up: alt > horizonRad(h.az), sun, tw: A.twilight(sun) };
   });
-  const TW = { day: 'Sun up', civil: 'civil twilight', nautical: 'nautical twilight', astronomical: 'astronomical twilight', night: 'night' };
   const day = (ms, utc) => DAYS[utc ? new Date(ms).getUTCDay() : new Date(ms).getDay()];
-  const line = (r) => `<tr class="${r.up && r.tw !== 'day' ? '' : 'off'}" title="Sun at ${r.sun.toFixed(1)}°"><td>${r.name}</td><td><b>${hhmm(r.t)}</b> <small>${day(r.t)}</small></td><td>${hhmmUtc(r.t)} <small>${day(r.t, true)}</small></td><td>${(r.alt * DEG).toFixed(0)}°</td><td>${(r.az * DEG).toFixed(0)}° ${compass(r.az * DEG)}</td><td>${r.up ? 'up' : 'below'} · ${r.tw === 'day' ? 'Sun up' : r.tw === 'night' ? 'night' : 'twilight'}</td></tr>`;
-  const names = (list) => list.map((r) => r.name.toLowerCase()).join(' and '), down = rows.filter((r) => !r.up), lit = rows.filter((r) => r.tw === 'day'), dusk = rows.filter((r) => r.tw !== 'day' && r.tw !== 'night');
-  const s1 = !down.length ? `Above the ${terrain ? 'terrain ' : ''}horizon from ingress to egress` : down.length === 3 ? `Below the ${terrain ? 'terrain ' : ''}horizon throughout` : `Below the ${terrain ? 'terrain ' : ''}horizon at ${names(down)}`;
-  const s2 = lit.length === 3 ? 'the Sun is up throughout' : lit.length ? `the Sun is up at ${names(lit)}` : dusk.length ? `the Sun is down, with ${dusk.map((r) => `${TW[r.tw]} at ${r.name.toLowerCase()}`).join(', ')}` : 'the Sun is down and the sky fully dark (night) throughout';
+  const line = (r) => `<tr class="${r.up && r.tw !== 'day' ? '' : 'off'}" title="Sun at ${r.sun.toFixed(1)}°${terrain ? ' · terrain horizon' : ''}"><td>${r.name}</td><td><b>${hhmm(r.t)}</b> <small>${day(r.t)}</small></td><td>${hhmmUtc(r.t)} <small>${day(r.t, true)}</small></td><td>${(r.alt * DEG).toFixed(0)}°</td><td>${(r.az * DEG).toFixed(0)}° ${compass(r.az * DEG)}</td><td>${r.up ? 'up' : 'below'} · ${r.tw === 'day' ? 'Sun up' : r.tw === 'night' ? 'night' : 'twilight'}</td></tr>`;
   const d = new Date(tr.mid);
   return `<h3><span class="evk" style="--c:${E.color}"></span>This ${E.word} · ${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}</h3>` +
     `<table class="tt"><tr><th></th><th title="The time zone of this browser">Local (${tzLabel(tr.mid)})</th><th>UTC</th><th>Alt</th><th>Az</th><th></th></tr>${rows.map(line).join('')}</table>` +
-    `<p class="verdict ${!down.length && !lit.length ? 'ok' : 'warn'}">${s1}; ${s2}.</p>` +
-    (tr.err != null ? `<p class="note">Predicted mid-time uncertain by ± ${tr.err < 10 ? tr.err.toFixed(1) : tr.err.toFixed(0)} min (1σ).</p>` : '') +
-    `<p class="note">Altitudes ${S.layers.atmosphere ? 'with refraction' : 'without refraction'}; local times are in this browser's time zone.</p>`;
+    siteLinksHtml(S.target && (S.target.planet || S.target.name));
+}
+/** This site's own pages for a planet or star: Analyze, Plan and Search (the same buttons as a planet's entry in targets.js). */
+function siteLinksHtml(name) {
+  if (!name) return '';
+  const q = encodeURIComponent(name), link = (page, label, cls = '') => `<a class="btn ${cls}" href="${escHtml(new URL(page + '/?planet=' + q, siteRoot()).href)}" title="${escHtml(name)} on this site's ${label} page">${label}</a>`;
+  // a TESS candidate is not in the analyzer's catalogue (confirmed planets only)
+  return `<div class="links sitelinks"><span class="k">${escHtml(name)} on this site</span>${/^TOI-/i.test(name) ? '' : link('analyze', 'Analyze', 'primary')}${link('plan', 'Plan')}${link('search', 'Search')}</div>`;
 }
 function drawInfo() {
   const el = $('info'), sel = cardSel(), s = infoOf(sel);
@@ -504,6 +505,7 @@ function drawInfo() {
     $('cardHead').innerHTML = head;
     const canTarget = sel.kind !== 'sat' && !!s.dir, playing = $('rate').value === 'night' && S.playing;
     $('cardActions').innerHTML = (s.dir ? '<button class="btn" data-act="centre">Centre</button>' : '') + (isTarget ? `<button class="btn primary" data-act="night">${playing ? 'Pause' : 'Play the night'}</button><button class="btn" data-act="untarget">Unmark</button>` : canTarget ? '<button class="btn" data-act="target">Mark and follow</button>' : '')
+      + (surveyable(sel, s) ? '<button class="btn" data-act="survey" title="A real image of this field from an open survey (DSS, 2MASS, Pan-STARRS, ...), with the Gaia stars around it">Survey image</button>' : '')
       + (s.host ? `<a class="btn simbad" href="${escHtml(DM.simbadUrl(s.host))}" target="_blank" rel="noopener" title="This star in SIMBAD (CDS, the CfA mirror), in a new tab">SIMBAD ↗</a>` : '');
     // the same star again (the table arrived, the night started): the disclosures stay as the user left them
     const el2 = $('cardBody'), same = bodyFor.sel === selKey(sel), focus = isTarget ? S.target.planet || '' : '';
@@ -551,6 +553,46 @@ function methodsHtml(groups) {
   if (!groups) return '';
   return `<div class="dmeths" title="${escHtml(DM.MIXED_NOTE)}">${[...groups].map((g) => { const G = DM.groupInfo(g); return `<span class="dm" style="--c:${G.color}"><i aria-hidden="true">${G.short}</i>${G.label}</span>`; }).join('')}</div>`;
 }
+// ---------------------------------------------------------------- the survey image of a field (src/sky/survey.js, loaded on first use)
+const surveyable = (sel, s) => !!sel && (sel.kind === 'star' || sel.kind === 'host' || sel.kind === 'pos') && !!s && Number.isFinite(s.ra);
+let surveyMod = null;
+/** The J2000 position of the middle of the view (refraction taken out), for a survey image of what is on the screen. */
+function viewCentreRaDec() {
+  const c = F.centre, alt = S.layers.atmosphere ? c.alt - A.refraction(c.alt) : c.alt, v = A.matVec(F.worldToJ2000, dirOf(alt, c.az)), e = A.vecToSph(v);
+  return { ra: e.lon * DEG, dec: e.lat * DEG };
+}
+/** Open the survey image of a selection (a star, a host, a position), or of the view centre when sel is null. */
+async function openSurveyFor(sel) {
+  surveyMod ||= await import('./survey.js');
+  compute();
+  let t;
+  if (!sel) { const c = viewCentreRaDec(); t = { name: `Field at ${hms(c.ra * RAD)}, ${dms(c.dec * RAD)}`, ra: c.ra, dec: c.dec, mag: null, field: true }; }
+  else {
+    const s = infoOf(sel); if (!surveyable(sel, s)) throw new Error('a survey image is for stars and fixed positions, not for moving bodies');
+    const mag = sel.kind === 'host' ? data.hosts.list[sel.i][3] : sel.kind === 'star' ? data.stars.mag[sel.i] : null;
+    t = { name: sel.kind === 'host' ? data.hosts.list[sel.i][0] : s.title, ra: s.ra * DEG, dec: s.dec * DEG, mag: Number.isFinite(mag) ? mag : null };
+  }
+  const year = 2000 + (S.time - Date.UTC(2000, 0, 1, 12)) / (365.25 * 86400e3);
+  $('surveyChip').hidden = true;
+  return surveyMod.openSurvey(wrap, t, { year, onClose: () => { surveyChipKey = ''; } });
+}
+/** Zoomed in far (under 2 degrees): offer the survey image of the marked target, the selection, or the view centre. */
+let surveyChipKey = '';
+function surveyChoice() {
+  if (S.fov >= 2 || S.ar || xr.presenting || (surveyMod && surveyMod.currentSurvey())) return null;
+  // on the screen (not under the bars): on a phone centreOn() puts an object above the middle, clear of the card
+  const near = (sel) => { const s = sel && infoOf(sel); if (!surveyable(sel, s) || !s.dir) return false; const p = R.project(s.dir); return !!p && p[0] > 0 && p[0] < R.width && p[1] > 0 && p[1] < R.height - sheetHeight() * 0.5; };
+  if (near(cardSel())) return cardSel();
+  if (near(S.target)) return S.target;
+  return 'centre';
+}
+function drawSurveyChip() {
+  const ch = surveyChoice(), b = $('surveyChip'), key = ch === 'centre' ? 'centre' : ch ? selKey(ch) : '';
+  if (key === surveyChipKey) return; surveyChipKey = key;
+  b.hidden = !ch; if (!ch) return;
+  b.textContent = ch === 'centre' ? 'Survey image of this field' : `Survey image of ${ch.kind === 'host' ? data.hosts.list[ch.i][0] : infoOf(ch).title}`;
+  b.onclick = () => openSurveyFor(ch === 'centre' ? null : ch).catch((err) => setStatus('The survey image could not be opened: ' + err.message, true));
+}
 function closeCard() { if (S.hover) S.hover = null; else S.selection = null; infoKey = cardKey = ''; drawInfo(); }
 function bindCard() {
   $('infoClose').onclick = closeCard;
@@ -562,6 +604,7 @@ function bindCard() {
     else if (act === 'untarget') clearTarget();
     else if (act === 'night') playNight();
     else if (act === 'retry') ensureTable();
+    else if (act === 'survey') { openSurveyFor(sel).catch((err) => setStatus('The survey image could not be opened: ' + err.message, true)); return; }
     else if (act === 'transit') { const t = nextTransits(sel)[+e.target.closest('[data-i]').dataset.i]; if (t) showTransit(sel, t); }
     cardKey = transitKey = ''; drawInfo();
   });
@@ -1335,9 +1378,10 @@ function frame(t) {
   R.draw(F);
   if (xr.presenting) return;       // nothing of the page is visible from inside the headset
   drawLabels(); drawReadout(); drawNight();
-  if (t - slow > 250) { slow = t; syncNightBar(); drawInfo(); drawTonight(); if (!$('discPanel').hidden) drawDisc(); drawLegend(); drawVisible(); if (S.ar) updateCalib(); }
+  if (t - slow > 250) { slow = t; syncNightBar(); drawInfo(); drawTonight(); if (!$('discPanel').hidden) drawDisc(); drawLegend(); drawVisible(); drawSurveyChip(); if (S.ar) updateCalib(); }
 }
 buildUI(); bindView(); resize();
+{ const b = document.createElement('button'); b.id = 'surveyChip'; b.className = 'chip survey-chip'; b.hidden = true; wrap.appendChild(b); }
 new ResizeObserver(resize).observe(wrap);
 const starsReady = loadStars().then(loadNames);
 starsReady.catch((e) => { console.error(e); setStatus('The star catalogue could not be loaded: ' + e.message); });
@@ -1386,7 +1430,7 @@ if (q.get('planet')) {
 R.renderer.setAnimationLoop(frame);
 
 // for the headless checks and the console
-window.__sky = { S, A, R, data, ar, xr, frame: () => F, compute, pick, select: (sel) => { S.selection = sel; infoKey = cardKey = ''; drawInfo(); }, info: selectionInfo, infoOf, setTime, setLocation, setTarget, clearTarget, resolveTarget, playNight, suggestions, ensureTable, ensureTerrain, xrLabels, horizonRad, X, pickDir, act, xrCard, xrMenu, alignTargets, nextTransits, tonight, loadTonight, cycleTarget, adjustMag, setDiscoveryFilter, discoveryCounts, DM };
+window.__sky = { S, A, R, data, ar, xr, frame: () => F, compute, pick, select: (sel) => { S.selection = sel; infoKey = cardKey = ''; drawInfo(); }, info: selectionInfo, infoOf, setTime, setLocation, setTarget, clearTarget, resolveTarget, playNight, suggestions, ensureTable, ensureTerrain, xrLabels, horizonRad, X, pickDir, act, xrCard, xrMenu, alignTargets, nextTransits, tonight, loadTonight, cycleTarget, adjustMag, setDiscoveryFilter, discoveryCounts, DM, openSurveyFor, survey: () => surveyMod && surveyMod.currentSurvey() };
 
 // ---- window.__esl.observe: what the site's assistant drives (the contract is at the top of src/assistant/pages.js)
 {
@@ -1434,6 +1478,18 @@ window.__sky = { S, A, R, data, ar, xr, frame: () => F, compute, pick, select: (
         return { site: `${S.lat.toFixed(3)}, ${S.lon.toFixed(3)}`, at_utc: isoMin(S.time), dark_hours_utc: d ? `${isoMin(d.t0)} to ${isoMin(d.t1)}` : 'none tonight', filter: DM.GROUPS.filter((g) => S.disc.includes(g.id)).map((g) => g.label), settings: { ...S.vis }, total: r.total,
           stars: r.rows.slice(0, a.limit || 15).map((x) => ({ name: x.name, kind: DM.groupInfo(x.group).label, up_now: x.up, altitude_now_deg: +(x.alt * DEG).toFixed(1), direction: compass(x.az * DEG), highest_tonight_deg: Number.isFinite(x.maxAlt) ? +(x.maxAlt * DEG).toFixed(1) : undefined, highest_at_utc: Number.isFinite(x.tMax) ? isoMin(x.tMax) : undefined, magnitude: x.mag != null ? `${x.band} ${x.mag.toFixed(1)}` : null, planets: x.planets, tess_candidates: x.candidates, transit_tonight: x.transit ? { planet: x.transit.planet, mid_utc: isoMin(x.transit.mid) } : undefined })),
           note: 'observe_set_target marks one; TESS candidates are not confirmed planets.' };
+      } },
+    { name: 'observe_survey_image', description: 'Open a real survey image (DSS2, 2MASS, Pan-STARRS, SDSS, Legacy Surveys or AllWISE) of the marked target\'s field, with the Gaia DR3 stars around it, and list the possible comparison stars: Gaia stars whose G is within a range of the target\'s (not flagged variable, beyond 10 arcsec), optionally only those inside a detector outline. Needs a star or exoplanet host as the target. close: true closes it.',
+      parameters: obj({ survey: T('The survey.', { enum: ['dss', 'dssred', '2mass', 'ps1', 'sdss', 'legacy', 'wise'] }), width_arcmin: N('Width of the image, arcmin.', { enum: [5, 10, 15, 30, 60] }), dg_min: N('Brightest comparison, magnitudes relative to the target (e.g. -1).'), dg_max: N('Faintest comparison, magnitudes relative to the target (e.g. 1).'), detector_arcmin: { type: 'array', description: 'Detector outline [width, height] in arcmin; only stars inside count. [] for none.', items: { type: 'number' } }, close: { type: 'boolean', description: 'Close the survey image.' } }),
+      async run(a) {
+        if (a.close) { const c = surveyMod && surveyMod.currentSurvey(); if (c) c.close(); return { closed: true }; }
+        if (!S.target) throw new Error('mark a star or planet host first (observe_set_target)');
+        let c = surveyMod && surveyMod.currentSurvey();
+        if (!c || c.V.target.name !== (S.target.kind === 'host' ? data.hosts.list[S.target.i][0] : infoOf(S.target).title)) c = await openSurveyFor(S.target);
+        if (a.survey) c.setSurvey(a.survey); if (a.width_arcmin) c.set('size', a.width_arcmin);
+        if (a.dg_min !== undefined) c.set('dgMin', a.dg_min); if (a.dg_max !== undefined) c.set('dgMax', a.dg_max);
+        if (Array.isArray(a.detector_arcmin)) { if (a.detector_arcmin.length >= 2) { c.set('ow', a.detector_arcmin[0]); c.set('oh', a.detector_arcmin[1]); c.set('outline', true); } else c.set('outline', false); }
+        return c.settled(45000);
       } },
     { name: 'observe_where', readOnly: true, description: 'Where the marked target is in the sky at the time shown (altitude, azimuth), the span of its night and its transit when one was passed from the planner.', parameters: obj({}),
       run() { if (!S.target) throw new Error('no target is marked (observe_set_target)'); compute(); return { target: S.target.name, at_utc: isoMin(S.time), now: where(), night: night() || undefined }; } },
