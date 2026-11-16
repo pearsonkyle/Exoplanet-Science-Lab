@@ -179,3 +179,45 @@ export function eventTimes(p) {
     e14: contactDuration(el, 1 + k, tecl), e23: contactDuration(el, 1 - k, tecl),
   };
 }
+
+// ---- named points on the orbit ------------------------------------------------
+
+/**
+ * True anomaly [rad] of a named orbit event, from precomputed elements:
+ *   'transit'    mid-transit, inferior conjunction      omega + nu = +pi/2
+ *   'eclipse'    mid-eclipse, superior conjunction      omega + nu = -pi/2
+ *   'periastron' nu = 0            'apastron' nu = pi
+ *   'ascending'  omega + nu = 0: the node at which the planet crosses the plane of
+ *                the sky coming toward the observer (Z = 0, dZ/dt > 0, X = -r), a
+ *                quarter of an orbit before mid-transit when e = 0. The star is then
+ *                receding fastest, so a circular orbit has its radial-velocity maximum here.
+ * Returns NaN for an unknown kind.
+ */
+export function eventAnomaly(el, kind) {
+  switch (kind) {
+    case 'transit': return Math.PI / 2 - el.w;
+    case 'eclipse': return -Math.PI / 2 - el.w;
+    case 'periastron': return 0;
+    case 'apastron': return Math.PI;
+    case 'ascending': return -el.w;
+    default: return NaN;
+  }
+}
+
+/** Position [X, Y, Z] (stellar radii) of a named orbit event; see eventAnomaly. Writes into out. */
+export function eventPosition(el, kind, out = [0, 0, 0]) {
+  const nu = eventAnomaly(el, kind);
+  const r = (el.ars * (1 - el.e * el.e)) / (1 + el.e * Math.cos(nu)), u = el.w + nu;
+  out[0] = -r * Math.cos(u);
+  out[1] = -r * Math.sin(u) * el.cosI;
+  out[2] = r * Math.sin(u) * el.sinI;
+  return out;
+}
+
+/** Time of a named orbit event, the occurrence nearest to tmid (within half a period); see eventAnomaly. */
+export function eventTime(el, kind) {
+  const nu = eventAnomaly(el, kind);
+  const E = 2 * Math.atan2(Math.sqrt(1 - el.e) * Math.sin(nu / 2), Math.sqrt(1 + el.e) * Math.cos(nu / 2));
+  const t = el.tmid + (E - el.e * Math.sin(E) - el.M0) / el.n;
+  return t - el.per * Math.round((t - el.tmid) / el.per);
+}

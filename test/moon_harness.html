@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- Throwaway check of src/ui/moonplot.js on the worked example (public/examples/exomoon). With the dev server running:
+     .venv/bin/python tools/shot.py 'test/moon_harness.html?theme=dark' /tmp/moon.png 1200 700 --wait 2500
+     ?theme=dark|light   ?panel=all|lc|sky|search   ?epoch=<transit number shown, default 6>   ?dt=<days from that mid-transit for the sky view> -->
+<meta charset="utf-8"><title>moon plots</title>
+<style>html,body{margin:0;background:#0b0f18}body.light{background:#fff}canvas{display:block;position:absolute}</style>
+<canvas id="lc"></canvas><canvas id="sky"></canvas><canvas id="search"></canvas>
+<script type="module">
+import { LC_THEMES } from '../src/ui/lightcurve.js';
+import { renderMoonLightCurve, renderMoonSky, renderMoonSearch } from '../src/ui/moonplot.js';
+import { makePlanetMoonTransit, moonComponents, moonParamsFrom, moonPosition, planetPosition, moonOrbitPath, moonSearch } from '../src/core/exomoon.js';
+import { orbitElements } from '../src/core/kepler.js';
+import { toClaret } from '../src/core/limbdark.js';
+import { valuesFromSession, specFromSession, planetValuesOf } from '../src/core/session.js';
+const q = new URLSearchParams(location.search), theme = q.get('theme') || 'dark', panel = q.get('panel') || 'all', th = LC_THEMES[theme];
+if (theme === 'light') document.body.classList.add('light');
+const s = await (await fetch('/examples/exomoon/session.json')).json(), spec = specFromSession(s), v = valuesFromSession(s);
+const pv = planetValuesOf(v, '', true), tp = { ...pv, ldLaw: spec.ldLaw, ld: [v.ld0, v.ld1] }, mp = moonParamsFrom(v, '', { mplanet: v.mplanet, mstar: v.mstar }), par = { ...tp, ...mp };
+const E = +(q.get('epoch') ?? 6), tc = pv.tmid + E * pv.per, D = spec.data, W = innerWidth, H = innerHeight;
+const place = (id, x, y, w, h, draw) => { const cv = document.getElementById(id), dpr = 2; cv.style.left = x + 'px'; cv.style.top = y + 'px'; cv.style.width = w + 'px'; cv.style.height = h + 'px'; cv.width = w * dpr; cv.height = h * dpr; const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); draw(c, w, h); };
+const only = panel !== 'all', box = (id, x, y, w, h) => (only ? (panel === id ? [0, 0, W, H] : null) : [x, y, w, h]);
+// light curve of one transit with the isolated effects
+const b1 = box('lc', 0, 0, Math.round(W * 0.56), H);
+if (b1) {
+  const grid = Float64Array.from({ length: 1500 }, (_, i) => tc - 0.6 + (1.2 * i) / 1499), c = moonComponents(grid, par, { exptime: spec.exptime, supersample: 7 }), idx = [];
+  for (let i = 0; i < D.t.length; i++) if (Math.abs(D.t[i] - tc) < 0.6) idx.push(i);
+  const t = Float64Array.from(idx, (i) => D.t[i]), mod = moonComponents(t, par, { exptime: spec.exptime, supersample: 7 }).total;
+  place('lc', ...b1, (g, w, h) => renderMoonLightCurve(g, w, h, { curve: { t: grid, ...c }, t, f: Float64Array.from(idx, (i) => D.f[i]), e: Float64Array.from(idx, (i) => D.e[i]), model: mod, tmid: tc,
+    label: `Planet + moon · transit ${E}`, info: [`Rm/R★ ${mp.rmoon}`, `P moon ${mp.permoon} d`, `Mm/Mp ${mp.mmoon}`] }, th));
+}
+// sky view
+const b2 = box('sky', Math.round(W * 0.56), 0, W - Math.round(W * 0.56), Math.round(H * 0.46));
+if (b2) {
+  const el = orbitElements(tp), ts = tc + +(q.get('dt') ?? -0.06), P = planetPosition(el, par, ts), M = moonPosition(el, par, ts), tr = { planet: [], moon: [] };
+  for (let i = 0; i <= 200; i++) { const t = tc - 0.5 + i / 200, a = planetPosition(el, par, t), b = moonPosition(el, par, t); tr.planet.push([a[0], a[1]]); tr.moon.push([b[0], b[1]]); }
+  place('sky', ...b2, (g, w, h) => renderMoonSky(g, w, h, { planet: P, moon: M, rp: tp.rprs, rm: mp.rmoon, path: moonOrbitPath(el, par, ts, 180), tracks: tr, ld: toClaret(spec.ldLaw, [v.ld0, v.ld1]), half: 2.6,
+    label: 'Sky view', info: [`${((ts - tc) * 24).toFixed(2)} h from mid-transit`, `moon orbit ${makePlanetMoonTransit(par).geometry.aMoon.toFixed(2)} R★`] }, th));
+}
+// search map
+const b3 = box('search', Math.round(W * 0.56), Math.round(H * 0.46), W - Math.round(W * 0.56), H - Math.round(H * 0.46));
+if (b3) {
+  const r = moonSearch(D, { ...tp, mplanet: v.mplanet, mstar: v.mstar }, { nNull: 40, seed: 2 });
+  place('search', ...b3, (g, w, h) => renderMoonSearch(g, w, h, { ...r, truth: s.truth.moon, label: 'Moon search' }, th));
+  window.searchMs = r.ms;
+}
+window.done = true;
+</script>

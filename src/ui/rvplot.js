@@ -8,6 +8,18 @@ import { niceTicks, decimals, groupColor } from './lightcurve.js';
  *      curve: { x[], y[] } | null, fold: bool, xlabel, label, info: [strings] }
  * opt: { ptAlpha, modelAlpha, bins, color, fontScale, title }
  */
+/** Axis ranges a panel would choose for itself: { x0, x1, y0, y1, rmax } (velocity and residual scales in m/s). */
+export function rvExtent(d) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, rmax = 0;
+  for (const s of d.sets || []) for (let i = 0; i < s.x.length; i++) {
+    x0 = Math.min(x0, s.x[i]); x1 = Math.max(x1, s.x[i]); y0 = Math.min(y0, s.y[i] - s.e[i]); y1 = Math.max(y1, s.y[i] + s.e[i]); rmax = Math.max(rmax, Math.abs(s.res[i]) + s.e[i]);
+  }
+  if (d.fold) { x0 = -0.5; x1 = 0.5; } else { const p = 0.03 * (x1 - x0 || 1); x0 -= p; x1 += p; }
+  if (d.curve) for (let i = 0; i < d.curve.x.length; i++) if (d.curve.x[i] >= x0 && d.curve.x[i] <= x1) { y0 = Math.min(y0, d.curve.y[i]); y1 = Math.max(y1, d.curve.y[i]); }
+  const py = 0.08 * (y1 - y0 || 1);
+  return { x0, x1, y0: y0 - py, y1: y1 + 2.2 * py, rmax: Math.max(rmax * 1.1, 1e-3) };
+}
+
 export function renderRV(ctx, W, H, d, th, opt = {}) {
   ctx.fillStyle = th.bg; ctx.fillRect(0, 0, W, H);
   const k = opt.fontScale || (W < 520 ? 0.95 : 1.12), F = (px) => (px * k).toFixed(1);
@@ -16,13 +28,10 @@ export function renderRV(ctx, W, H, d, th, opt = {}) {
   ctx.font = `${F(11)}px ${th.font}`; ctx.lineWidth = 1;
   const sets = d.sets || [];
   if (!sets.length) { ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.fillText(d.label || 'No radial velocities loaded', W / 2, H / 2); return null; }
-  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, rmax = 0;
-  for (const s of sets) for (let i = 0; i < s.x.length; i++) {
-    x0 = Math.min(x0, s.x[i]); x1 = Math.max(x1, s.x[i]); y0 = Math.min(y0, s.y[i] - s.e[i]); y1 = Math.max(y1, s.y[i] + s.e[i]); rmax = Math.max(rmax, Math.abs(s.res[i]) + s.e[i]);
-  }
-  if (d.fold) { x0 = -0.5; x1 = 0.5; } else { const p = 0.03 * (x1 - x0 || 1); x0 -= p; x1 += p; }
-  if (d.curve) for (let i = 0; i < d.curve.x.length; i++) if (d.curve.x[i] >= x0 && d.curve.x[i] <= x1) { y0 = Math.min(y0, d.curve.y[i]); y1 = Math.max(y1, d.curve.y[i]); }
-  const py = 0.08 * (y1 - y0 || 1); y0 -= py; y1 += 2.2 * py; rmax = Math.max(rmax * 1.1, 1e-3);
+  let { x0, x1, y0, y1, rmax } = rvExtent(d);
+  // several panels side by side share one velocity scale, so the planets' amplitudes can be compared by eye
+  if (opt.yRange) [y0, y1] = opt.yRange;
+  if (opt.rmax) rmax = opt.rmax;
   const X = (x) => px0 + ((x - x0) / (x1 - x0)) * (px1 - px0), Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * hMain, YR = (v) => yR0 + (1 - (v + rmax) / (2 * rmax)) * hRes;
 
   const xt = niceTicks(x0, x1, Math.max(3, Math.floor((px1 - px0) / (80 * k + 20))));

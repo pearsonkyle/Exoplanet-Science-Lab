@@ -11,20 +11,24 @@ const data = synthesize(truth, 'quadratic', { n: 150, noisePpm: 800, windowT14: 
 const P = { rprs: { type: 'uniform', a: 0.05, b: 0.2 }, tmid: { type: 'uniform', a: -0.02, b: 0.02 }, inc: { type: 'normal', a: 87.5, b: 0.4 } };
 const spec = (keys) => ({ data, values: { ...truth, rprs: 0.09 }, ldLaw: 'quadratic', free: keys.map((k) => ({ key: k, prior: P[k] })) });
 
-// reference: midpoint rule in the unit cube (the prior transform makes the prior density 1 there)
-function gridLnZ(keys, n) {
+// reference: midpoint rule in the unit cube (the prior transform makes the prior density 1 there), optionally
+// restricted to a box [lo, hi] that holds the posterior. In three dimensions a grid over the whole cube puts only
+// about 11 points across the posterior and was 0.18 low (1639.835 against 1640.016, the latter stable between
+// 120^3 and 170^3 points in the box and 200^3 in a box twice as wide); the box is used there.
+function gridLnZ(keys, n, lo, hi) {
   const prob = buildProblem(spec(keys)), d = keys.length, u = new Float64Array(d), th = new Float64Array(d), idx = new Array(d).fill(0);
-  let lz = -Infinity;
+  lo = lo || new Array(d).fill(0); hi = hi || new Array(d).fill(1);
+  let lz = -Infinity, vol = 0; for (let k = 0; k < d; k++) vol += Math.log(hi[k] - lo[k]);
   for (;;) {
-    for (let k = 0; k < d; k++) u[k] = (idx[k] + 0.5) / n;
+    for (let k = 0; k < d; k++) u[k] = lo[k] + (hi[k] - lo[k]) * (idx[k] + 0.5) / n;
     prob.transform(u, th); lz = logAddExp(lz, prob.loglike(th));
     let k = 0; while (k < d && ++idx[k] === n) idx[k++] = 0;
     if (k === d) break;
   }
-  return lz - d * Math.log(n);
+  return lz - d * Math.log(n) + vol;
 }
-for (const [keys, n] of [[['rprs'], 20000], [['rprs', 'tmid'], 700], [['rprs', 'tmid', 'inc'], 110]]) {
-  const ref = gridLnZ(keys, n), ref2 = gridLnZ(keys, Math.round(n * 0.7));
+for (const [keys, n, lo, hi] of [[['rprs'], 20000], [['rprs', 'tmid'], 700], [['rprs', 'tmid', 'inc'], 110, [0.2875, 0.4375, 0.05], [0.3875, 0.5625, 0.975]]]) {
+  const ref = gridLnZ(keys, n, lo, hi), ref2 = gridLnZ(keys, Math.round(n * 0.7), lo, hi);
   const runs = [];
   for (let seed = 1; seed <= 6; seed++) runs.push(await runFit({ ...spec(keys), sampler: { nlive: 400, seed } }, () => {}, () => false));
   const z = runs.map((r) => r.logZ), m = z.reduce((a, b) => a + b) / z.length, sd = Math.sqrt(z.reduce((a, b) => a + (b - m) ** 2, 0) / (z.length - 1)), err = runs.reduce((a, r) => a + r.logZerr, 0) / runs.length;

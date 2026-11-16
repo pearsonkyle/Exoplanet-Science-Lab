@@ -8,6 +8,8 @@
 import { fitEphemeris, assignEpochs, parseTimings, MS_PER_YEAR } from '../core/ephemeris.js';
 import { makeRng } from '../core/stats.js';
 import { drawOC } from './ocplot.js';
+import { timingPeriodogram } from '../core/periodogram.js';
+import { drawPeriodogram } from './periodogramplot.js';
 import { saveFile, canvasToPNG, canvasToPDF } from './export.js';
 
 /** Digits after the point that show two significant figures of the uncertainty. */
@@ -41,6 +43,14 @@ function plotData(sol, order, label) {
   return { epochs, oc: t.map((v, i) => v - lin.model(epochs[i])), errs: e, curve, label, group: grouped ? sol.rows.map((r) => names.indexOf(r.src || 'unlabelled')) : null, groups: grouped ? names : null };
 }
 
+// The periodogram of a timing list is kept between rebuilds of the tab (it is the slow part), keyed by the list itself.
+const pgCache = { key: '', value: null };
+function periodogramFor(sol, order, bootstrap) {
+  const key = [sol.t.length, sol.t[0], sol.t[sol.t.length - 1], sol.e.reduce((a, x) => a + x, 0), sol.epochs[sol.epochs.length - 1], order, bootstrap].join('|');
+  if (pgCache.key !== key) { pgCache.key = key; try { pgCache.value = timingPeriodogram(sol.epochs, sol.t, sol.e, { order, bootstrap, seed: 1 }); } catch (err) { pgCache.value = { error: err.message }; } }
+  return pgCache.value;
+}
+
 export function buildTimingTab(el, app) {
   const { S, h, pushUndo, flash, slug } = app, T0 = S.timing;
   el.innerHTML = '';
@@ -56,7 +66,7 @@ export function buildTimingTab(el, app) {
   // ---- the list -------------------------------------------------------------
   el.append(h('h3', {}, S.planets.length > 1 ? `Mid-transit times · ${app.label()}` : 'Mid-transit times', T.rows.length ? h('button', { class: 'chip small', title: 'Remove every time from the list', onclick: () => setRows([]) }, 'clear') : null));
   const sol = solveTiming(T.rows, per), order = T.order === 2 && sol && sol.quad ? 2 : 1, sel = sol && (order === 2 ? sol.quad : sol.lin);
-  if (!T.rows.length) el.append(h('div', { class: 'empty' }, 'No times yet. Add the mid-transit time from a fit, paste a list, or load the simulated example below.'));
+  if (!T.rows.length) el.append(h('div', { class: 'empty' }, 'No times yet. Paste a list, open a file, or load the simulated example below.'));
   else {
     const tb = h('tbody');
     const list = sol ? sol.rows : T.rows;
@@ -68,17 +78,6 @@ export function buildTimingTab(el, app) {
     el.append(h('div', { class: 'tablewrap' }, h('table', { class: 'res timing' }, h('thead', { html: '<tr><th>Epoch</th><th>T mid</th><th>± min</th><th>O − C min</th><th></th></tr>' }), tb)));
     if (sol && !sol.given) el.append(h('p', { class: 'note', html: `Epochs are counted from the first time using the System period, P = ${per} d.` + (sol.maxFrac > 0.2 ? ` <span style="color:var(--warn)">One time sits ${sol.maxFrac.toFixed(2)} of a period away from a whole number of orbits, so the orbit count may be wrong: improve the period or give the epochs explicitly.</span>` : '') }));
   }
-
-  // add from the current fit
-  const fitT = S.fit && S.fit.summary.find((s) => s.key === app.tmidKey());
-  const addFit = () => {
-    const t = fitT.med + tRef, e = 0.5 * (fitT.plus + fitT.minus);
-    if (T.rows.some((r) => Math.abs(r.t - t) < 1e-7)) return fail('That mid-transit time is already in the list.');
-    if (!(e > 0)) return fail('The fitted mid-transit time has no uncertainty.');
-    setRows([...T.rows, { t, e, epoch: null, src: `run #${S.fit.id} · ${S.data.name}` }]); flash('Time added');
-  };
-  el.append(h('div', { class: 'btnrow' }, h('button', { class: 'btn primary', disabled: !fitT, title: fitT ? 'Append the posterior median and 1σ of T mid from the run shown on the Results tab' : 'Run a fit with T mid free first', onclick: addFit }, 'Add T mid from the current fit'),
-    fitT ? h('span', { class: 'note' }, `${(fitT.med + tRef).toFixed(5)} ± ${(0.5 * (fitT.plus + fitT.minus)).toFixed(5)}`) : null));
 
   // paste or load a file
   const ta = h('textarea', { placeholder: 'time, uncertainty   (or: epoch, time, uncertainty)\n2455867.9734, 0.0007\n2455893.7735, 0.0004', 'aria-label': 'Paste mid-transit times' }); ta.value = T.text || '';
@@ -139,6 +138,29 @@ export function buildTimingTab(el, app) {
       h('button', { class: 'btn', onclick: () => save(base + '_ephemeris.json', json) }, 'Ephemeris JSON'), toast));
     el.append(h('p', { class: 'note' }, 'Points are the times minus the linear ephemeris. The line and shaded band are the selected model and its 1σ prediction uncertainty, which grows away from the observed epochs.'));
     el.append(h('div', { class: 'btnrow' }, h('button', { class: 'btn', title: 'Set the System period, and T mid to the predicted transit nearest the loaded light curve', onclick: () => app.applyEphemeris(sel) }, 'Use this ephemeris in the model')));
+
+    // ---- periodic signals in the residuals (another planet, a moon, apsidal precession) ----
+    if (sol.t.length >= 8) {
+      const boot = T0.bootstrap || 0, pg = periodogramFor(sol, order, boot);
+      el.append(h('h3', {}, 'Periodic signals in the residuals'));
+      if (!pg || pg.error) el.append(h('p', { class: 'note' }, 'The periodogram could not be computed: ' + ((pg && pg.error) || 'unknown error') + '.'));
+      else {
+        el.append(h('p', { class: 'note callout' }, pg.verdict));
+        const pcv = h('canvas', { id: 'pgcanvas' }); el.append(pcv);
+        const prev = redraw; redraw = () => { prev(); drawPeriodogram(pcv, { ...pg, label: `${app.label()} · periodogram of the timing residuals` }, { unit: 'days', nPeaks: 2 }); };
+        requestAnimationFrame(redraw);
+        const fm = (x, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : '—'), rowsM = pg.models.filter(Boolean).map((m, i) => `<tr class="${i === pg.recommended ? 'active' : ''}"><td>${m.name}${i === pg.recommended ? ' <small>recommended</small>' : ''}</td><td>${m.k}</td><td>${fm(m.chi2, 1)}</td><td>${fm(m.bic, 1)}</td><td>${m.terms && m.terms.length ? m.terms.map((t) => `${fm(t.periodDays, 2)} d · ${fm(t.amp * 1440, 2)} ± ${fm(t.ampErr * 1440, 2)} min`).join('<br>') : '—'}</td></tr>`).join('');
+        el.append(h('div', { class: 'tablewrap' }, h('table', { class: 'res cmp', html: `<thead><tr><th>Model</th><th>k</th><th>χ²</th><th>BIC</th><th>Period · amplitude</th></tr></thead><tbody>${rowsM}</tbody>` })));
+        const pk = pg.periodograms[0].peaks.slice(0, 3).map((p) => `${fm(p.periodDays, 2)} d (${fm(p.period, 1)} orbits), false-alarm probability ${p.fap < 1e-4 ? p.fap.toExponential(0) : fm(p.fap, 3)}${p.fapBootstrap !== undefined ? `, bootstrap ${fm(p.fapBootstrap, 3)}` : ''}`);
+        el.append(h('p', { class: 'note', html: 'Strongest peaks: ' + pk.join('; ') + '.' }));
+        if (pg.notes && pg.notes.length) el.append(...pg.notes.map((t) => h('p', { class: 'note' }, t)));
+        const bb = h('button', { class: 'btn', title: 'Shuffle the residuals among the epochs a few hundred times to measure how often noise alone makes a peak this high. Slower, but it does not trust the error bars.', onclick: () => { bb.textContent = 'Working…'; bb.disabled = true; setTimeout(() => { pushUndo(); S.timing = { ...T0, bootstrap: boot ? 0 : 300 }; app.rebuild(); }, 30); } }, boot ? 'Use the analytic false-alarm levels' : 'Check the peaks by bootstrap (300 shuffles)');
+        const toast2 = h('span', { class: 'toast' });
+        const figP = (theme) => { const c = document.createElement('canvas'); drawPeriodogram(c, { ...pg, label: '' }, { theme, width: 900, height: 420, scale: 3, fontScale: 1.35, unit: 'days', nPeaks: 2, title: `${app.label()} — periodogram of timing residuals` }); return c; };
+        el.append(h('div', { class: 'btnrow' }, bb, h('button', { class: 'btn', onclick: async () => { try { const st = await saveFile(slug(app.label()) + '_periodogram.png', await canvasToPNG(figP('light'))); toast2.textContent = st === 'saved' ? 'Saved' : 'Save cancelled.'; } catch (err) { toast2.textContent = 'Could not save: ' + err.message; } } }, 'Save PNG'), toast2));
+        el.append(h('p', { class: 'note' }, 'Generalised Lomb–Scargle periodogram of the times minus the ' + (order === 2 ? 'quadratic' : 'linear') + ' ephemeris, searched from the shortest period the epochs can tell apart to twice the span. Dashed lines are false-alarm levels of 10%, 1% and 0.1% (Baluev 2008). A sinusoid is recommended only when its peak is significant and it lowers the BIC: the BIC alone prefers a sinusoid in more than half of signal-free lists. The analytic levels assume the error bars are right; when they are not, use the bootstrap.'));
+      }
+    }
 
     // ---- upcoming transits (only when the list looks like Julian dates) --------
     if (sel.t0 > 2400000) {

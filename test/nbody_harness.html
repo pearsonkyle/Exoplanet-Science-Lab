@@ -1,0 +1,84 @@
+<!doctype html>
+<!-- Throwaway harness for src/ui/nbodyplot.js and the worker pool of the perturber grid, served by the Vite dev server:
+     test/nbody_harness.html?theme=dark|light &workers=<n> (default: navigator.hardwareConcurrency) &grid=0 (skip the grid)
+     Loads public/examples/nbody, integrates the truth, runs the grid in a pool of src/worker/nbody.worker.js and draws
+     the three plots. window.__nbody holds the timings when it is done:
+       .venv/bin/python tools/shot.py 'test/nbody_harness.html' /tmp/nbody.png 1200 700 --wait 30000 --eval 'window.__nbody' -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ESL N-body harness</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0f18; }
+  body.light { background: #fff; }
+  #wrap { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 57% 43%; width: 100vw; height: 100vh; }
+  canvas { width: 100%; height: 100%; display: block; }
+  #oc { grid-column: 1; grid-row: 1; } #orbit { grid-column: 1; grid-row: 2; } #grid { grid-column: 2; grid-row: 1 / span 2; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="oc"></canvas><canvas id="orbit"></canvas><canvas id="grid"></canvas></div>
+<script type="module">
+import { nbody, ttvSummary, ttvGridPrepare, ttvGridAssemble, ttvGridCell, ttvGridRefine } from '/src/core/nbody.js';
+import { fitEphemeris, assignEpochs } from '/src/core/ephemeris.js';
+import { drawNbody } from '/src/ui/nbodyplot.js';
+
+const q = new URLSearchParams(location.search), theme = q.get('theme') || 'dark';
+if (theme === 'light') document.body.classList.add('light');
+const truth = await (await fetch('/examples/nbody/truth.json')).json();
+const rows = (await (await fetch('/examples/nbody/transit_times.csv')).text()).trim().split(/\r?\n/).slice(1).map((l) => l.split(','));
+const t = rows.map((r) => +r[0]), e = rows.map((r) => +r[1]), src = rows.map((r) => r[2]), groups = [...new Set(src)];
+const out = { cores: navigator.hardwareConcurrency };
+
+// ---- the truth, integrated here
+const system = { mstar: truth.star.mstar, rstar: truth.star.rstar, epoch: truth.epoch, planets: truth.planets };
+const tEnd = truth.epoch + truth.integration.days, nS = 600;
+const sampleT = Array.from({ length: nS }, (_, i) => truth.epoch + (i / (nS - 1)) * 2.2 * truth.planets[1].per);
+const t0 = performance.now();
+const sim = nbody(system, { tEnd, integrator: 'ias15', times: sampleT, positions: true });
+out.simSeconds = (performance.now() - t0) / 1000;
+const sb = ttvSummary(sim.transits[0].t, { periodogram: false }), sc = ttvSummary(sim.transits[1].t, { periodogram: false });
+const ep = t.map((x) => Math.round((x - sb.t0) / sb.per));
+drawNbody(document.getElementById('oc'), 'oc', {
+  planets: [
+    { label: 'b', t: sim.transits[0].t, oc: sb.oc, data: { t, oc: t.map((x, i) => x - (sb.t0 + ep[i] * sb.per)), errs: e }, group: Int32Array.from(src, (s) => groups.indexOf(s)), groups },
+    { label: 'c', t: sim.transits[1].t, oc: sc.oc, data: null },
+  ],
+  tRef: truth.epoch, info: [`b ±${(sb.amplitude * 86400).toFixed(0)} s   c ±${(sc.amplitude * 1440).toFixed(1)} min`],
+}, { theme, title: 'Simulated O − C with the 72 observed times of b' });
+drawNbody(document.getElementById('orbit'), 'orbit', {
+  bodies: [{ label: '', x: sim.samples.x[0], star: true }, { label: 'b', x: sim.samples.x[1] }, { label: 'c', x: sim.samples.x[2] }], unit: 'R★',
+}, { theme, title: 'Orbits from above (2.2 orbits of c)' });
+
+// ---- the grid, in a pool of workers
+if (q.get('grid') !== '0') {
+  const { epochs } = assignEpochs(t, 2.7963, t[0]), lin = fitEphemeris(epochs, t, e, 1);
+  const base = { mstar: 0.95, rstar: 0.877, planet: { per: lin.per, tmid: lin.t0, ecc: 0, omega: 0, inc: 86.9, mplanet: 1.169 }, perturber: { inc: 85 } };
+  const mass = Array.from({ length: 16 }, (_, i) => 0.02 * Math.pow(0.5 / 0.02, i / 15)), period = Array.from({ length: 30 }, (_, i) => (1.55 + 0.03 * i) * lin.per);
+  const opt = { phases: 8 }, nm = mass.length, np = period.length, N = nm * np;
+  const chi2 = new Float64Array(N).fill(Infinity), amp = new Float64Array(N), phase = new Float64Array(N), stable = new Uint8Array(N), hill = new Float64Array(N);
+  // single-thread rate on a sample of cells
+  { const prep = ttvGridPrepare({ t, e }, base, opt), s0 = performance.now(); for (let k = 0; k < 12; k++) ttvGridCell(prep, mass[(k * 5) % nm], period[(k * 7) % np]); out.single = { nSim: prep.nSim, seconds: (performance.now() - s0) / 1000 }; out.single.simsPerSecond = out.single.nSim / out.single.seconds; }
+  const nW = Math.max(1, +(q.get('workers') || navigator.hardwareConcurrency || 4));
+  const cells = []; for (let im = 0; im < nm; im++) for (let ip = 0; ip < np; ip++) cells.push({ q: im * np + ip, mass: mass[im], period: period[ip] });
+  // interleave so every worker gets a fair mix of cheap and expensive cells
+  const parts = Array.from({ length: nW }, () => []); cells.forEach((c, i) => parts[i % nW].push(c));
+  const p0 = performance.now(); let nSim = 0;
+  await Promise.all(parts.map((part, w) => new Promise((resolve, reject) => {
+    const wk = new Worker(new URL('../src/worker/nbody.worker.js', import.meta.url), { type: 'module' });
+    wk.onerror = (err) => reject(new Error(err.message || 'worker failed'));
+    wk.onmessage = (ev) => { for (const c of ev.data.done) { chi2[c.q] = c.chi2; amp[c.q] = c.amp; phase[c.q] = c.phase; stable[c.q] = c.stable; } nSim += ev.data.nSim; wk.terminate(); resolve(); };
+    wk.postMessage({ id: w, obs: { t, e }, base, opt, cells: part });
+  })));
+  const prep = ttvGridPrepare({ t, e }, base, opt);
+  const g = ttvGridAssemble(prep, base, mass, period, chi2, amp, phase, stable, hill, { observed: { amp: 150 / 86400, period: 57.2 } });
+  out.pool = { workers: nW, nSim, seconds: (performance.now() - p0) / 1000 }; out.pool.simsPerSecond = nSim / out.pool.seconds; out.pool.speedup = out.pool.simsPerSecond / out.single.simsPerSecond;
+  const rf = ttvGridRefine({ t, e }, base, g.best);
+  out.best = g.best; out.refined = { mass: rf.mass, period: rf.period, periodMean: rf.periodMean, chi2: rf.chi2, nSim: rf.nSim };
+  drawNbody(document.getElementById('grid'), 'grid', { ...g, basePeriod: lin.per, refined: { mass: rf.mass, period: rf.period }, truth: { mass: 0.1, period: truth.ttv_c.mean_period } },
+    { theme, title: `Which perturber explains the O − C?  ${nSim} simulations, ${out.pool.seconds.toFixed(1)} s on ${nW} workers` });
+}
+window.__nbody = out;
+</script>
+</body>
+</html>

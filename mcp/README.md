@@ -1,0 +1,123 @@
+# Exoplanet Science Lab: MCP server
+
+Lets an MCP client (Claude Desktop, Claude Code, an IDE agent, your own harness) build, fit and summarise
+exoplanet analyses without a browser. The server holds one ESL session document (`docs/FORMAT.md`) in memory
+and exposes tools that act on it through `src/core`, the same numerical code the web app runs.
+
+The tools are the ones the in-page assistant uses: both take their names, descriptions and argument schemas
+from `src/assistant/toolspec.js`, and both run the handlers of `src/assistant/tools.js`. In the page the
+handlers drive `window.__esl.api`; here they drive `src/assistant/docApi.js`, the same surface on a session
+document. Two tools exist only in the page (`set_view`, `get_figure`) and one only here (`new_session`).
+
+## Install and run
+
+```sh
+cd mcp
+npm install                       # @modelcontextprotocol/sdk, nothing else
+node server.mjs --workspace ~/esl-work            # stdio
+node server.mjs --workspace ~/esl-work --http 8765   # streamable HTTP at http://127.0.0.1:8765/mcp
+npm test                          # starts the server and drives it through the SDK client (about 10 s)
+```
+
+Needs Node 20 or later. `--workspace` is the only folder the server reads and writes (default: the current
+directory, or `ESL_WORKSPACE`). `--session file.json` opens a session file from the workspace at start-up.
+
+## Client configuration
+
+Replace the two paths with yours.
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`), and any client that
+reads the same `mcpServers` shape (Cursor `.cursor/mcp.json`, Windsurf, Cline):
+
+```json
+{
+  "mcpServers": {
+    "exoplanet-science-lab": {
+      "command": "node",
+      "args": ["/path/to/exoplanet-science-lab/mcp/server.mjs", "--workspace", "/path/to/esl-work"]
+    }
+  }
+}
+```
+
+**Claude Code**
+
+```sh
+claude mcp add exoplanet-science-lab -- node /path/to/exoplanet-science-lab/mcp/server.mjs --workspace /path/to/esl-work
+```
+
+**VS Code** (`.vscode/mcp.json`)
+
+```json
+{ "servers": { "exoplanet-science-lab": { "type": "stdio", "command": "node",
+    "args": ["/path/to/exoplanet-science-lab/mcp/server.mjs", "--workspace", "${workspaceFolder}/data"] } } }
+```
+
+**Over HTTP** (a harness that speaks streamable HTTP; start the server with `--http 8765`)
+
+```json
+{ "mcpServers": { "exoplanet-science-lab": { "type": "streamable-http", "url": "http://127.0.0.1:8765/mcp" } } }
+```
+
+**From your own code**, with the SDK client:
+
+```js
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+const client = new Client({ name: 'my-harness', version: '1' });
+await client.connect(new StdioClientTransport({ command: 'node', args: ['mcp/server.mjs', '--workspace', './work'] }));
+await client.callTool({ name: 'lookup_planet', arguments: { name: 'WASP-12 b' } });
+await client.callTool({ name: 'load_light_curve', arguments: { file: 'night1.csv' } });
+await client.callTool({ name: 'set_free', arguments: { free: ['rprs', 'inc', 'tmid'] } });
+const fit = await client.callTool({ name: 'run_fit', arguments: {} }, undefined, { onprogress: (p) => console.log(p.message) });
+await client.callTool({ name: 'export_file', arguments: { kind: 'report' } });
+```
+
+## Tools
+
+| Group | Tools |
+|---|---|
+| System | `get_state`, `list_examples`, `load_example`, `search_catalog`, `lookup_planet`, `new_session`, `set_parameters`, `add_planet`, `remove_planet`, `set_kepler`, `set_limb_darkening` |
+| Data | `describe_data`, `load_light_curve`, `load_radial_velocities`, `set_timings`, `simulate_light_curve`, `edit_data` |
+| Fit | `choose_data`, `set_free`, `set_prior`, `set_sampler`, `run_fit`, `stop_fit` |
+| Results | `get_results`, `compare_runs`, `run_experiment` |
+| Timing and model | `fit_ephemeris`, `timing_periodogram`, `compute_model` |
+| Files | `list_files`, `read_file`, `write_file`, `export_file`, `import_session` |
+| Saved analyses | `save_analysis`, `list_saved`, `open_saved`, `delete_saved`, `undo` |
+
+Every result is a compact JSON summary: counts, key numbers with their intervals, sentences. Data arrays are
+never returned; a light curve is "685 points, 0.97 d span, median error 540 ppm" and is used by naming its
+file. `run_fit` and `run_experiment` send progress notifications when the client passes a progress token.
+A refused call comes back as an error result whose text says what was wrong and what the tool takes.
+
+`compare_runs` and `run_experiment` return the reading of the evidence in words (indistinguishable, weakly /
+moderately / strongly disfavoured) with the cautions that apply, by the rules of the analyzer's "Runs & model
+comparison" table. A client model should relay that reading instead of interpreting ln Z itself.
+
+## What differs from the web app
+
+- Limb darkening that follows the star (mode "star") is not available: the coefficients are used as given.
+- Default priors for a newly freed parameter are simple rules around the current value. The page's use the
+  transit duration and the epochs; set priors explicitly with `set_prior` when they matter.
+- `lookup_planet` loads catalogue values and priors but no stand-in light curve; use `simulate_light_curve`.
+- Examples open from their stored sessions (`public/examples/results/`).
+- Saved analyses are session files in `<workspace>/saved/`.
+
+## Files and safety
+
+- Every path is resolved inside the workspace folder and refused when it leaves it: relative paths with `..`,
+  absolute paths, and symbolic links that point outside (the real location of the nearest existing ancestor is
+  checked). `write_file` takes plain file names; `export_file` and reads accept sub-folders of the workspace.
+- A file that was in the workspace before and was not written by the server in this run is never overwritten.
+- Files over 30 MB and binary files are refused. Folders starting with a dot and `node_modules` are not listed.
+- The server makes no network requests: the catalogue and the examples are read from `public/` of this
+  repository. The HTTP mode listens on 127.0.0.1 only and refuses requests whose Host or Origin header is not
+  local. It has no authentication: do not expose it beyond your machine.
+- Logging goes to stderr.
+
+## Test
+
+`node mcp/test.mjs` lists the tools, opens EXOTIC's three-planet example as a session (built as in
+`test/session.test.mjs`), runs the fit with progress notifications, writes the fitted session, a report, a
+results table and a model curve, reads them back, fits the WASP-12 b timing example, and checks the path
+confinement and the HTTP mode.

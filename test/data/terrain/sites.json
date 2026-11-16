@@ -1,0 +1,8 @@
+{
+  "about": "Viewpoints and peaks for test/horizon.test.mjs. Positions and heights are published values (USGS / IGN summit data, rounded), not taken from the tiles.",
+  "sites": [
+    { "id": "hilo", "name": "Hilo bayfront, Hawaii", "lat": 19.7297, "lon": -155.0900, "height": 3, "peak": { "name": "Mauna Kea", "lat": 19.8206, "lon": -155.4681, "height": 4207 } },
+    { "id": "tucson", "name": "Downtown Tucson, Arizona", "lat": 32.2226, "lon": -110.9747, "height": 728, "peak": { "name": "Mount Wrightson", "lat": 31.6958, "lon": -110.8483, "height": 2881 } },
+    { "id": "geneva", "name": "Jet d'Eau quay, Geneva", "lat": 46.2074, "lon": 6.1559, "height": 373, "peak": { "name": "Mont Blanc", "lat": 45.8326, "lon": 6.8652, "height": 4806 } }
+  ]
+}

@@ -7,7 +7,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-sandbox', '--autoplay-policy=no-user-gesture-required'])
     pg = b.new_page(viewport={'width': 1440, 'height': 900}); logs = []
     pg.on('pageerror', lambda e: logs.append('PAGEERROR ' + str(e)))
-    pg.goto('http://127.0.0.1:8765/index.html?skipintro'); pg.wait_for_timeout(1800)
+    pg.goto('http://127.0.0.1:8765/analyze/index.html?skipintro'); pg.wait_for_timeout(1800)
     S = lambda expr: pg.evaluate('(() => { const S = window.__esl.S; return ' + expr + '; })()')
     def fit():
         pg.click('.tabs [data-tab=fit]'); pg.click('#runbtn')
@@ -59,6 +59,6 @@ with sync_playwright() as p:
     print('movie:', mv.get('sup'), mv.get('size'), 'bytes')
     print('errors:', logs[:6])
     # --- mobile
-    pg2 = b.new_page(viewport={'width': 400, 'height': 860}); pg2.goto('http://127.0.0.1:8765/index.html?skipintro'); pg2.wait_for_timeout(1800)
+    pg2 = b.new_page(viewport={'width': 400, 'height': 860}); pg2.goto('http://127.0.0.1:8765/analyze/index.html?skipintro'); pg2.wait_for_timeout(1800)
     pg2.screenshot(path=out + '_mobile.png'); pg2.click('.tabs [data-tab=fit]'); pg2.wait_for_timeout(300); pg2.screenshot(path=out + '_mobile_fit.png', full_page=True)
     b.close()

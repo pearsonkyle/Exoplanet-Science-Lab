@@ -1,0 +1,35 @@
+{
+  "comment": "What tools/build_core_bundle.mjs puts in python/esl/_core/esl_core.js, and the API the Python package relies on. Every src/core/*.js file is bundled automatically under its file name (src/core/kepler.js -> module 'kepler'); a new file or a new export needs no change here. 'required' is the contract test/python_bundle.test.mjs asserts, so that npm test fails when a core change would break Python.",
+  "modulesDir": "src/core",
+  "exclude": ["pyentry", "pyshim"],
+  "extraModules": { "sources": "src/core/sources/index.js" },
+  "shim": "src/core/pyshim.js",
+  "entry": "src/core/pyentry.js",
+  "tables": { "ld": { "file": "src/data/ld_table.js", "export": "LD_TABLE" } },
+  "lazy": { "spectral": { "file": "src/data/ld_spectral.js", "export": "LD_SPECTRAL_COMPACT", "register": "registerSpectral", "out": "esl_ld_spectral.js" } },
+  "out": "python/esl/_core",
+  "versionFile": "python/esl/_version.py",
+  "required": {
+    "api": ["info", "validate", "unregisteredFree", "needsSpectral", "evaluate", "problemOpen", "problemLogLike", "problemTransform", "problemClose", "transit", "radialVelocity", "semiAmplitude", "massFromK",
+            "limbDarkening", "fitEphemeris", "periodogram", "derive", "events", "parseLightCurve", "parseRV", "pythonScript", "markdownReport", "latexTables", "invoke"],
+    "jobs": ["run", "lookup", "search", "invoke"],
+    "modules": {
+      "session": ["validateSession", "specFromSession", "runSession", "summarizeFit", "valuesFromSession", "planetSuffixes", "FORMAT", "FORMAT_VERSION"],
+      "model": ["buildProblem", "autoSupersample", "infoCriteria", "planetKey", "PLANET_FIELDS", "PARAM_BY_KEY", "STAR_PARAMS"],
+      "fitRunner": ["runFit"],
+      "transit": ["makeTransit", "transitModel"],
+      "rv": ["makeRV", "semiAmplitude", "massFromK", "arsFromKepler"],
+      "kepler": ["eventTimes", "orbitElements"],
+      "limbdark": ["LD_LAWS", "toClaret", "checkProfile"],
+      "ldest": ["FILTERS", "greyProfile", "fitLaw", "interpLDGrid", "gridFromTable", "makeLDTie"],
+      "ldspec": ["expandSpectral", "bandTable"],
+      "ephemeris": ["fitEphemeris", "assignEpochs"],
+      "periodogram": ["timingPeriodogram", "lombScargle"],
+      "derive": ["deriveSystem"],
+      "catalog": ["loadIndex", "lookupHost", "searchNames", "systemFromRows"],
+      "data": ["parseLightCurve", "parseRV", "combineEpochs"],
+      "stats": ["resampleIndices", "makeRng"],
+      "exportScript": ["pythonScriptFor", "markdownReportFor", "latexTablesFor"]
+    }
+  }
+}

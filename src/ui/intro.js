@@ -59,7 +59,7 @@ export function sessionFromCatalog(sys, kinds, snapshot) {
 export function initIntro(app) {
   const { h } = app, root = document.getElementById('intro');
   const st = { step: 'home', kinds: new Set(['transit']), index: null, sys: null, look: null, refs: {}, msg: '', busy: false };
-  const close = () => { root.hidden = true; document.body.classList.remove('intro-open'); };
+  const close = () => { root.hidden = true; document.body.classList.remove('intro-open'); if (app.onClose) app.onClose(); };
   const kindsArr = () => KINDS.map((k) => k.key).filter((k) => st.kinds.has(k));
   const useOf = () => { const k = kindsArr(); return k.length === 1 ? k[0] : 'all'; };
 
@@ -96,7 +96,18 @@ export function initIntro(app) {
       h('p', { class: 'note' + (st.msg ? ' bad' : '') }, st.msg || 'Parameters are filled in from a bundled snapshot of the NASA Exoplanet Archive. You will see where each value comes from before anything is used.'),
       h('p', { class: 'ilead second' }, 'Or start from a worked example'),
       h('div', { class: 'iexamples' }, exs.map((e) => h('button', { class: 'iex', onclick: async () => { st.busy = true; try { await app.loadExample(e); close(); } catch (err) { st.msg = 'Could not load the example: ' + (err.message || err); render(); } st.busy = false; } }, h('b', {}, e.title), h('span', {}, e.sub), h('small', {}, 'EXOTIC: ' + e.exotic)))),
-      h('div', { class: 'btnrow' }, h('button', { class: 'chip', onclick: () => { st.step = 'home'; render(); } }, '← Back'), h('button', { class: 'chip', onclick: close }, 'Skip: keep the current system'))];
+      h('p', { class: 'ilead second' }, 'Your saved analyses'),
+      (() => { const box = h('div', { class: 'isaved' }, h('p', { class: 'note' }, 'Looking in this browser…'));
+        const fill = async () => { try { const list = await app.listSaved(); box.innerHTML = '';
+          if (!list.length) box.append(h('p', { class: 'note' }, 'Nothing saved yet. The Save button at the top of the analyzer stores the data, priors and results in this browser; nothing is uploaded.'));
+          for (const r of list) box.append(h('div', { class: 'isave' }, h('button', { class: 'iex', onclick: async () => { try { await app.openSaved(r.id); close(); } catch (err) { st.msg = err.message; render(); } } }, h('b', {}, r.name), h('span', {}, r.summary), h('small', {}, 'saved ' + r.updated.slice(0, 16).replace('T', ' '))),
+            h('button', { class: 'chip small', title: 'Delete this saved analysis', 'aria-label': 'Delete ' + r.name, onclick: async () => { if (confirm(`Delete “${r.name}” from this browser?`)) { await app.deleteSaved(r.id); fill(); } } }, '✕')));
+        } catch (err) { box.innerHTML = ''; box.append(h('p', { class: 'note' }, 'Saved analyses are not available here: ' + err.message)); } };
+        fill();
+        const inp = h('input', { type: 'file', accept: '.json', hidden: true, 'aria-label': 'Session file' });
+        inp.addEventListener('change', async () => { if (!inp.files[0]) return; try { await app.importFile(inp.files[0]); close(); } catch (err) { st.msg = 'Could not open that file: ' + err.message; render(); } });
+        return h('div', {}, box, h('div', { class: 'btnrow', style: 'margin-top:8px;justify-content:flex-start' }, h('button', { class: 'chip', onclick: () => inp.click() }, 'Open a session file…'), inp)); })(),
+      h('div', { class: 'btnrow' }, h('a', { class: 'chip', href: app.home || '../', style: 'text-decoration:none' }, '← Home'), h('button', { class: 'chip', onclick: close }, 'Skip: keep the current system'))];
   }
   function system() {
     const sys = st.sys, out = [h('p', { class: 'ilead' }, `${sys.host}: ${sys.planets.length} planet${sys.planets.length > 1 ? 's' : ''} in the catalog`)];
@@ -122,5 +133,6 @@ export function initIntro(app) {
     root.append(h('div', { class: 'ibox ' + st.step }, h('div', { class: 'ihead' }, h('span', { class: 'brand-mark' }), h('h2', {}, 'Exoplanet Science Lab'), h('button', { class: 'chip small iclose', 'aria-label': 'Close', onclick: close }, '✕')),
       h('p', { class: 'itag' }, 'Model and fit exoplanet observations in your browser. Nothing you load leaves your computer.'), ...body));
   }
-  return { open(step = 'home') { st.step = step; st.msg = ''; root.hidden = false; document.body.classList.add('intro-open'); render(); } };
+  return { lookup(name) { st.step = 'kinds'; root.hidden = false; document.body.classList.add('intro-open'); lookup(name); },
+    open(step = 'kinds') { st.step = step; st.msg = ''; root.hidden = false; document.body.classList.add('intro-open'); render(); } };
 }

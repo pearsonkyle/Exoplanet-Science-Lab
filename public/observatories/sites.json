@@ -1,0 +1,1383 @@
+{
+ "v": 1,
+ "date": "2026-11-15",
+ "about": "Observatories offered by the Plan page. Coordinates from the two sources below; names, kind and networks curated in tools/build_observatories.py.",
+ "sources": {
+  "astropy": {
+   "name": "astropy site registry (astropy-data coordinates/sites.json; mostly the IRAF observatory database)",
+   "url": "https://data.astropy.org/coordinates/sites.json",
+   "fetched": "cache:/tmp/esl-obs/sites.json",
+   "n": 43,
+   "listed": 110
+  },
+  "mpc": {
+   "name": "Minor Planet Center list of observatory codes",
+   "url": "https://www.minorplanetcenter.net/iau/lists/ObsCodes.html",
+   "fetched": "cache:/tmp/esl-obs/ObsCodes.html",
+   "n": 46,
+   "listed": 2710,
+   "note": "geodetic latitude and height computed from the parallax constants on WGS84; elevation rounded to 10 m"
+  },
+  "tz": {
+   "name": "timezonefinder 8.2.0 (timezone-boundary-builder, OpenStreetMap)",
+   "url": "https://github.com/jannikmi/timezonefinder"
+  }
+ },
+ "check": {
+  "what": "MPC parallax constants converted to geodetic and compared with the astropy entry of the same observatory (telescopes on one mountain can be a kilometre apart)",
+  "n": 18,
+  "worstKm": 9.25,
+  "worstElevM": 308,
+  "pairs": [
+   {
+    "astropy": "kpno",
+    "mpc": "695",
+    "km": 0.74,
+    "dElev": -56
+   },
+   {
+    "astropy": "lapalma",
+    "mpc": "950",
+    "km": 0.31,
+    "dElev": -6
+   },
+   {
+    "astropy": "paranal",
+    "mpc": "309",
+    "km": 0.07,
+    "dElev": -32
+   },
+   {
+    "astropy": "lasilla",
+    "mpc": "809",
+    "km": 0.43,
+    "dElev": -2
+   },
+   {
+    "astropy": "ctio",
+    "mpc": "807",
+    "km": 0.97,
+    "dElev": 165
+   },
+   {
+    "astropy": "lick",
+    "mpc": "662",
+    "km": 0.86,
+    "dElev": -6
+   },
+   {
+    "astropy": "mcdonald",
+    "mpc": "711",
+    "km": 0.03,
+    "dElev": 28
+   },
+   {
+    "astropy": "CAHA",
+    "mpc": "493",
+    "km": 0.03,
+    "dElev": 5
+   },
+   {
+    "astropy": "ohp",
+    "mpc": "511",
+    "km": 0.22,
+    "dElev": -16
+   },
+   {
+    "astropy": "sso",
+    "mpc": "413",
+    "km": 0.62,
+    "dElev": 15
+   },
+   {
+    "astropy": "teide",
+    "mpc": "954",
+    "km": 0.18,
+    "dElev": -27
+   },
+   {
+    "astropy": "flwo",
+    "mpc": "696",
+    "km": 1.12,
+    "dElev": 308
+   },
+   {
+    "astropy": "lco",
+    "mpc": "304",
+    "km": 1.6,
+    "dElev": 103
+   },
+   {
+    "astropy": "apo",
+    "mpc": "705",
+    "km": 0.08,
+    "dElev": -7
+   },
+   {
+    "astropy": "keck",
+    "mpc": "T16",
+    "km": 0.04,
+    "dElev": 32
+   },
+   {
+    "astropy": "salt",
+    "mpc": "B31",
+    "km": 0.03,
+    "dElev": -47
+   },
+   {
+    "astropy": "Otehiwai Observatory",
+    "mpc": "474",
+    "km": 0.18,
+    "dElev": -2
+   },
+   {
+    "astropy": "haleakala",
+    "mpc": "F65",
+    "km": 9.25,
+    "dElev": -4
+   }
+  ]
+ },
+ "kinds": {
+  "pro": "professional observatory",
+  "net": "node of a robotic or education network",
+  "remote": "remote hosting site used by amateur and citizen-science observers"
+ },
+ "sites": [
+  {
+   "id": "keck",
+   "name": "Maunakea Observatories, Hawaii",
+   "lat": 19.82625,
+   "lon": -155.47448,
+   "elev": 4160,
+   "src": "astropy",
+   "key": "keck",
+   "listed": "W. M. Keck Observatory",
+   "origin": "https://irtfweb.ifa.hawaii.edu/observing/telescopeCoordinates.php (IfA aerial survey of 1996-09-25, NAD83; midpoint of K",
+   "tz": "Pacific/Honolulu",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcf65",
+   "name": "Haleakala Observatories, Maui",
+   "lat": 20.707,
+   "lon": -156.2575,
+   "elev": 3040,
+   "src": "mpc",
+   "key": "F65",
+   "listed": "Haleakala-Faulkes Telescope North",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Pacific/Honolulu",
+   "kind": "net",
+   "nets": [
+    "LCO"
+   ]
+  },
+  {
+   "id": "lick",
+   "name": "Lick Observatory, California",
+   "lat": 37.34333,
+   "lon": -121.63667,
+   "elev": 1290,
+   "src": "astropy",
+   "key": "lick",
+   "listed": "Lick Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Los_Angeles",
+   "kind": "pro"
+  },
+  {
+   "id": "mwo",
+   "name": "Mount Wilson Observatory, California",
+   "lat": 34.22258,
+   "lon": -118.06168,
+   "elev": 1742,
+   "src": "astropy",
+   "key": "mwo",
+   "listed": "Mount Wilson Observatory",
+   "origin": "CHARA website",
+   "tz": "America/Los_Angeles",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc673",
+   "name": "Table Mountain Observatory (JPL), California",
+   "lat": 34.38149,
+   "lon": -117.68217,
+   "elev": 2280,
+   "src": "mpc",
+   "key": "673",
+   "listed": "Table Mountain Observatory, Wrightwood",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/Los_Angeles",
+   "kind": "pro"
+  },
+  {
+   "id": "palomar",
+   "name": "Palomar Observatory, California",
+   "lat": 33.356,
+   "lon": -116.863,
+   "elev": 1706,
+   "src": "astropy",
+   "key": "Palomar",
+   "listed": "The Hale Telescope",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Los_Angeles",
+   "kind": "pro"
+  },
+  {
+   "id": "mlo",
+   "name": "Mount Laguna Observatory, California",
+   "lat": 32.8422,
+   "lon": -116.4269,
+   "elev": 1859,
+   "src": "astropy",
+   "key": "mlo",
+   "listed": "Mount Laguna Observatory",
+   "origin": "https://en.wikipedia.org/wiki/Mount_Laguna_Observatory",
+   "tz": "America/Los_Angeles",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcu69",
+   "name": "Sierra Remote Observatories, California",
+   "lat": 37.07039,
+   "lon": -119.413,
+   "elev": 1380,
+   "src": "mpc",
+   "key": "U69",
+   "listed": "iTelescope SRO Observatory, Auberry",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "America/Los_Angeles",
+   "kind": "remote",
+   "nets": [
+    "iTelescope"
+   ]
+  },
+  {
+   "id": "kpno",
+   "name": "Kitt Peak National Observatory, Arizona",
+   "lat": 31.96333,
+   "lon": -111.6,
+   "elev": 2120,
+   "src": "astropy",
+   "key": "kpno",
+   "listed": "Kitt Peak National Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Phoenix",
+   "kind": "pro",
+   "nets": [
+    "NOIRLab"
+   ]
+  },
+  {
+   "id": "flwo",
+   "name": "Fred L. Whipple Observatory, Arizona",
+   "lat": 31.68094,
+   "lon": -110.8775,
+   "elev": 2320,
+   "src": "astropy",
+   "key": "flwo",
+   "listed": "Whipple Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Phoenix",
+   "tzNote": "astropy labels it US/Mountain",
+   "kind": "net",
+   "nets": [
+    "MicroObservatory",
+    "MEarth",
+    "MINERVA"
+   ]
+  },
+  {
+   "id": "lowell",
+   "name": "Lowell Observatory, Anderson Mesa, Arizona",
+   "lat": 35.09667,
+   "lon": -111.535,
+   "elev": 2198,
+   "src": "astropy",
+   "key": "lowell",
+   "listed": "Lowell Observatory - Anderson Mesa",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Phoenix",
+   "tzNote": "astropy labels it US/Mountain",
+   "kind": "pro"
+  },
+  {
+   "id": "dct",
+   "name": "Lowell Discovery Telescope, Arizona",
+   "lat": 34.7443,
+   "lon": -111.42251,
+   "elev": 2337,
+   "src": "astropy",
+   "key": "dct",
+   "listed": "Lowell Discovery Telescope",
+   "origin": "Site GPS on 20130708 UT as recorded in observatory wiki",
+   "tz": "America/Phoenix",
+   "tzNote": "astropy labels it US/Mountain",
+   "kind": "pro"
+  },
+  {
+   "id": "mtbigelow",
+   "name": "Catalina Station, Mount Bigelow, Arizona",
+   "lat": 32.41667,
+   "lon": -110.73167,
+   "elev": 2510,
+   "src": "astropy",
+   "key": "mtbigelow",
+   "listed": "Catalina Observatory: 61 inch telescope",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Phoenix",
+   "tzNote": "astropy labels it US/Mountain",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcg84",
+   "name": "Mount Lemmon SkyCenter, Arizona",
+   "lat": 32.44253,
+   "lon": -110.78916,
+   "elev": 2780,
+   "src": "mpc",
+   "key": "G84",
+   "listed": "Mount Lemmon SkyCenter",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/Phoenix",
+   "kind": "pro"
+  },
+  {
+   "id": "lbt",
+   "name": "Mount Graham (LBT), Arizona",
+   "lat": 32.7016,
+   "lon": -109.8719,
+   "elev": 2902,
+   "src": "astropy",
+   "key": "lbt",
+   "listed": "Large Binocular Telescope",
+   "origin": "LBT website",
+   "tz": "America/Phoenix",
+   "tzNote": "astropy labels it US/Mountain",
+   "kind": "pro"
+  },
+  {
+   "id": "winer",
+   "name": "Winer Observatory, Arizona",
+   "lat": 31.66558,
+   "lon": -110.60178,
+   "elev": 1516,
+   "src": "astropy",
+   "key": "winer",
+   "listed": "Winer Observatory",
+   "origin": "Winer Observatory website http://www.winer.org/",
+   "tz": "America/Phoenix",
+   "kind": "remote",
+   "nets": [
+    "KELT"
+   ]
+  },
+  {
+   "id": "mpcg95",
+   "name": "Hereford Arizona Observatory",
+   "lat": 31.45217,
+   "lon": -110.2378,
+   "elev": 1390,
+   "src": "mpc",
+   "key": "G95",
+   "listed": "Hereford Arizona Observatory, Hereford",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "America/Phoenix",
+   "kind": "remote"
+  },
+  {
+   "id": "mpcu94",
+   "name": "Utah Desert Remote Observatories, Beryl Junction",
+   "lat": 37.73778,
+   "lon": -113.6975,
+   "elev": 1550,
+   "src": "mpc",
+   "key": "U94",
+   "listed": "iTelescope Observatory, Beryl Junction",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/Denver",
+   "kind": "remote",
+   "nets": [
+    "iTelescope"
+   ]
+  },
+  {
+   "id": "apo",
+   "name": "Apache Point Observatory, New Mexico",
+   "lat": 32.78,
+   "lon": -105.82,
+   "elev": 2798,
+   "src": "astropy",
+   "key": "apo",
+   "listed": "Apache Point Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Denver",
+   "kind": "pro"
+  },
+  {
+   "id": "mpch06",
+   "name": "New Mexico Skies, Mayhill",
+   "lat": 32.90332,
+   "lon": -105.5287,
+   "elev": 2230,
+   "src": "mpc",
+   "key": "H06",
+   "listed": "iTelescope Observatory, Mayhill",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/Denver",
+   "kind": "remote",
+   "nets": [
+    "iTelescope"
+   ]
+  },
+  {
+   "id": "mpch01",
+   "name": "Magdalena Ridge Observatory, New Mexico",
+   "lat": 33.98483,
+   "lon": -107.18933,
+   "elev": 3230,
+   "src": "mpc",
+   "key": "H01",
+   "listed": "Magdalena Ridge Observatory, Socorro",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/Denver",
+   "kind": "pro"
+  },
+  {
+   "id": "mcdonald",
+   "name": "McDonald Observatory, Texas",
+   "lat": 30.67167,
+   "lon": -104.02167,
+   "elev": 2075,
+   "src": "astropy",
+   "key": "mcdonald",
+   "listed": "McDonald Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Chicago",
+   "kind": "net",
+   "nets": [
+    "LCO"
+   ]
+  },
+  {
+   "id": "mpc802",
+   "name": "Harvard College Observatory, Cambridge",
+   "lat": 42.38147,
+   "lon": -71.12836,
+   "elev": 20,
+   "src": "mpc",
+   "key": "802",
+   "listed": "Harvard Observatory, Cambridge",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/New_York",
+   "kind": "net",
+   "nets": [
+    "MicroObservatory"
+   ]
+  },
+  {
+   "id": "mpcw38",
+   "name": "Dark Sky Observatory, North Carolina",
+   "lat": 36.25269,
+   "lon": -81.41469,
+   "elev": 920,
+   "src": "mpc",
+   "key": "W38",
+   "listed": "Dark Sky Observatory, Boone",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/New_York",
+   "kind": "pro"
+  },
+  {
+   "id": "dao",
+   "name": "Dominion Astrophysical Observatory, Canada",
+   "lat": 48.52167,
+   "lon": -123.41667,
+   "elev": 229,
+   "src": "astropy",
+   "key": "dao",
+   "listed": "Dominion Astrophysical Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Vancouver",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc661",
+   "name": "Rothney Astrophysical Observatory, Canada",
+   "lat": 50.86827,
+   "lon": -114.2883,
+   "elev": 1310,
+   "src": "mpc",
+   "key": "661",
+   "listed": "Rothney Astrophysical Observatory, Priddis",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "America/Edmonton",
+   "kind": "pro"
+  },
+  {
+   "id": "omm",
+   "name": "Observatoire du Mont-Megantic, Canada",
+   "lat": 45.45571,
+   "lon": -71.1525,
+   "elev": 1108,
+   "src": "astropy",
+   "key": "omm",
+   "listed": "Observatoire du Mont Mégantic",
+   "origin": "Google Maps",
+   "tz": "America/Toronto",
+   "kind": "pro"
+  },
+  {
+   "id": "spm",
+   "name": "San Pedro Martir (OAN), Mexico",
+   "lat": 31.02917,
+   "lon": -115.48694,
+   "elev": 2830,
+   "src": "astropy",
+   "key": "spm",
+   "listed": "Observatorio Astronomico Nacional, San Pedro Martir",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Tijuana",
+   "kind": "pro",
+   "nets": [
+    "SAINT-EX"
+   ]
+  },
+  {
+   "id": "ctio",
+   "name": "Cerro Tololo, Chile",
+   "lat": -30.16528,
+   "lon": -70.815,
+   "elev": 2215,
+   "src": "astropy",
+   "key": "ctio",
+   "listed": "Cerro Tololo Interamerican Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Santiago",
+   "kind": "net",
+   "nets": [
+    "LCO",
+    "NOIRLab"
+   ]
+  },
+  {
+   "id": "gemini_south",
+   "name": "Cerro Pachon (Gemini South, SOAR), Chile",
+   "lat": -30.24074,
+   "lon": -70.73668,
+   "elev": 2750,
+   "src": "astropy",
+   "key": "gemini_south",
+   "listed": "Gemini South",
+   "origin": "CTIO Website",
+   "tz": "America/Santiago",
+   "kind": "pro",
+   "nets": [
+    "NOIRLab"
+   ]
+  },
+  {
+   "id": "lasilla",
+   "name": "La Silla Observatory (ESO), Chile",
+   "lat": -29.25667,
+   "lon": -70.73,
+   "elev": 2347,
+   "src": "astropy",
+   "key": "lasilla",
+   "listed": "La Silla Observatory (ESO)",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Santiago",
+   "kind": "pro",
+   "nets": [
+    "ESO",
+    "TRAPPIST"
+   ]
+  },
+  {
+   "id": "lco",
+   "name": "Las Campanas Observatory, Chile",
+   "lat": -29.00333,
+   "lon": -70.70167,
+   "elev": 2282,
+   "src": "astropy",
+   "key": "lco",
+   "listed": "Las Campanas Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "America/Santiago",
+   "kind": "pro"
+  },
+  {
+   "id": "paranal",
+   "name": "Paranal Observatory (ESO), Chile",
+   "lat": -24.62744,
+   "lon": -70.40499,
+   "elev": 2669,
+   "src": "astropy",
+   "key": "paranal",
+   "listed": "Paranal Observatory (ESO)",
+   "origin": "Official reference in VLTI raw data products",
+   "tz": "America/Santiago",
+   "kind": "pro",
+   "nets": [
+    "ESO",
+    "SPECULOOS",
+    "NGTS"
+   ]
+  },
+  {
+   "id": "oca",
+   "name": "Cerro Armazones Observatory, Chile",
+   "lat": -24.59867,
+   "lon": -70.20128,
+   "elev": 2817,
+   "src": "astropy",
+   "key": "oca",
+   "listed": "Observatorio Cerro Armazones",
+   "origin": "https://araucaria.camk.edu.pl/index.php/observatory-cerro-armazones/",
+   "tz": "America/Santiago",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcx07",
+   "name": "Deep Sky Chile, Rio Hurtado",
+   "lat": -30.52639,
+   "lon": -70.85361,
+   "elev": 1730,
+   "src": "mpc",
+   "key": "X07",
+   "listed": "iTelescope Deep Sky Chile, Rio Hurtado",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/Santiago",
+   "kind": "remote",
+   "nets": [
+    "iTelescope"
+   ]
+  },
+  {
+   "id": "mpcx02",
+   "name": "El Sauce Observatory, Rio Hurtado, Chile",
+   "lat": -30.47067,
+   "lon": -70.76483,
+   "elev": 1490,
+   "src": "mpc",
+   "key": "X02",
+   "listed": "Telescope Live, El Sauce",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/Santiago",
+   "kind": "remote"
+  },
+  {
+   "id": "mpcg39",
+   "name": "San Pedro de Atacama remote observatories, Chile",
+   "lat": -22.9531,
+   "lon": -68.17961,
+   "elev": 2400,
+   "src": "mpc",
+   "key": "G39",
+   "listed": "ROAD, San Pedro de Atacama",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/Santiago",
+   "kind": "remote"
+  },
+  {
+   "id": "mpc829",
+   "name": "Complejo Astronomico El Leoncito, Argentina",
+   "lat": -31.79932,
+   "lon": -69.3021,
+   "elev": 2480,
+   "src": "mpc",
+   "key": "829",
+   "listed": "Complejo Astronomico El Leoncito",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "America/Argentina/San_Juan",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc821",
+   "name": "Bosque Alegre, Cordoba, Argentina",
+   "lat": -31.59833,
+   "lon": -64.54959,
+   "elev": 1210,
+   "src": "mpc",
+   "key": "821",
+   "listed": "Cordoba-Bosque Alegre",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/Argentina/Cordoba",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc874",
+   "name": "Observatorio do Pico dos Dias, Brazil",
+   "lat": -22.53549,
+   "lon": -45.58265,
+   "elev": 1810,
+   "src": "mpc",
+   "key": "874",
+   "listed": "Observatorio do Pico dos Dias, Itajuba",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "America/Sao_Paulo",
+   "kind": "pro"
+  },
+  {
+   "id": "lapalma",
+   "name": "Roque de los Muchachos, La Palma",
+   "lat": 28.75833,
+   "lon": -17.88,
+   "elev": 2327,
+   "src": "astropy",
+   "key": "lapalma",
+   "listed": "Roque de los Muchachos, La Palma",
+   "origin": "IRAF Observatory Database",
+   "tz": "Atlantic/Canary",
+   "kind": "pro"
+  },
+  {
+   "id": "teide",
+   "name": "Teide Observatory, Tenerife",
+   "lat": 28.3,
+   "lon": -16.50972,
+   "elev": 2390,
+   "src": "astropy",
+   "key": "teide",
+   "listed": "Observatorio del Teide, Tenerife",
+   "origin": "Instituto de Astrofisica de Canarias website (http://research.iac.es/OOCC/observatorio-del-teide/ot/)",
+   "tz": "Atlantic/Canary",
+   "kind": "net",
+   "nets": [
+    "LCO",
+    "SPECULOOS"
+   ]
+  },
+  {
+   "id": "mpcz53",
+   "name": "Oukaimeden Observatory (TRAPPIST-North), Morocco",
+   "lat": 31.20622,
+   "lon": -7.8664,
+   "elev": 2780,
+   "src": "mpc",
+   "key": "Z53",
+   "listed": "TRAPPIST-North, Oukaimeden",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Africa/Casablanca",
+   "kind": "pro",
+   "nets": [
+    "TRAPPIST"
+   ]
+  },
+  {
+   "id": "caha",
+   "name": "Calar Alto Observatory, Spain",
+   "lat": 37.22361,
+   "lon": -2.54611,
+   "elev": 2168,
+   "src": "astropy",
+   "key": "CAHA",
+   "listed": "Centro Astronomico Hispano-Aleman, Almeria",
+   "origin": "CAHA Wikipedia page (https://en.wikipedia.org/wiki/Calar_Alto_Observatory)",
+   "tz": "Europe/Madrid",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcj86",
+   "name": "Sierra Nevada Observatory, Spain",
+   "lat": 37.06413,
+   "lon": -3.3847,
+   "elev": 2930,
+   "src": "mpc",
+   "key": "J86",
+   "listed": "Sierra Nevada Observatory",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Europe/Madrid",
+   "kind": "pro"
+  },
+  {
+   "id": "oaj",
+   "name": "Javalambre Observatory, Spain",
+   "lat": 40.04202,
+   "lon": -1.01608,
+   "elev": 1956,
+   "src": "astropy",
+   "key": "OAJ",
+   "listed": "Observatorio Astrofisico de Javalambre",
+   "origin": "Google Earth",
+   "tz": "Europe/Madrid",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcc65",
+   "name": "Montsec Observatory, Spain",
+   "lat": 42.05168,
+   "lon": 0.72965,
+   "elev": 1620,
+   "src": "mpc",
+   "key": "C65",
+   "listed": "Observatori Astronomic del Montsec",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Europe/Madrid",
+   "kind": "pro"
+  },
+  {
+   "id": "mpci89",
+   "name": "Nerpio remote observatories, Spain",
+   "lat": 38.16528,
+   "lon": -2.3261,
+   "elev": 1640,
+   "src": "mpc",
+   "key": "I89",
+   "listed": "iTelescope Observatory, Nerpio",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Europe/Madrid",
+   "kind": "remote",
+   "nets": [
+    "iTelescope"
+   ]
+  },
+  {
+   "id": "mpc586",
+   "name": "Pic du Midi, France",
+   "lat": 42.93655,
+   "lon": 0.1423,
+   "elev": 2890,
+   "src": "mpc",
+   "key": "586",
+   "listed": "Pic du Midi",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Europe/Paris",
+   "kind": "pro"
+  },
+  {
+   "id": "ohp",
+   "name": "Observatoire de Haute-Provence, France",
+   "lat": 43.93083,
+   "lon": 5.71333,
+   "elev": 650,
+   "src": "astropy",
+   "key": "ohp",
+   "listed": "Observatoire de Haute Provence",
+   "origin": "OHP website",
+   "tz": "Europe/Paris",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcr87",
+   "name": "Observatoire de la Cote d'Azur, France",
+   "lat": 43.75371,
+   "lon": 6.92294,
+   "elev": 1320,
+   "src": "mpc",
+   "key": "R87",
+   "listed": "Observatoire de la Cote d'Azur",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Europe/Paris",
+   "kind": "pro"
+  },
+  {
+   "id": "ekar",
+   "name": "Asiago Cima Ekar, Italy",
+   "lat": 45.84858,
+   "lon": 11.569,
+   "elev": 1376,
+   "src": "astropy",
+   "key": "ekar",
+   "listed": "Cima Ekar 182 cm Telescope",
+   "origin": "https://www.oapd.inaf.it/sede-di-asiago/telescopes-and-instrumentations/copernico-182cm-telescope (INAF Osservatorio Ast",
+   "tz": "Europe/Rome",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc598",
+   "name": "Loiano, Italy",
+   "lat": 44.2592,
+   "lon": 11.33409,
+   "elev": 750,
+   "src": "mpc",
+   "key": "598",
+   "listed": "Loiano",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Europe/Rome",
+   "kind": "pro"
+  },
+  {
+   "id": "wendelstein",
+   "name": "Wendelstein Observatory, Germany",
+   "lat": 47.70364,
+   "lon": 12.01206,
+   "elev": 1838,
+   "src": "astropy",
+   "key": "Wendelstein",
+   "listed": "Wendelstein Observatory",
+   "origin": "https://www.wendelstein-observatorium.de/#Standort",
+   "tz": "Europe/Berlin",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc033",
+   "name": "Tautenburg, Germany",
+   "lat": 50.98014,
+   "lon": 11.71124,
+   "elev": 390,
+   "src": "mpc",
+   "key": "033",
+   "listed": "Karl Schwarzschild Observatory, Tautenburg",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Europe/Berlin",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc557",
+   "name": "Ondrejov Observatory, Czechia",
+   "lat": 49.9148,
+   "lon": 14.77961,
+   "elev": 580,
+   "src": "mpc",
+   "key": "557",
+   "listed": "Ondrejov",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Europe/Prague",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc056",
+   "name": "Skalnate Pleso Observatory, Slovakia",
+   "lat": 49.18956,
+   "lon": 20.23418,
+   "elev": 1810,
+   "src": "mpc",
+   "key": "056",
+   "listed": "Skalnate Pleso",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Europe/Bratislava",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc461",
+   "name": "Piszkesteto Station (Konkoly), Hungary",
+   "lat": 47.91745,
+   "lon": 19.89367,
+   "elev": 980,
+   "src": "mpc",
+   "key": "461",
+   "listed": "University of Szeged, Piszkesteto Stn. (Konkoly)",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Europe/Budapest",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc152",
+   "name": "Moletai Astronomical Observatory, Lithuania",
+   "lat": 55.31604,
+   "lon": 25.5633,
+   "elev": 210,
+   "src": "mpc",
+   "key": "152",
+   "listed": "Moletai Astronomical Observatory",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Europe/Vilnius",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc071",
+   "name": "NAO Rozhen, Bulgaria",
+   "lat": 41.69312,
+   "lon": 24.73782,
+   "elev": 1740,
+   "src": "mpc",
+   "key": "071",
+   "listed": "NAO Rozhen, Smolyan",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Europe/Sofia",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcl10",
+   "name": "Kryoneri Observatory, Greece",
+   "lat": 37.97222,
+   "lon": 22.6186,
+   "elev": 970,
+   "src": "mpc",
+   "key": "L10",
+   "listed": "Kryoneri Observatory",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Europe/Athens",
+   "kind": "pro"
+  },
+  {
+   "id": "tug",
+   "name": "TUBITAK National Observatory, Turkiye",
+   "lat": 36.82417,
+   "lon": 30.33555,
+   "elev": 2500,
+   "src": "astropy",
+   "key": "tug",
+   "listed": "TUBITAK National Observatory",
+   "origin": "TUG Website: http://www.tug.tubitak.gov.tr/gozlemevi.php",
+   "tz": "Europe/Istanbul",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc095",
+   "name": "Crimean Astrophysical Observatory, Nauchnyi",
+   "lat": 44.72655,
+   "lon": 34.016,
+   "elev": 590,
+   "src": "mpc",
+   "key": "095",
+   "listed": "Crimea-Nauchnyi",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Europe/Simferopol",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc115",
+   "name": "Special Astrophysical Observatory, Zelenchukskaya",
+   "lat": 43.64671,
+   "lon": 41.44067,
+   "elev": 2100,
+   "src": "mpc",
+   "key": "115",
+   "listed": "Zelenchukskaya",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Europe/Moscow",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcb18",
+   "name": "Terskol Observatory, Caucasus",
+   "lat": 43.27482,
+   "lon": 42.5008,
+   "elev": 3140,
+   "src": "mpc",
+   "key": "B18",
+   "listed": "Terskol",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Europe/Moscow",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc168",
+   "name": "Kourovka Observatory, Urals",
+   "lat": 57.0368,
+   "lon": 59.5472,
+   "elev": 270,
+   "src": "mpc",
+   "key": "168",
+   "listed": "Kourovskaya",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Asia/Yekaterinburg",
+   "kind": "pro"
+  },
+  {
+   "id": "wise",
+   "name": "Wise Observatory, Israel",
+   "lat": 30.59739,
+   "lon": 34.76218,
+   "elev": 875,
+   "src": "astropy",
+   "key": "wise",
+   "listed": "Wise Observatory",
+   "origin": "Wise Observatory One Meter Telescope Manual http://wise-obs.tau.ac.il/observations/Man/wise_man.pdf",
+   "tz": "Asia/Jerusalem",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcm40",
+   "name": "Kottamia Observatory, Egypt",
+   "lat": 29.936,
+   "lon": 31.82708,
+   "elev": 480,
+   "src": "mpc",
+   "key": "M40",
+   "listed": "OSTS-NRIAG, Kottamia",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Africa/Cairo",
+   "kind": "pro"
+  },
+  {
+   "id": "salt",
+   "name": "SAAO Sutherland, South Africa",
+   "lat": -32.37582,
+   "lon": 20.81081,
+   "elev": 1798,
+   "src": "astropy",
+   "key": "salt",
+   "listed": "Southern African Large Telescope",
+   "origin": "SALT website & google maps",
+   "tz": "Africa/Johannesburg",
+   "kind": "net",
+   "nets": [
+    "LCO",
+    "KELT"
+   ]
+  },
+  {
+   "id": "mpc074",
+   "name": "Boyden Observatory, South Africa",
+   "lat": -29.03814,
+   "lon": 26.4058,
+   "elev": 1410,
+   "src": "mpc",
+   "key": "074",
+   "listed": "Boyden Observatory, Bloemfontein",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Africa/Johannesburg",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcl87",
+   "name": "Hakos remote observatories, Namibia",
+   "lat": -23.23642,
+   "lon": 16.36189,
+   "elev": 1850,
+   "src": "mpc",
+   "key": "L87",
+   "listed": "Moonbase South Observatory, Hakos",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Africa/Windhoek",
+   "kind": "remote"
+  },
+  {
+   "id": "mpc188",
+   "name": "Maidanak Observatory, Uzbekistan",
+   "lat": 38.67336,
+   "lon": 66.89555,
+   "elev": 2580,
+   "src": "mpc",
+   "key": "188",
+   "listed": "Maidanak",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Asia/Samarkand",
+   "kind": "pro"
+  },
+  {
+   "id": "iao",
+   "name": "Indian Astronomical Observatory, Hanle",
+   "lat": 32.77944,
+   "lon": 78.96417,
+   "elev": 4500,
+   "src": "astropy",
+   "key": "iao",
+   "listed": "Indian Astronomical Observatory",
+   "origin": "https://www.iiap.res.in/centers/iao?q=iao_site",
+   "tz": "Asia/Kolkata",
+   "kind": "pro"
+  },
+  {
+   "id": "dot",
+   "name": "Devasthal Observatory (ARIES), India",
+   "lat": 29.36098,
+   "lon": 79.68437,
+   "elev": 2424,
+   "src": "astropy",
+   "key": "dot",
+   "listed": "Devasthal Optical Telescope",
+   "origin": "https://www.aries.res.in/facilities/astronomical-telescopes/360cm-telescope/telescope",
+   "tz": "Asia/Kolkata",
+   "kind": "pro"
+  },
+  {
+   "id": "vbo",
+   "name": "Vainu Bappu Observatory, Kavalur, India",
+   "lat": 12.57666,
+   "lon": 78.8266,
+   "elev": 725,
+   "src": "astropy",
+   "key": "vbo",
+   "listed": "Vainu Bappu Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "Asia/Kolkata",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcn87",
+   "name": "Nanshan Station (Xinjiang Observatory), China",
+   "lat": 43.47361,
+   "lon": 87.17503,
+   "elev": 2040,
+   "src": "mpc",
+   "key": "N87",
+   "listed": "Nanshan Station, Xinjiang Observatory",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Asia/Urumqi",
+   "kind": "pro"
+  },
+  {
+   "id": "lijiang",
+   "name": "Lijiang Observatory, China",
+   "lat": 26.6951,
+   "lon": 100.03,
+   "elev": 3200,
+   "src": "astropy",
+   "key": "Lijiang",
+   "listed": "Lijiang Observatory",
+   "origin": "https://sao.ynao.ac.cn/equipment/2-4m-telescope",
+   "tz": "Asia/Shanghai",
+   "kind": "pro"
+  },
+  {
+   "id": "bao",
+   "name": "Xinglong Observatory, China",
+   "lat": 40.39333,
+   "lon": 117.575,
+   "elev": 950,
+   "src": "astropy",
+   "key": "BAO",
+   "listed": "Beijing XingLong Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "Asia/Shanghai",
+   "kind": "pro"
+  },
+  {
+   "id": "tno",
+   "name": "Thai National Observatory, Doi Inthanon",
+   "lat": 18.59056,
+   "lon": 98.48667,
+   "elev": 2457,
+   "src": "astropy",
+   "key": "TNO",
+   "listed": "Thai National Observatory",
+   "origin": "TNO Wikipedia page (https://en.wikipedia.org/wiki/Thai_National_Observatory)",
+   "tz": "Asia/Bangkok",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcd35",
+   "name": "Lulin Observatory, Taiwan",
+   "lat": 23.46858,
+   "lon": 120.8736,
+   "elev": 2880,
+   "src": "mpc",
+   "key": "D35",
+   "listed": "Lulin Observatory",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Asia/Taipei",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc344",
+   "name": "Bohyunsan Observatory, Korea",
+   "lat": 36.16483,
+   "lon": 128.9767,
+   "elev": 1140,
+   "src": "mpc",
+   "key": "344",
+   "listed": "Bohyunsan Optical Astronomy Observatory",
+   "origin": "parallax constants to 5 decimals",
+   "tz": "Asia/Seoul",
+   "kind": "pro"
+  },
+  {
+   "id": "oao",
+   "name": "Okayama Observatory, Japan",
+   "lat": 34.57708,
+   "lon": 133.59396,
+   "elev": 370,
+   "src": "astropy",
+   "key": "OAO",
+   "listed": "Okayama Astrophysical Observatory",
+   "origin": "OAO Website (http://www.oao.nao.ac.jp/en/telescope/abouttel188/)",
+   "tz": "Asia/Tokyo",
+   "kind": "pro"
+  },
+  {
+   "id": "mpc381",
+   "name": "Kiso Observatory, Japan",
+   "lat": 35.79723,
+   "lon": 137.62542,
+   "elev": 1180,
+   "src": "mpc",
+   "key": "381",
+   "listed": "Tokyo-Kiso",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Asia/Tokyo",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcd20",
+   "name": "Zadko Observatory, Western Australia",
+   "lat": -31.35595,
+   "lon": 115.71311,
+   "elev": 50,
+   "src": "mpc",
+   "key": "D20",
+   "listed": "Zadko Observatory, Wallingup Plain",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Australia/Perth",
+   "kind": "pro"
+  },
+  {
+   "id": "sso",
+   "name": "Siding Spring Observatory, Australia",
+   "lat": -31.27336,
+   "lon": 149.06119,
+   "elev": 1149,
+   "src": "astropy",
+   "key": "sso",
+   "listed": "Siding Spring Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "Australia/Sydney",
+   "kind": "net",
+   "nets": [
+    "LCO",
+    "iTelescope"
+   ]
+  },
+  {
+   "id": "mpce22",
+   "name": "Mount Kent Observatory, Queensland",
+   "lat": -27.79772,
+   "lon": 151.855,
+   "elev": 670,
+   "src": "mpc",
+   "key": "E22",
+   "listed": "Univ. of Southern Queensland Obs., Mt. Kent",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Australia/Brisbane",
+   "kind": "pro",
+   "nets": [
+    "MINERVA-Australis"
+   ]
+  },
+  {
+   "id": "mso",
+   "name": "Mount Stromlo Observatory, Australia",
+   "lat": -35.32065,
+   "lon": 149.02433,
+   "elev": 767,
+   "src": "astropy",
+   "key": "mso",
+   "listed": "Mt. Stromlo Observatory",
+   "origin": "IRAF Observatory Database",
+   "tz": "Australia/Sydney",
+   "kind": "pro"
+  },
+  {
+   "id": "mpcq54",
+   "name": "Greenhill Observatory, Tasmania",
+   "lat": -42.43114,
+   "lon": 147.28772,
+   "elev": 640,
+   "src": "mpc",
+   "key": "Q54",
+   "listed": "Harlingten Telescope, Greenhill Observatory",
+   "origin": "parallax constants to 6 decimals",
+   "tz": "Australia/Hobart",
+   "kind": "pro"
+  },
+  {
+   "id": "otehiwai_observatory",
+   "name": "Mount John Observatory, New Zealand",
+   "lat": -43.98574,
+   "lon": 170.46506,
+   "elev": 1029,
+   "src": "astropy",
+   "key": "Otehiwai Observatory",
+   "listed": "Otehiwai Observatory",
+   "origin": "https://www.geodesy.linz.govt.nz/gdb/index.cgi?code=6702",
+   "tz": "Pacific/Auckland",
+   "kind": "pro"
+  }
+ ]
+}

@@ -186,3 +186,6 @@ export function transitModel(times, params, out, opts) {
   }
   return out;
 }
+
+// Internals shared with exomoon.js, which integrates the same kernel along arcs of two overlapping discs.
+export { hOf, gaussLegendre };

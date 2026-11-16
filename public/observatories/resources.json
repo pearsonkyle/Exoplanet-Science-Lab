@@ -1,0 +1,2127 @@
+{
+ "v": 1,
+ "date": "2026-11-15",
+ "userAgent": "ExoplanetScienceLab-ObservatoryResources/1.0 (+https://exoplanet.science/plan/; looks once for public archive, all-sky camera and weather links of observatories)",
+ "about": "Public archive, all-sky camera and weather links of the observatories in sites.json that answered HTTP 200 on `date`. Built by tools/crawl_observatories.py: see its header for the method and the rule for inline images.",
+ "embedRule": "an all-sky image is shown inline only if https, 200 with an image type to a cross-site request, no restrictive Cross-Origin-Resource-Policy, Last-Modified under 48 h, allowed by robots.txt, and the host has reviewed open terms (terms)",
+ "terms": {
+  "eso.org": {
+   "url": "https://www.eso.org/public/copyright/",
+   "licence": "CC BY 4.0 (ESO)",
+   "status": 200,
+   "phraseFound": true,
+   "checked": "2026-11-15"
+  },
+  "noirlab.edu": {
+   "url": "https://noirlab.edu/public/copyright/",
+   "licence": "CC BY 4.0 (NOIRLab/NSF/AURA)",
+   "status": 200,
+   "phraseFound": true,
+   "checked": "2026-11-15"
+  }
+ },
+ "summary": {
+  "observatories": 89,
+  "withAny": 43,
+  "archive": 24,
+  "allsky": 17,
+  "weather": 33,
+  "links": 135,
+  "allskyImages": 10,
+  "imagesHeadersAllow": 9,
+  "imagesFresh": 7,
+  "imagesEmbedded": 2,
+  "embeddedAt": [
+   "kpno",
+   "lasilla"
+  ],
+  "pagesFrameAllowed": 98,
+  "requests": 549,
+  "refusedByRobots": 20,
+  "seconds": 328
+ },
+ "sites": {
+  "keck": {
+   "archive": [
+    {
+     "url": "https://koa.ipac.caltech.edu/",
+     "label": "Keck Observatory Archive",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://www.cadc-ccda.hia-iha.nrc-cnrc.gc.ca/en/cfht/",
+     "label": "Canada France Hawai'i Telescope - Canadian Astronomy Data Centre",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://koa.ipac.caltech.edu/related_archives.html",
+     "label": "+ Related Archives",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://koa.ipac.caltech.edu/"
+    },
+    {
+     "url": "https://www.cadc-ccda.hia-iha.nrc-cnrc.gc.ca/en/cfht/access.html",
+     "label": "Proprietary Data Access",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.cadc-ccda.hia-iha.nrc-cnrc.gc.ca/en/cfht/"
+    }
+   ],
+   "allsky": [
+    {
+     "url": "https://www.gemini.edu/observing/telescopes-and-sites/sites",
+     "label": "The Sites | Gemini Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "http://mkwc.ifa.hawaii.edu/current/cams/",
+     "label": "Maunakea Weather Center - MKWC Web Cams",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "image": {
+      "url": "http://mkwc.ifa.hawaii.edu/current/cams/images/gemini-hilo/20261115_1242.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "https": false,
+      "cors": null,
+      "corp": null,
+      "lastModified": "Sun, 15 Nov 2026 22:42:06 GMT",
+      "ageHours": 0.1,
+      "headersAllow": false,
+      "fresh": true,
+      "terms": null,
+      "embed": false
+     }
+    },
+    {
+     "url": "https://www.cfht.hawaii.edu/en/gallery/webcams.php",
+     "label": "Webcams",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.cfht.hawaii.edu/en/gallery/cloudcams/"
+    },
+    {
+     "url": "https://www.cfht.hawaii.edu/en/gallery/cloudcams/about.php",
+     "label": "About the CloudCams",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.cfht.hawaii.edu/en/gallery/cloudcams/"
+    }
+   ],
+   "weather": [
+    {
+     "url": "http://mkwc.ifa.hawaii.edu/",
+     "label": "Maunakea Weather Center -",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://www.cfht.hawaii.edu/en/gallery/cloudcams/",
+     "label": "CFHT Cloudcams",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "http://mkwc.ifa.hawaii.edu/current/seeing/",
+     "label": "Seeing",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "http://mkwc.ifa.hawaii.edu/",
+     "asked": "http://mkwc.ifa.hawaii.edu/current/seeing"
+    }
+   ]
+  },
+  "mpcf65": {
+   "archive": [
+    {
+     "url": "https://outerspace.stsci.edu/spaces/PANSTARRS/overview",
+     "label": "Pan-STARRS1 data archive home page - PS1 Public Archive - MAST",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": "'self' https://innerspace.stsci.edu https://jira.stsci.edu",
+      "allowed": false
+     },
+     "asked": "https://panstarrs.stsci.edu/"
+    },
+    {
+     "url": "https://archive.lco.global/",
+     "label": "Science Archive | Las Cumbres Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://outerspace.stsci.edu/spaces/PANSTARRS/pages/298812201/Pan-STARRS1+data+archive+home+page",
+     "label": "Pan-STARRS1 data archive home page",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": "'self' https://innerspace.stsci.edu https://jira.stsci.edu",
+      "allowed": false
+     },
+     "foundOn": "https://outerspace.stsci.edu/spaces/PANSTARRS/overview"
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://weather.lco.global/",
+     "label": "LCO Weather",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "lick": {
+   "allsky": [
+    {
+     "url": "https://mthamilton.ucolick.org/hamcam/skycam/",
+     "label": "Lick Observatory, Current All-Sky Camera Images",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "image": {
+      "url": "https://mthamilton.ucolick.org/hamcam/skycam/current.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "https": true,
+      "cors": null,
+      "corp": null,
+      "lastModified": "Sun, 15 Nov 2026 14:59:55 GMT",
+      "ageHours": 7.5,
+      "headersAllow": true,
+      "fresh": true,
+      "terms": null,
+      "embed": false
+     }
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://mthamilton.ucolick.org/hamcam/",
+     "label": "Lick Observatory, Current Webcam Images",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "palomar": {
+   "archive": [
+    {
+     "url": "https://irsa.ipac.caltech.edu/Missions/ztf.html",
+     "label": "IRSA - ZTF",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "mlo": {
+   "weather": [
+    {
+     "url": "https://astronomy.sdsu.edu/mlo-weather/",
+     "label": "Mt. Laguna Observatory Weather",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://mintaka.sdsu.edu/"
+    }
+   ]
+  },
+  "mpcu69": {
+   "allsky": [
+    {
+     "url": "https://www.sierra-remote.com/all-sky-cameras.html",
+     "label": "ALL SKY CAMERAS",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.sierra-remote.com/",
+     "image": {
+      "url": "https://sroftp2.com/SRODATA/Zwo_183MC_TeleTower/Zwo183MC_Latest.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "https": true,
+      "cors": null,
+      "corp": null,
+      "lastModified": "Sun, 15 Nov 2026 22:30:48 GMT",
+      "ageHours": 0.0,
+      "headersAllow": true,
+      "fresh": true,
+      "terms": null,
+      "embed": false
+     }
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://www.sierra-remote.com/weather.html",
+     "label": "WEATHER - SRO",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "asked": "https://www.sierra-remote.com/weather"
+    },
+    {
+     "url": "https://www.sierra-remote.com/site-conditions.html",
+     "label": "SITE CONDITIONS",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.sierra-remote.com/"
+    },
+    {
+     "url": "https://www.sierra-remote.com/seeing-data--darkness.html",
+     "label": "SEEING DATA & DARKNESS",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.sierra-remote.com/"
+    }
+   ]
+  },
+  "kpno": {
+   "archive": [
+    {
+     "url": "https://astroarchive.noirlab.edu/",
+     "label": "astroarchive.noirlab.edu",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "DENY",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://noirlab.edu/science/data-services/survey-archives",
+     "label": "Survey Archives",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://noirlab.edu/science/observing-noirlab/weather-webcams/kitt-peak"
+    }
+   ],
+   "allsky": [
+    {
+     "url": "https://noirlab.edu/science/observing-noirlab/weather-webcams",
+     "label": "Weather & Webcams",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://noirlab.edu/science/observing-noirlab/weather-webcams/kitt-peak"
+    },
+    {
+     "url": "https://kpasca-db.tuc.noirlab.edu/",
+     "label": "All Sky Cam",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www-kpno.kpno.noirlab.edu/Info/Mtn_Weather/",
+     "asked": "https://kpasca-db.tuc.noirlab.edu",
+     "image": {
+      "url": "https://kpasca-db.tuc.noirlab.edu/lastpix.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "https": true,
+      "cors": null,
+      "corp": null,
+      "lastModified": "Sun, 15 Nov 2026 22:30:02 GMT",
+      "ageHours": 0.0,
+      "headersAllow": true,
+      "fresh": true,
+      "terms": {
+       "url": "https://noirlab.edu/public/copyright/",
+       "licence": "CC BY 4.0 (NOIRLab/NSF/AURA)"
+      },
+      "embed": true
+     }
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://noirlab.edu/science/observing-noirlab/weather-webcams/kitt-peak",
+     "label": "Kitt Peak | NOIRLab Science",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://www-kpno.kpno.noirlab.edu/Info/Mtn_Weather/",
+     "label": "Kitt Peak Site Weather",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://noirlab.edu/science/observing-noirlab/weather-webcams/kitt-peak/kpno-weather",
+     "label": "KPNO Weather",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://noirlab.edu/science/observing-noirlab/weather-webcams/kitt-peak"
+    },
+    {
+     "url": "http://www-kpno.kpno.noirlab.edu/Info/Mtn_Weather/",
+     "label": "Current KPNO Weather Data",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://noirlab.edu/science/observing-noirlab/weather-webcams/kitt-peak"
+    }
+   ]
+  },
+  "flwo": {
+   "allsky": [
+    {
+     "url": "https://www.mmto.org/all-sky-camera/",
+     "label": "All Sky Camera",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.mmto.org/",
+     "image": {
+      "url": "https://skycam.mmto.arizona.edu/skycam/latest_image.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "https": true,
+      "cors": null,
+      "corp": null,
+      "lastModified": "Sun, 15 Nov 2026 22:32:28 GMT",
+      "ageHours": -0.0,
+      "headersAllow": true,
+      "fresh": true,
+      "terms": null,
+      "embed": false
+     }
+    },
+    {
+     "url": "https://www.mmto.org/webcams/",
+     "label": "Observatory Webcams",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.mmto.org/",
+     "image": {
+      "url": "https://webcam-images.mmto.arizona.edu/webcam_images/latest_webcam1.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "https": true,
+      "cors": null,
+      "corp": null,
+      "lastModified": "Sun, 15 Nov 2026 22:32:17 GMT",
+      "ageHours": 0.0,
+      "headersAllow": true,
+      "fresh": true,
+      "terms": null,
+      "embed": false
+     }
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://www.mmto.org/weather/",
+     "label": "Weather : Welcome to the MMT Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://www.mmto.org/current-weather-at-the-mmt/",
+     "label": "Current Weather at the MMT",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.mmto.org/"
+    },
+    {
+     "url": "https://www.mmto.org/weather-resources/",
+     "label": "Weather Resources",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.mmto.org/"
+    }
+   ]
+  },
+  "lbt": {
+   "archive": [
+    {
+     "url": "https://scienceops.lbto.org/data-access/archive/",
+     "label": "LBT Archive",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.lbto.org/"
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://www.lbto.org/weather-forecast/",
+     "label": "Weather Forecast",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.lbto.org/"
+    }
+   ]
+  },
+  "winer": {
+   "archive": [
+    {
+     "url": "https://exoplanetarchive.ipac.caltech.edu/docs/KELT.html",
+     "label": "KELT Resources in the Exoplanet Archive",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "mpcg95": {
+   "archive": [
+    {
+     "url": "http://brucegary.net/AXA/x.htm",
+     "label": "Amateur Exoplanet Archive (AXA)",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "http://www.brucegary.net/HAO/"
+    }
+   ]
+  },
+  "apo": {
+   "archive": [
+    {
+     "url": "https://www.sdss.org/dr18/",
+     "label": "Data Release 18 - SDSS",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://www.sdss.org/dr18/data_access/",
+     "label": "Data Access",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.sdss.org/dr18/"
+    },
+    {
+     "url": "https://www.sdss.org/dr20/",
+     "label": "Data Release 20",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.sdss.org/dr18/"
+    }
+   ],
+   "allsky": [
+    {
+     "url": "https://www.apo.nmsu.edu/mainpage/allskycamera/",
+     "label": "All Sky Camera",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "DENY",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://www.apo.nmsu.edu/"
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://www.apo.nmsu.edu/mainpage/regionalweather/",
+     "label": "Regional Weather",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "DENY",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://www.apo.nmsu.edu/"
+    }
+   ]
+  },
+  "mpch01": {
+   "weather": [
+    {
+     "url": "https://www.mro.nmt.edu/weather/",
+     "label": "Weather",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://www.mro.nmt.edu/weather/about-mro-weather-stations/",
+     "label": "About MRO Weather Stations",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.mro.nmt.edu/"
+    },
+    {
+     "url": "http://www.mro.nmt.edu/weather/",
+     "label": "Current Weather",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.mro.nmt.edu/"
+    }
+   ]
+  },
+  "mcdonald": {
+   "archive": [
+    {
+     "url": "https://archive.lco.global/",
+     "label": "Science Archive | Las Cumbres Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://weather.lco.global/",
+     "label": "LCO Weather",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://mcdonaldobservatory.org/visit/weather/",
+     "label": "Weather",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://mcdonaldobservatory.org/"
+    }
+   ]
+  },
+  "mpcw38": {
+   "allsky": [
+    {
+     "url": "https://dso.appstate.edu/facilities/webcams/",
+     "label": "Webcams",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://dso.appstate.edu/"
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://dso.appstate.edu/facilities/weather-dso/",
+     "label": "Weather Conditions at the Dark Sky Observatory | Dark Sky Observatory | Appalachian State ",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "asked": "https://dso.appstate.edu/weather"
+    },
+    {
+     "url": "https://dso.appstate.edu/facilities/weather-rso/",
+     "label": "Weather at RSO",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://dso.appstate.edu/"
+    }
+   ]
+  },
+  "dao": {
+   "archive": [
+    {
+     "url": "https://www.cadc-ccda.hia-iha.nrc-cnrc.gc.ca/en/dao/",
+     "label": "Dominion Astrophysical Observatory - Canadian Astronomy Data Centre",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://www.cadc-ccda.hia-iha.nrc-cnrc.gc.ca/en/dao/weather.html",
+     "label": "Current Weather",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.cadc-ccda.hia-iha.nrc-cnrc.gc.ca/en/dao/"
+    }
+   ]
+  },
+  "omm": {
+   "allsky": [
+    {
+     "url": "https://www.omm-astro.ca/lobservatoire/camera-sur-la-passerelle/camera-allsky/",
+     "label": "Caméra ALLSky",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.omm-astro.ca/",
+     "image": {
+      "url": "https://www.omm-astro.ca/wp-content/uploads/2023/10/camera_allsky_sbeaulieu.png",
+      "status": 200,
+      "type": "image/png",
+      "https": true,
+      "cors": null,
+      "corp": null,
+      "lastModified": "Sun, 22 Oct 2023 18:17:36 GMT",
+      "ageHours": 26884.2,
+      "headersAllow": true,
+      "fresh": false,
+      "terms": null,
+      "embed": false
+     }
+    }
+   ]
+  },
+  "ctio": {
+   "archive": [
+    {
+     "url": "https://archive.lco.global/",
+     "label": "Science Archive | Las Cumbres Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://astroarchive.noirlab.edu/",
+     "label": "astroarchive.noirlab.edu",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "DENY",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://noirlab.edu/science/data-services/survey-archives",
+     "label": "Survey Archives",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://noirlab.edu/science/programs/ctio"
+    }
+   ],
+   "allsky": [
+    {
+     "url": "https://noirlab.edu/science/observing-noirlab/weather-webcams",
+     "label": "Weather & Webcams",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://noirlab.edu/science/programs/ctio"
+    },
+    {
+     "url": "https://noirlab.edu/science/observing-noirlab/weather-webcams/cerro-tololo/tololo-webcams",
+     "label": "Tololo Webcams",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://noirlab.edu/science/programs/ctio"
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://noirlab.edu/science/observing-noirlab/weather-webcams/cerro-tololo",
+     "label": "Cerro Tololo Weather | NOIRLab Science",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://weather.lco.global/",
+     "label": "LCO Weather",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "gemini_south": {
+   "archive": [
+    {
+     "url": "https://astroarchive.noirlab.edu/",
+     "label": "astroarchive.noirlab.edu",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "DENY",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://www.gemini.edu/observing/phase-iii-retrieving-reducing-data/gemini-observatory-archive",
+     "label": "All Gemini User and public data access is via download from the GOA Gemini Observatory Archive",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://www.gemini.edu/"
+    },
+    {
+     "url": "https://noirlab.edu/science/data-services/survey-archives",
+     "label": "Survey Archives",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://noirlab.edu/science/observing-noirlab/weather-webcams/cerro-pachon"
+    }
+   ],
+   "allsky": [
+    {
+     "url": "https://www.gemini.edu/observing/telescopes-and-sites/sites",
+     "label": "The Sites | Gemini Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://www.gemini.edu/observing/telescopes-and-sites/sites/cloud-cameras",
+     "label": "CloudCam",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://www.gemini.edu/"
+    },
+    {
+     "url": "https://noirlab.edu/science/observing-noirlab/weather-webcams",
+     "label": "Weather & Webcams",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://noirlab.edu/science/observing-noirlab/weather-webcams/cerro-pachon"
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://noirlab.edu/science/observing-noirlab/weather-webcams/cerro-pachon",
+     "label": "Cerro Pachón | NOIRLab Science",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://www.gemini.edu/observing/telescopes-and-sites/sites/weather-now",
+     "label": "Weather Now",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://www.gemini.edu/observing/telescopes-and-sites/sites"
+    }
+   ]
+  },
+  "lasilla": {
+   "archive": [
+    {
+     "url": "https://archive.eso.org/cms.html",
+     "label": "ESO - Archive Home",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://archive.eso.org/scienceportal/home",
+     "label": "ESO Archive Science Portal",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ],
+   "allsky": [
+    {
+     "url": "https://www.ls.eso.org/lasilla/dimm/lasc/",
+     "label": "La Silla - All Sky Camera",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://www.ls.eso.org/lasilla/dimm/AllSkyCamera/LaSillaAllSky.html",
+     "label": "La Silla AllSky Camera 24hrs",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.ls.eso.org/lasilla/dimm/",
+     "image": {
+      "url": "https://www.ls.eso.org/lasilla/dimm/AllSkyCamera/ImageLastFTP_AllSKY.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "https": true,
+      "cors": null,
+      "corp": null,
+      "lastModified": "Sun, 15 Nov 2026 22:45:36 GMT",
+      "ageHours": -0.0,
+      "headersAllow": true,
+      "fresh": true,
+      "terms": {
+       "url": "https://www.eso.org/public/copyright/",
+       "licence": "CC BY 4.0 (ESO)"
+      },
+      "embed": true
+     }
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://www.ls.eso.org/lasilla/dimm/",
+     "label": "MeteoMonitor MeteoMonitor",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://www.eso.org/sci/facilities/lasilla/astclim/weather.html",
+     "label": "ESO - Weather Information",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://www.eso.org/sci/facilities/lasilla/astclim.html",
+     "label": "La Silla Astroclimatology",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://www.eso.org/sci/facilities/lasilla.html"
+    },
+    {
+     "url": "https://www.eso.org/sci/facilities/lasilla/astclim/weather/tablemwr.html",
+     "label": "Monthly Weather Report - Table",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://www.eso.org/sci/facilities/lasilla/astclim/weather.html"
+    }
+   ]
+  },
+  "lco": {
+   "weather": [
+    {
+     "url": "https://weather.lco.cl/",
+     "label": "LCO Weather",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://www.lco.cl/weather-conditions-and-cameras/",
+     "label": "Weather Conditions and Cameras – Las Campanas Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "asked": "https://www.lco.cl/weather/"
+    }
+   ]
+  },
+  "paranal": {
+   "archive": [
+    {
+     "url": "https://archive.eso.org/cms.html",
+     "label": "ESO - Archive Home",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://archive.eso.org/scienceportal/home",
+     "label": "ESO Archive Science Portal",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://www.eso.org/public/science/archive/",
+     "label": "Science Archive",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.eso.org/public/outreach/webcams/"
+    }
+   ],
+   "allsky": [
+    {
+     "url": "https://www.eso.org/public/outreach/webcams/",
+     "label": "Webcams | ESO",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "image": {
+      "url": "https://www.eso.org/public/archives/static/pano/latest/pano_PV_960x.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "https": true,
+      "cors": "*",
+      "corp": null,
+      "lastModified": "Thu, 05 Nov 2026 15:46:12 GMT",
+      "ageHours": 246.8,
+      "headersAllow": true,
+      "fresh": false,
+      "terms": {
+       "url": "https://www.eso.org/public/copyright/",
+       "licence": "CC BY 4.0 (ESO)"
+      },
+      "embed": false
+     }
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://www.eso.org/sci/facilities/paranal/astroclimate/site.html",
+     "label": "ESO - Site Information",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://www.eso.org/sci/facilities/paranal/astroclimate/climatology/dimm-seeing.html",
+     "label": "Dimm Seeing",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://www.eso.org/sci/facilities/paranal/astroclimate/site.html"
+    }
+   ]
+  },
+  "mpcx02": {
+   "weather": [
+    {
+     "url": "https://weather.obstech.cl:443/current",
+     "label": "El Sauce | current conditions",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "asked": "https://www.obstech.cl/weather/"
+    },
+    {
+     "url": "https://weather.obstech.cl/climate",
+     "label": "Astroclimate",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://obstech.cl:443/"
+    },
+    {
+     "url": "https://weather.obstech.cl/current",
+     "label": "the weather pages",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://obstech.cl:443/"
+    }
+   ]
+  },
+  "lapalma": {
+   "archive": [
+    {
+     "url": "https://www.ing.iac.es/astronomy/archives.html",
+     "label": "Data Archives",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.ing.iac.es/"
+    }
+   ],
+   "allsky": [
+    {
+     "url": "https://www.gtc.iac.es/multimedia/webcams.php",
+     "label": "Gran Telescopio CANARIAS - GTC web cameras",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "image": {
+      "url": "https://www.gtc.iac.es/multimedia/netcam/camaraExt3.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "https": true,
+      "cors": null,
+      "corp": null,
+      "lastModified": "Sun, 15 Nov 2026 22:34:02 GMT",
+      "ageHours": -0.0,
+      "headersAllow": true,
+      "fresh": true,
+      "terms": null,
+      "embed": false
+     }
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://www.not.iac.es/weather/",
+     "label": "NOT Weather page",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://tngweb.tng.iac.es/weather/",
+     "label": "TngWeb",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://astro.ing.iac.es/weather/",
+     "label": "Weather and seeing",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.ing.iac.es/"
+    },
+    {
+     "url": "https://atmosportal.gtc.iac.es/",
+     "label": "GTC Weather",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.gtc.iac.es/multimedia/webcams.php",
+     "asked": " http://atmosportal.gtc.iac.es"
+    }
+   ]
+  },
+  "teide": {
+   "archive": [
+    {
+     "url": "https://archive.lco.global/",
+     "label": "Science Archive | Las Cumbres Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ],
+   "allsky": [
+    {
+     "url": "https://telescope.org/v4webcams.php",
+     "label": "Webcams",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://telescope.org/weather.php"
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://www.iac.es/en/observatorios-de-canarias/teide-observatory/weather",
+     "label": "| Instituto de Astrofísica de Canarias • IAC",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://telescope.org/weather.php",
+     "label": "OpenScience Observatories: Weather reports",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "asked": "https://www.telescope.org/weather.php"
+    },
+    {
+     "url": "https://weather.lco.global/",
+     "label": "LCO Weather",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://ocan.iac.es/meteo/OT/",
+     "label": "OT weather",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://www.iac.es/en/observatorios-de-canarias/teide-observatory/weather"
+    }
+   ]
+  },
+  "caha": {
+   "archive": [
+    {
+     "url": "https://www.caha.es/science-mainmenu-95/public-archives",
+     "label": "Public archives",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.caha.es/"
+    }
+   ],
+   "allsky": [
+    {
+     "url": "https://www.caha.es/webcams/external-webcams",
+     "label": "CAHA webcams",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.caha.es/"
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://www.caha.es/WDXI/wdxi.php",
+     "label": "www.caha.es",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://www.caha.es/observing-mainmenu-148/weatherng",
+     "label": "Weather",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.caha.es/"
+    },
+    {
+     "url": "https://www.caha.es/access-and-services/weather-station",
+     "label": "Weather station",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.caha.es/"
+    }
+   ]
+  },
+  "mpcj86": {
+   "weather": [
+    {
+     "url": "https://www.osn.iaa.csic.es/meteo/",
+     "label": "www.osn.iaa.csic.es",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "oaj": {
+   "archive": [
+    {
+     "url": "https://archive.cefca.es/catalogues/",
+     "label": "CEFCA Catalogues Portal",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://archive.cefca.es/catalogues/jpas-e2dr",
+     "label": "Access to data Access to data »",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://archive.cefca.es/catalogues/"
+    }
+   ]
+  },
+  "mpcc65": {
+   "weather": [
+    {
+     "url": "https://montsec.ieec.cat/en/odm/meteorology/",
+     "label": "Meteorology - Observatori del Montsec",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "asked": "https://montsec.ieec.cat/en/observatory/meteo/"
+    }
+   ]
+  },
+  "mpc586": {
+   "allsky": [
+    {
+     "url": "https://picdumidi.com/en/live",
+     "label": "Webcam Webcam",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": "'self' https://*.datocms.com",
+      "allowed": false
+     },
+     "foundOn": "https://picdumidi.com/en"
+    }
+   ]
+  },
+  "ohp": {
+   "archive": [
+    {
+     "url": "http://atlas.obs-hp.fr/",
+     "label": "The SOPHIE/ELODIE server",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "http://atlas.obs-hp.fr/sophie/",
+     "label": "Archive SOPHIE",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://ohp.osupytheas.fr/"
+    },
+    {
+     "url": "http://atlas.obs-hp.fr/elodie/",
+     "label": "ELODIE Archive",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "http://atlas.obs-hp.fr/",
+     "asked": "http://atlas.obs-hp.fr/elodie"
+    }
+   ]
+  },
+  "ekar": {
+   "archive": [
+    {
+     "url": "https://ia2.inaf.it/",
+     "label": "INAF – IA2 – Data curation and services for INAF",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "asked": "https://www.ia2.inaf.it/"
+    }
+   ]
+  },
+  "mpc557": {
+   "archive": [
+    {
+     "url": "https://www.asu.cas.cz/en/research/data-archives",
+     "label": "Data Archives",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.asu.cas.cz/en/about/about-the-institute"
+    }
+   ]
+  },
+  "mpcl10": {
+   "weather": [
+    {
+     "url": "https://kryoneri.astro.noa.gr/en/weather/",
+     "label": "Weather Forecasts & Measurements – Kryoneri ObservatoryAccessibility ToolsIncrease TextDec",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "salt": {
+   "archive": [
+    {
+     "url": "https://ssda.saao.ac.za/",
+     "label": "SAAO/SALT Data Archive",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://archive.lco.global/",
+     "label": "Science Archive | Las Cumbres Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://exoplanetarchive.ipac.caltech.edu/docs/KELT.html",
+     "label": "KELT Resources in the Exoplanet Archive",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://weather.lco.global/",
+     "label": "LCO Weather",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "mpc188": {
+   "weather": [
+    {
+     "url": "http://www.maidanak.uz/about.php",
+     "label": "astroclimate",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "http://www.maidanak.uz/"
+    }
+   ]
+  },
+  "dot": {
+   "weather": [
+    {
+     "url": "https://www.aries.res.in/weather/",
+     "label": "ILMT Weather Station",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "asked": "https://www.aries.res.in/weather"
+    }
+   ]
+  },
+  "lijiang": {
+   "weather": [
+    {
+     "url": "http://weather.gmg.org.cn:9000/",
+     "label": "丽江站天文观测环境信息",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "bao": {
+   "weather": [
+    {
+     "url": "http://www.xinglong-naoc.cn/weather/",
+     "label": "气象综合页面 - 兴隆观测基地",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "tno": {
+   "allsky": [
+    {
+     "url": "https://www.narit.or.th/th/index.php/allsky",
+     "label": "สถาบันวิจัยดาราศาสตร์แห่งชาติ (องค์การมหาชน) - allsky",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": "*",
+      "allowed": true
+     },
+     "asked": "https://www.narit.or.th/index.php/allsky"
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://weather.narit.or.th/",
+     "label": "NARIT Weather Report",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  },
+  "mpcd35": {
+   "weather": [
+    {
+     "url": "https://www.lulin.ncu.edu.tw/weather/",
+     "label": "Lulin Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "DENY",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    }
+   ]
+  },
+  "oao": {
+   "archive": [
+    {
+     "url": "https://www.oao.nao.ac.jp/en/data-archive/",
+     "label": "Data Archive",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     },
+     "foundOn": "https://www.oao.nao.ac.jp/en/"
+    }
+   ]
+  },
+  "sso": {
+   "archive": [
+    {
+     "url": "https://skymapper.anu.edu.au/",
+     "label": "SkyMapper Southern Sky Survey",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN, SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     }
+    },
+    {
+     "url": "https://archive.lco.global/",
+     "label": "Science Archive | Las Cumbres Observatory",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    },
+    {
+     "url": "https://skymapper.anu.edu.au/data-release/",
+     "label": "Data Releases",
+     "how": "found",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": "SAMEORIGIN, SAMEORIGIN",
+      "frameAncestors": null,
+      "allowed": false
+     },
+     "foundOn": "https://skymapper.anu.edu.au/"
+    }
+   ],
+   "weather": [
+    {
+     "url": "https://weather.lco.global/",
+     "label": "LCO Weather",
+     "how": "seed",
+     "status": 200,
+     "checked": "2026-11-15",
+     "frame": {
+      "xfo": null,
+      "frameAncestors": null,
+      "allowed": true
+     }
+    }
+   ]
+  }
+ }
+}

@@ -8,3 +8,14 @@ __pycache__/
 ld_table.json
 .ldtk/
 .venv/
+.venv*/
+test-results/
+# python package: build outputs and the generated JS bundle (rebuild with npm run build:python)
+python/examples/output/
+.pytest_cache/
+python/dist/
+python/build/
+python/esl/_core/esl_core.js
+python/esl/_core/esl_ld_spectral.js
+python/esl/_core/manifest.json
+mcp/node_modules/

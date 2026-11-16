@@ -1,0 +1,212 @@
+{
+ "format": "esl-catalog",
+ "formatVersion": 1,
+ "name": "Exoplanet Science Lab catalogue",
+ "built": "2026-11-15T22:48:50Z",
+ "software": {
+  "name": "exoplanet-science-lab",
+  "version": "0.2.0",
+  "homepage": "https://exoplanet.science",
+  "builder": "tools/build_esl_catalog.py + tools/merge_esl_catalog.mjs",
+  "node": "v22.19.0",
+  "python": "3.10.16"
+ },
+ "downloaded": false,
+ "snapshots": [
+  {
+   "id": "nea",
+   "label": "NASA Exoplanet Archive",
+   "file": "catalog-table/nea.json",
+   "table": "pscomppars (composite parameters) + best ephemeris pair from ps",
+   "url": "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
+   "date": "2026-11-15",
+   "rows": 6470,
+   "bytes": 5257369,
+   "sha256": "d76d12eda8e98a9c963143c7450063de741242506baa4200861393004812c5a6"
+  },
+  {
+   "id": "eu",
+   "label": "exoplanet.eu",
+   "file": "catalog-eu/planets.json",
+   "table": "catalogue CSV, all objects in the default download",
+   "url": "https://exoplanet.eu/catalog/csv/",
+   "date": "2026-11-15",
+   "rows": 8479,
+   "bytes": 3588332,
+   "sha256": "60239abd4f6359806eb2fdd87183a4642e6c3a47dd6222c9cd95dc8a20da7d46"
+  },
+  {
+   "id": "ps",
+   "label": "NASA Exoplanet Archive, every published reference",
+   "file": "catalog/index.json + 133 shards",
+   "table": "NASA Exoplanet Archive, Planetary Systems (ps) table, all references",
+   "url": "https://exoplanetarchive.ipac.caltech.edu/",
+   "date": "2026-11-15",
+   "rows": 40414,
+   "planets": 6470,
+   "hosts": 4862,
+   "shardsRead": 133,
+   "bytes": 318949,
+   "sha256": "cdcf86c20f8a62b5e757757ebe64c18fc0275dad99df040e35a5255dba3a72c1",
+   "shardsSha256": "abc0a1e74f6a21ca992b6fbe7baa17b6a03c3b120e6433707c1ec7856ea3ca7d"
+  }
+ ],
+ "counts": {
+  "planets": 8561,
+  "inNasaArchive": 6470,
+  "inExoplanetEu": 8479,
+  "matchedInBoth": 6388,
+  "nasaArchiveOnly": 82,
+  "exoplanetEuOnly": 2091,
+  "toi": 0,
+  "transiting": 5125,
+  "withPriors": 8556,
+  "withEstimates": 6785,
+  "withLimits": 532,
+  "values": 230521,
+  "estimates": 15789,
+  "priors": 100991,
+  "priorsByBasis": {
+   "transit": 4829,
+   "rv": 1202,
+   "all": 439,
+   "merged": 2086
+  },
+  "estimatesByRelation": {
+   "depth": 2797,
+   "kepler3": 2772,
+   "impact": 929,
+   "rvk": 3824,
+   "t14": 339,
+   "teq": 749,
+   "sb": 1888,
+   "ck17": 1563,
+   "gravity": 875,
+   "pm13": 53
+  },
+  "matchStages": {
+   "name": 5882,
+   "alias": 254,
+   "host+letter": 31,
+   "position": 221
+  },
+  "tables": {
+   "refs": 3012,
+   "prov": 2953,
+   "strs": 796,
+   "estInfo": 84,
+   "priorWhy": 80
+  }
+ },
+ "oddities": {
+  "neaNotInPs": {
+   "n": 0,
+   "first": []
+  },
+  "chooseFailed": {
+   "n": 0,
+   "first": []
+  },
+  "emptyPriors": {
+   "n": 5,
+   "first": [
+    "KMT-2017-BLG-2820",
+    "KMT-2024-BLG-0816",
+    "OGLE-2016-BLG-1540",
+    "OGLE-2017-BLG-0114 b",
+    "SDSS J1039+3256"
+   ]
+  },
+  "nonFinitePriors": {
+   "n": 0,
+   "first": []
+  },
+  "unusablePriors": {
+   "n": 12,
+   "first": [
+    "2MASS J1404-3159 b inc uniform(90, 90)",
+    "DENIS 19 b inc uniform(90, 90)",
+    "DENIS J2252-1730 b inc uniform(90, 90)",
+    "HD 130948 C inc uniform(90, 90)",
+    "HD 74014 b inc uniform(90, 90)",
+    "ISO 1I ecc uniform(1.146, 0.99)",
+    "ISO 2I ecc uniform(2.505, 0.99)",
+    "ISO 3I inc uniform(90, 90)",
+    "ISO 3I ecc uniform(3.7, 0.99)",
+    "SDSS J080531+481233 b inc uniform(90, 90)",
+    "SDSS J1021-0304 b inc uniform(90, 90)",
+    "WD 0137-349 b K uniform(0, -182000)"
+   ]
+  },
+  "duplicateNames": {
+   "n": 0,
+   "first": []
+  }
+ },
+ "toi": "TESS Objects of Interest are not included: with them the file doubles (14.0 MB, 4.2 MB gzipped, measured 2026-11-15 with `node tools/merge_esl_catalog.mjs --toi`), they are pipeline estimates with no reference, and public/catalog-table/toi.json already serves them offline. Pass --with-toi to include them.",
+ "files": [
+  {
+   "name": "catalog.json",
+   "description": "the catalogue: dictionaries and one record per planet",
+   "bytes": 6794512,
+   "gzipBytes": 2011329,
+   "sha256": "63067c3b2dd2c70f508caea258aa1c4aa296d9256d85e1694cf6352470052028"
+  }
+ ],
+ "licences": [
+  {
+   "id": "nea",
+   "label": "NASA Exoplanet Archive",
+   "url": "https://exoplanetarchive.ipac.caltech.edu/",
+   "licence": "",
+   "acknowledgement": "This research has made use of the NASA Exoplanet Archive, which is operated by the California Institute of Technology, under contract with the National Aeronautics and Space Administration under the Exoplanet Exploration Program."
+  },
+  {
+   "id": "eu",
+   "label": "exoplanet.eu",
+   "url": "https://exoplanet.eu/",
+   "licence": "Except where otherwise noted, content on this site is licensed under a Creative Commons Attribution 4.0 International license",
+   "acknowledgement": "This research has made use of data obtained from or tools provided by the portal exoplanet.eu of The Extrasolar Planets Encyclopaedia."
+  }
+ ],
+ "schema": {
+  "reader": "src/core/sources/eslcatalog.js: readEslCatalog(json).get(name) -> { values, errors, src, ref, refUrl, lim, est, priors, priorsFrom }",
+  "units": "days (times are JD as the catalogue gives them, normally BJD_TDB), depth as a fraction, Jupiter units for the planet, solar units for the star, a in au, angles in degrees, K in m/s, temperatures in K, distance in pc (src/core/sources/fields.js)",
+  "tables": {
+   "snapshots": "{ nea, eu, ps }: date each source snapshot was taken",
+   "credits": "[{ id, label, url, licence, acknowledgement }]",
+   "sources": "source ids; a planet's `c` is a bit mask over this list",
+   "fields": "[[key, \"n\" number | \"s\" string, unit, description]]",
+   "refs": "[[label, link]]; link is an ADS bibcode (https://ui.adsabs.harvard.edu/abs/<link>/abstract), a full URL or \"\"",
+   "prov": "[[source index, ref index or -1]]: provenance of a value",
+   "strs": "interned strings: values of the string fields and notes of the estimates",
+   "relations": "[[key, name, citation]]: the relations of src/core/relations.js used for estimates",
+   "estInfo": "[[relation index, [field indices used], note index into strs or -1, chain 0|1 (built on another estimate)]]",
+   "priorKeys": "keys of suggestPriors (mplanet is the field `mass`)",
+   "priorTypes": "[\"uniform\", \"normal\"]",
+   "priorWhy": "[[type index, why text]]",
+   "bases": "how the priors were made: transit | rv | all = systemFromRows(rows, {use}) on every published reference of the NASA archive, centred on the chosen reference; merged = suggestPriors on the merged row (planets with no per-reference rows)"
+  },
+  "planet": {
+   "n": "name",
+   "h": "host",
+   "c": "bit mask over sources",
+   "t": "1 when a catalogue lists transits",
+   "a": "names the other catalogues use, when different",
+   "v": "[[prov, field, value, error, field, value, error, ...], ...] catalogue values grouped by provenance; error 0 = none, number = symmetric, [lower, upper]; for an \"s\" field the value indexes strs",
+   "l": "[field, value, sign, source, ...] limits (not measurements; sign as the catalogue flags it)",
+   "e": "[field, value, estInfo, ...] gap-filled estimates; never a field that has a catalogue value",
+   "p": "[priorKey, a, b, priorWhy, ...]; uniform: a = min, b = max; normal: a = mean, b = std",
+   "pb": "[basis, ref index of the reference chosen for the priors or -1, ref index of the stellar reference or -1]"
+  },
+  "rounding": "periods, mid-transit times and their errors exactly as in the snapshots; other values 12 significant digits, errors 10; estimates and prior bounds 9 (priors on the period 15, on T_mid 16)",
+  "oddities": "neaNotInPs: planets of the composite table missing from the per-reference snapshot (priors then fall back to basis merged); chooseFailed: systemFromRows gave nothing for the planet (same fallback); emptyPriors: planets with no prior at all; nonFinitePriors / unusablePriors: priors suggestPriors returned that are not stored (not finite; uniform with min >= max or normal with zero width, from a catalogue value outside the physical range); duplicateNames: two rows with one name. Each: { n, first: up to 25 }",
+  "notStored": "the time-dependent `drift` column of buildTable, catalogue disagreements (`diff`), the match stage, and the text explaining why a reference was chosen: recompute those with the site code from the snapshots"
+ },
+ "steps": [
+  {
+   "step": "merge_esl_catalog.mjs",
+   "seconds": 10.2
+  }
+ ]
+}

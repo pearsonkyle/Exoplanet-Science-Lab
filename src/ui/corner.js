@@ -6,6 +6,13 @@ const THEMES = {
   dark:  { bg: '#111726', cell: '#0b0f18', text: '#dfe6f3', dim: '#8491ad', line: '#e9e0ff', mark: '#ffc56b', z: ['rgba(196,160,255,0.98)', 'rgba(140,105,215,0.70)', 'rgba(105,85,170,0.38)'], tail: 'rgba(105,85,170,0.14)', frame: null, font: 'ui-monospace, Menlo, monospace', out: 'rgba(132,145,173,0.35)', contour: ['#ffffff', '#d9c8ff', '#a78be0'] },
   light: { bg: '#ffffff', cell: '#ffffff', text: '#000000', dim: '#333333', line: '#000000', mark: '#d62728', z: ['rgba(31,95,191,0.95)', 'rgba(31,95,191,0.55)', 'rgba(31,95,191,0.25)'], tail: 'rgba(31,95,191,0.08)', frame: '#000000', font: 'Helvetica, Arial, sans-serif', out: 'rgba(120,120,120,0.30)', contour: ['#000000', '#222222', '#555555'] },
 };
+// Points are coloured by their likelihood on the viridis scale, as in EXOTIC's posterior plots. On white
+// figures the scale runs the way EXOTIC's does (dark = highest likelihood, yellow = lowest); on the dark
+// screen theme it is reversed so the best points are the bright ones. The colour bar in the legend says which.
+const VIRIDIS = [[68, 1, 84], [72, 40, 120], [62, 73, 137], [49, 104, 142], [38, 130, 142], [31, 158, 137], [53, 183, 121], [110, 206, 88], [181, 222, 43], [253, 231, 37]];
+const NCOL = 24, DLNL = 6;   // colour steps; the scale spans 6 in ln L below the best point (about 3 sigma for two parameters)
+function viridis(t) { const x = Math.min(1, Math.max(0, t)) * (VIRIDIS.length - 1), i = Math.min(VIRIDIS.length - 2, Math.floor(x)), f = x - i, a = VIRIDIS[i], b = VIRIDIS[i + 1]; return `rgb(${Math.round(a[0] + f * (b[0] - a[0]))},${Math.round(a[1] + f * (b[1] - a[1]))},${Math.round(a[2] + f * (b[2] - a[2]))})`; }
+
 // probability enclosed by 1, 2, 3 sigma: in one dimension, and for a 2-D Gaussian
 const P1D = [[0.1587, 0.8413], [0.0228, 0.9772], [0.00135, 0.99865]];
 const P2D = [0.3935, 0.8647, 0.9889];
@@ -31,6 +38,11 @@ export function drawCorner(cv, post, labels, marks, opt = {}) {
     const pad = (qq[8] - qq[0]) * 0.06 || Math.abs(qq[4]) * 1e-6 || 1e-9; rng.push([qq[0] - pad, qq[8] + pad]); q.push(qq);
   }
   const NB = 28, g = 2;
+  // likelihood colour of every plotted draw: step 0 is the best point. Runs without stored likelihoods fall back to the credible-region colours.
+  const ll = post.logl && post.logl.length === n ? post.logl : null, dark = !th.frame;
+  let lmax = -Infinity; if (ll) for (const i of pts) if (ll[i] > lmax) lmax = ll[i];
+  const step = ll ? Int8Array.from(pts, (i) => Math.min(NCOL - 1, Math.floor(((lmax - ll[i]) / DLNL) * NCOL))) : null;
+  const stepColor = Array.from({ length: NCOL }, (_, k) => viridis(dark ? 1 - k / (NCOL - 1) : k / (NCOL - 1)));
   if (opt.title) { ctx.fillStyle = th.text; ctx.font = `15px ${th.font}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(opt.title, padL + g, 6); }
   for (let r = 0; r < d; r++) for (let c = 0; c <= r; c++) {
     const x0 = padL + c * cell + g, y0 = top + r * cell + g, s = cell - 2 * g;
@@ -73,7 +85,12 @@ export function drawCorner(cv, post, labels, marks, opt = {}) {
       };
       const pr = Math.max(0.9, s / 150);
       ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, s, s); ctx.clip();
-      for (let z = 3; z >= 0; z--) {
+      if (step) {
+        // lowest likelihood first, so the best points end up on top
+        ctx.globalAlpha = 0.8;
+        for (let k = NCOL - 1; k >= 0; k--) { ctx.fillStyle = stepColor[k]; for (let j = 0; j < pts.length; j++) if (step[j] === k) { const i = pts[j]; ctx.fillRect(X(cols[c][i]) - pr, Yp(cols[r][i]) - pr, 2 * pr, 2 * pr); } }
+        ctx.globalAlpha = 1;
+      } else for (let z = 3; z >= 0; z--) {
         ctx.fillStyle = z === 3 ? th.out : th.z[z];
         for (const i of pts) if (zone(i) === z) ctx.fillRect(X(cols[c][i]) - pr, Yp(cols[r][i]) - pr, 2 * pr, 2 * pr);
       }
@@ -102,7 +119,16 @@ export function drawCorner(cv, post, labels, marks, opt = {}) {
   // legend in the empty upper triangle
   if (d > 1) {
     const lx = padL + cell * (d - 1) + g + Math.max(0, cell - 86), ly = top + 6; ctx.font = `${fs}px ${th.font}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ['1σ', '2σ', '3σ'].forEach((t, i) => { ctx.fillStyle = th.z[i]; ctx.fillRect(lx, ly + i * (fs + 5), 12, fs); if (th.frame) { ctx.strokeStyle = th.frame; ctx.lineWidth = 0.5; ctx.strokeRect(lx, ly + i * (fs + 5), 12, fs); } ctx.fillStyle = th.text; ctx.fillText(t, lx + 17, ly + i * (fs + 5) + fs / 2); });
-    if (marks) { ctx.strokeStyle = th.mark; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(lx, ly + 3 * (fs + 5) + fs / 2); ctx.lineTo(lx + 12, ly + 3 * (fs + 5) + fs / 2); ctx.stroke(); ctx.fillStyle = th.text; ctx.fillText('truth', lx + 17, ly + 3 * (fs + 5) + fs / 2); }
+    let lrow = 0;
+    if (step) {
+      const bw = 74, bx = Math.min(lx, padL + cell * d - bw - 6);
+      for (let k = 0; k < NCOL; k++) { ctx.fillStyle = stepColor[k]; ctx.fillRect(bx + (k / NCOL) * bw, ly, bw / NCOL + 0.5, fs); }
+      if (th.frame) { ctx.strokeStyle = th.frame; ctx.lineWidth = 0.5; ctx.strokeRect(bx, ly, bw, fs); }
+      ctx.fillStyle = th.dim; ctx.font = `${Math.max(8.5, fs - 2)}px ${th.font}`; ctx.textBaseline = 'top';
+      ctx.textAlign = 'left'; ctx.fillText('best', bx, ly + fs + 2); ctx.textAlign = 'right'; ctx.fillText(`ln L −${DLNL}`, bx + bw, ly + fs + 2);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = `${fs}px ${th.font}`; lrow = 2.3;
+    }
+    ['1σ', '2σ', '3σ'].forEach((t, i) => { ctx.fillStyle = th.z[i]; ctx.fillRect(lx, ly + (i + lrow) * (fs + 5), 12, fs); if (th.frame) { ctx.strokeStyle = th.frame; ctx.lineWidth = 0.5; ctx.strokeRect(lx, ly + (i + lrow) * (fs + 5), 12, fs); } ctx.fillStyle = th.text; ctx.fillText(t, lx + 17, ly + (i + lrow) * (fs + 5) + fs / 2); });
+    if (marks) { ctx.strokeStyle = th.mark; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(lx, ly + (3 + lrow) * (fs + 5) + fs / 2); ctx.lineTo(lx + 12, ly + (3 + lrow) * (fs + 5) + fs / 2); ctx.stroke(); ctx.fillStyle = th.text; ctx.fillText('truth', lx + 17, ly + (3 + lrow) * (fs + 5) + fs / 2); }
   }
 }

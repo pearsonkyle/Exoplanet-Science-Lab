@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { orbitPosition, orbitPath, trueAnomaly } from '../core/kepler.js';
+import { orbitPosition, orbitPath, trueAnomaly, eventPosition } from '../core/kepler.js';
 import * as SH from './shaders.js';
 import { teffToRGB } from './color.js';
 
@@ -17,10 +17,15 @@ export const PLANET_LOOKS = {
   lava:       { label: 'lava world',   a: 0x2a1a16, b: 0x7a2410, c: 0xff7a2a, atmo: 0xff8a4a, bands: 0 },
 };
 
+// Orbit event markers: viz.highlight(kind)
+export const EVENT_LABELS = { transit: 'mid-transit', eclipse: 'mid-eclipse', periastron: 'periastron', apastron: 'apastron', ascending: 'ascending node' };
+const AUTO_FIT_RATIO = 6;   // fit 'auto': orbits more than 6 times larger than the active one are not framed
+
 export async function createViz(container, labelsEl, insetFrame, onFatal) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });   // kept so the view can be copied into a recorded movie
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.autoClear = false;
+  renderer.info.autoReset = false;   // counted per frame in draw(), over all passes
   container.appendChild(renderer.domElement);
   const dom = renderer.domElement;
 
@@ -48,23 +53,40 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
   glow.renderOrder = 2;
   sysGroup.add(glow);
 
-  // ---- planet ---------------------------------------------------------------
+  // ---- planets --------------------------------------------------------------
+  // One slot per planet (mesh, halo, orbit line, label), made on demand and reused. Geometry is shared.
   const viewDir = new THREE.Vector3(0, 0, 1);
-  const planetUni = { uColA: { value: new THREE.Color() }, uColB: { value: new THREE.Color() }, uColC: { value: new THREE.Color() }, uAtmo: { value: new THREE.Color() }, uBands: { value: 16 }, uFlat: { value: 0 }, uSeed: { value: 3.7 }, uViewDir: { value: viewDir }, uOrtho: { value: 0 } };
-  const planet = new THREE.Mesh(new THREE.SphereGeometry(1, 72, 48), new THREE.ShaderMaterial({ uniforms: planetUni, vertexShader: SH.planetVert, fragmentShader: SH.planetFrag }));
-  const halo = new THREE.Mesh(new THREE.SphereGeometry(1.09, 48, 32), new THREE.ShaderMaterial({ uniforms: planetUni, vertexShader: SH.planetVert, fragmentShader: SH.haloFrag, side: THREE.BackSide, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-  planet.add(halo);
-  planet.rotation.z = 0.25;
-  sysGroup.add(planet);
-
-  // ---- orbit, grid, line of sight -------------------------------------------
+  const sharedUni = { uFlat: { value: 0 }, uViewDir: { value: viewDir }, uOrtho: { value: 0 } };
+  const planetGeo = new THREE.SphereGeometry(1, 72, 48), haloGeo = new THREE.SphereGeometry(1.09, 48, 32);
   const N_ORB = 720;
-  const orbitGeo = new THREE.BufferGeometry();
-  orbitGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N_ORB * 3), 3));
-  orbitGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N_ORB * 3), 3));
-  const orbitLine = new THREE.LineLoop(orbitGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.95 }));
-  sysGroup.add(orbitLine);
+  const orbitMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.95 });
+  const slots = [];
+  // With several planets, a small dot of fixed size on screen at each one in the Orbit and Top down views: at true scale a
+  // planet 50 stellar radii out is far below a pixel. One draw call; not drawn for a single planet, from Earth, or in the inset.
+  const N_DOTS = 32;
+  const dotsGeo = new THREE.BufferGeometry();
+  dotsGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N_DOTS * 3), 3));
+  dotsGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N_DOTS * 3), 3));
+  const dots = new THREE.Points(dotsGeo, new THREE.PointsMaterial({ size: 3.5, sizeAttenuation: false, vertexColors: true }));
+  dots.frustumCulled = false; dots.visible = false; sysGroup.add(dots);
+  let bodies = [];           // the slots in use; `act` is the active one
+  let act = null;
+  function mkSlot(i) {
+    const uni = { uColA: { value: new THREE.Color() }, uColB: { value: new THREE.Color() }, uColC: { value: new THREE.Color() }, uAtmo: { value: new THREE.Color() }, uBands: { value: 16 }, uSeed: { value: 3.7 + 2.3 * i }, ...sharedUni };
+    const mesh = new THREE.Mesh(planetGeo, new THREE.ShaderMaterial({ uniforms: uni, vertexShader: SH.planetVert, fragmentShader: SH.planetFrag }));
+    const halo = new THREE.Mesh(haloGeo, new THREE.ShaderMaterial({ uniforms: uni, vertexShader: SH.planetVert, fragmentShader: SH.haloFrag, side: THREE.BackSide, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    mesh.add(halo);
+    mesh.rotation.z = 0.25;
+    sysGroup.add(mesh);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N_ORB * 3), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N_ORB * 3), 3));
+    const line = new THREE.LineLoop(geo, orbitMat);
+    sysGroup.add(line);
+    return { uni, mesh, halo, geo, line, label: mkLabel('planet', 'planet'), el: null, rprs: 0.1, look: 'jupiter', name: '', color: null, rgb: new THREE.Color(), active: false, pos: [0, 0, 0] };
+  }
 
+  // ---- grid, line of sight ---------------------------------------------------
   const N_GRID = (5 * 96 + 12) * 2;
   const gridGeo = new THREE.BufferGeometry();
   gridGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N_GRID * 3), 3));
@@ -115,40 +137,72 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
 
   // ---- labels ---------------------------------------------------------------
   const mkLabel = (cls, text) => { const e = document.createElement('div'); e.className = 'lbl ' + cls; e.textContent = text; labelsEl.appendChild(e); return e; };
-  const lblPlanet = mkLabel('planet', 'planet'), lblEarth = mkLabel('', '→ to Earth'), lblPeri = mkLabel('', 'periastron'), lblHZ = mkLabel('hz', 'habitable zone');
+  const lblEarth = mkLabel('', '→ to Earth'), lblPeri = mkLabel('', 'periastron'), lblHZ = mkLabel('hz', 'habitable zone'), lblEvent = mkLabel('event', '');
+  lblEvent.style.color = '#ffe9a8'; lblEvent.style.textShadow = '0 0 4px #000, 0 0 2px #000, 0 0 8px #000'; lblEvent.style.display = 'none';
   const earthPos = new THREE.Vector3(), periPos = new THREE.Vector3(), hzPos = new THREE.Vector3();
 
+  // ---- orbit event marker (viz.highlight) -----------------------------------
+  // A ring of constant size on screen plus a dot, fixed on the active planet's orbit. Drawn without a depth test so that
+  // mid-eclipse, which is behind the star, still shows from Earth.
+  const evGroup = new THREE.Group(); evGroup.visible = false; sysGroup.add(evGroup);
+  // rings as line segments at several radii: 1 px lines cannot be made thicker, and a dark rim keeps the ring readable on the stellar disc
+  const ringGeo = (radii) => { const n = 64, pts = new Float32Array(radii.length * n * 6); let q = 0;
+    for (const r of radii) for (let i = 0; i < n; i++) { const a = (i / n) * 2 * Math.PI, b = ((i + 1) / n) * 2 * Math.PI; pts.set([r * Math.cos(a), r * Math.sin(a), 0, r * Math.cos(b), r * Math.sin(b), 0], q); q += 6; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pts, 3)); return g; };
+  const evMat = (color, opacity) => ({ color, opacity, transparent: true, depthTest: false, depthWrite: false });
+  const evRing = new THREE.Group(); evGroup.add(evRing);
+  { const dark = new THREE.LineSegments(ringGeo([0.8, 0.87, 1.2, 1.27]), new THREE.LineBasicMaterial(evMat(0x000000, 0.75)));
+    const lit = new THREE.LineSegments(ringGeo([0.96, 1.03, 1.1]), new THREE.LineBasicMaterial(evMat(0xffe9a8, 1)));
+    const d = new THREE.BufferGeometry(); d.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
+    const dot = new THREE.Points(d, new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, ...evMat(0xffe9a8, 1) }));
+    dark.renderOrder = 6; lit.renderOrder = 7; dot.renderOrder = 7; dark.frustumCulled = lit.frustumCulled = dot.frustumCulled = false;
+    evRing.add(dark, lit); evGroup.add(dot); }
+  const evPos = new THREE.Vector3();
+  const EV_PX = 9;           // ring radius on screen
+  let evKind = null;
+  function placeEvent() {
+    const on = !!(evKind && el);
+    if (on) { evPos.fromArray(eventPosition(el, evKind)); evGroup.position.copy(evPos); lblEvent.textContent = EVENT_LABELS[evKind]; }
+    else lblEvent.style.display = 'none';
+    evGroup.visible = on;
+  }
+
   // ---- state ----------------------------------------------------------------
-  let el = null, rprs = 0.1, rmax = 6, time = 0, autoLook = 'jupiter';
-  const opts = { style: 'eyes', glow: true, granulation: true, stars: true, orbit: true, grid: false, corridor: true, labels: true, enlarge: false, inset: true, look: 'auto', hz: false };
-  const pos = [0, 0, 0];
+  let el = null, rprs = 0.1, rmax = 6, rAll = 6, rprsMax = 0.1, time = 0;   // el, rprs, rmax: the active planet; rAll: the outermost apastron
+  const opts = { style: 'eyes', glow: true, granulation: true, stars: true, orbit: true, grid: false, corridor: true, labels: true, enlarge: false, inset: true, look: 'auto', hz: false, fit: 'auto' };
   let view = 'free', anim = null;
   const bg = new THREE.Color(0x000000);
 
   function applyLook() {
-    const L = PLANET_LOOKS[opts.look === 'auto' ? autoLook : opts.look] || PLANET_LOOKS.jupiter;
-    planetUni.uColA.value.setHex(L.a); planetUni.uColB.value.setHex(L.b); planetUni.uColC.value.setHex(L.c); planetUni.uAtmo.value.setHex(L.atmo);
-    planetUni.uBands.value = L.bands;
     const flat = opts.style === 'blueprint' ? 1 : 0;
-    planetUni.uFlat.value = flat; starUni.uFlat.value = flat;
+    for (const b of bodies) {
+      // the Look choice overrides the planet on show; the others keep the look of their own size class
+      const L = PLANET_LOOKS[b.active && opts.look !== 'auto' ? opts.look : b.look] || PLANET_LOOKS.jupiter, u = b.uni;
+      u.uColA.value.setHex(L.a); u.uColB.value.setHex(L.b); u.uColC.value.setHex(L.c); u.uAtmo.value.setHex(L.atmo);
+      u.uBands.value = L.bands;
+      b.halo.visible = !flat;
+    }
+    sharedUni.uFlat.value = flat; starUni.uFlat.value = flat;
     starUni.uGran.value = opts.granulation ? 1 : 0;
     bg.setHex(flat ? 0x04101c : 0x000000);
-    halo.visible = !flat;
   }
 
   // points in the orbital plane: axes are -X and the direction of inferior conjunction
   const inPlane = (rho, th) => [-rho * Math.cos(th), -rho * Math.sin(th) * el.cosI, rho * Math.sin(th) * el.sinI];
 
   function rebuildOrbit() {
-    const path = orbitPath(el, N_ORB);
     const colA = opts.style === 'blueprint' ? [0.45, 0.9, 1.0] : [0.42, 0.78, 1.0];
-    const col = orbitGeo.attributes.color.array;
-    for (let i = 0; i < N_ORB; i++) {
-      const front = path[i * 3 + 2] > 0 ? 1 : 0.38; // dimmer on the far side of the star
-      col[i * 3] = colA[0] * front; col[i * 3 + 1] = colA[1] * front; col[i * 3 + 2] = colA[2] * front;
+    for (const b of bodies) {
+      const path = orbitPath(b.el, N_ORB), col = b.geo.attributes.color.array;
+      // the active orbit keeps the highlight colour; the others take their own colour (or grey) at reduced strength
+      const c = b.active ? colA : [b.rgb.r, b.rgb.g, b.rgb.b], k = b.active ? 1 : 0.5;
+      for (let i = 0; i < N_ORB; i++) {
+        const front = (path[i * 3 + 2] > 0 ? 1 : 0.38) * k; // dimmer on the far side of the star
+        col[i * 3] = c[0] * front; col[i * 3 + 1] = c[1] * front; col[i * 3 + 2] = c[2] * front;
+      }
+      b.geo.attributes.position.array.set(path); b.geo.attributes.position.needsUpdate = true; b.geo.attributes.color.needsUpdate = true;
+      b.geo.computeBoundingSphere();
     }
-    orbitGeo.attributes.position.array.set(path); orbitGeo.attributes.position.needsUpdate = true; orbitGeo.attributes.color.needsUpdate = true;
-    orbitGeo.computeBoundingSphere();
 
     const seg = gridGeo.attributes.position.array; let q = 0;
     const push = (a, b) => { seg.set(a, q); seg.set(b, q + 3); q += 6; };
@@ -164,7 +218,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     earthPos.set(0, 0, len);
     const rp = el.ars * (1 - el.e), u = el.w + trueAnomaly(0, el.e);
     periPos.set(-rp * Math.cos(u), -rp * Math.sin(u) * el.cosI, rp * Math.sin(u) * el.sinI);
-    rebuildHZ();
+    rebuildHZ(); placeEvent();
   }
 
   function rebuildHZ() {
@@ -180,18 +234,37 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     hzPos.fromArray(inPlane(mid, Math.PI * 0.75));
   }
 
-  const viewRadius = () => (opts.hz && hz ? Math.max(rmax, hz.outer) : rmax);
-
-  function planetRadius(forTrueScale) {
-    if (forTrueScale || !opts.enlarge) return rprs;
-    return Math.max(rprs, 0.022 * camera.position.distanceTo(controls.target) / Math.max(camera.zoom, 1));
+  // Radius the Orbit and Top down cameras frame. One planet: its apastron, as before. Several: opts.fit =
+  // 'active' (the active orbit), 'all' (the outermost orbit) or 'auto': the largest orbit that is no more than
+  // AUTO_FIT_RATIO times the active one. Planets further out than that are left outside the frame, so the active
+  // orbit stays readable in a system that spans a wide range; zoom out or choose 'all' to see them.
+  function frameRadius() {
+    if (bodies.length < 2 || opts.fit === 'active') return rmax;
+    if (opts.fit === 'all') return rAll;
+    let R = rmax;
+    for (const b of bodies) { const ra = b.el.ars * (1 + b.el.e); if (ra <= AUTO_FIT_RATIO * rmax && ra > R) R = ra; }
+    return R;
   }
+  const viewRadius = () => (opts.hz && hz ? Math.max(frameRadius(), hz.outer) : frameRadius());
+  const farZ = () => Math.max(viewRadius(), rAll) * 2 + 50;   // where the orthographic cameras sit: beyond every orbit
+
+  function planetRadius(b, forTrueScale) {
+    if (forTrueScale || !opts.enlarge) return b.rprs;
+    // enlarged: the largest planet gets a fixed size on screen and the others keep their size relative to it
+    let r = (b.rprs / (rprsMax || 1)) * 0.022 * camera.position.distanceTo(controls.target) / Math.max(camera.zoom, 1);
+    // several planets: framed on an outer orbit, an inner planet enlarged that much would swallow the star, so keep it well inside its own distance
+    if (bodies.length > 1) r = Math.min(r, 0.3 * Math.hypot(b.pos[0], b.pos[1], b.pos[2]));
+    return Math.max(b.rprs, r);
+  }
+  const scalePlanets = (trueScale) => { for (const b of bodies) b.mesh.scale.setScalar(planetRadius(b, trueScale)); };
 
   function setView(name, instant) {
     view = name;
     controls.enabled = name !== 'earth';
     if (name === 'earth') { anim = null; earth.half = Math.max(2.3, Math.min(1.3 + 2 * rprs, 6)); earth.cx = 0; earth.cy = 0; return; }
-    const D = viewRadius() * 2.4 + 5;
+    let D = viewRadius() * 2.4 + 5;
+    // looking straight down: make sure the whole framed circle is inside the shorter side of the window (2.4 R + 5 crops it once R > 6)
+    if (name === 'top') D = Math.max(D, (1.1 * viewRadius()) / (Math.tan((camera.fov * Math.PI) / 360) * Math.min(1, camera.aspect)));
     const to = name === 'top'
       ? new THREE.Vector3(0.02, el ? el.sinI - 0.02 * el.cosI : 1, el ? el.cosI + 0.02 * el.sinI : 0.02).normalize().multiplyScalar(D)
       : new THREE.Vector3(0.62, 0.36, 0.7).normalize().multiplyScalar(D);
@@ -201,7 +274,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
   // zoom and pan for the orthographic Earth view (OrbitControls is switched off there)
   dom.addEventListener('wheel', (e) => {
     if (view !== 'earth') return; e.preventDefault();
-    earth.half = Math.min(Math.max(earth.half * Math.exp(Math.max(-1, Math.min(1, e.deltaY * 0.0015))), 0.02), Math.max(8, rmax * 1.6));
+    earth.half = Math.min(Math.max(earth.half * Math.exp(Math.max(-1, Math.min(1, e.deltaY * 0.0015))), 0.02), Math.max(8, rAll * 1.6));
   }, { passive: false });
   let drag = null;
   dom.addEventListener('pointerdown', (e) => { if (view === 'earth') { drag = [e.clientX, e.clientY, earth.cx, earth.cy]; dom.setPointerCapture(e.pointerId); } });
@@ -227,6 +300,25 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     node.style.top = ((-v3.y * 0.5 + 0.5) * container.clientHeight).toFixed(1) + 'px';
   }
 
+  // the event marker's label: beside the ring, or pinned to the edge with an arrow when the point is outside the frame
+  function placeEventLabel(cam) {
+    if (!evGroup.visible || !opts.labels) { lblEvent.style.display = 'none'; return; }
+    v3.copy(evPos).project(cam);
+    if (v3.z > 1) { lblEvent.style.display = 'none'; return; }
+    const out = Math.abs(v3.x) > 0.97 || Math.abs(v3.y) > 0.97, name = EVENT_LABELS[evKind];
+    let x = v3.x, y = v3.y, text = name, tf = 'translate(16px, -50%)';
+    if (out) {
+      const s = 0.9 / Math.max(Math.abs(x), Math.abs(y)); x *= s; y *= s;
+      text = Math.abs(v3.x) > Math.abs(v3.y) ? (v3.x > 0 ? name + ' →' : '← ' + name) : (v3.y > 0 ? '↑ ' + name : '↓ ' + name);
+      tf = `translate(${v3.x > 0.5 ? '-100%' : v3.x < -0.5 ? '0' : '-50%'}, -50%)`;
+    } else if (v3.x > 0.7) tf = 'translate(calc(-100% - 16px), -50%)';
+    if (lblEvent.textContent !== text) lblEvent.textContent = text;
+    lblEvent.style.transform = tf; lblEvent.style.display = '';
+    lblEvent.style.left = ((x * 0.5 + 0.5) * container.clientWidth).toFixed(1) + 'px';
+    lblEvent.style.top = ((-y * 0.5 + 0.5) * container.clientHeight).toFixed(1) + 'px';
+  }
+  const qA = new THREE.Quaternion(), qI = new THREE.Quaternion(), vA = new THREE.Vector3(), vB = new THREE.Vector3();
+
   let last = performance.now(), dead = false;
   function frame(now) {
     if (dead) return;
@@ -242,9 +334,12 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     if (!el) return;
     starUni.uTime.value += dt; glowUni.uTime.value += dt;
     const w = container.clientWidth, h = container.clientHeight, blueprint = opts.style === 'blueprint';
-    orbitPosition(el, time, pos);
-    planet.position.set(pos[0], pos[1], pos[2]);
-    planet.rotation.y += dt * 0.25;
+    for (const b of bodies) { orbitPosition(b.el, time, b.pos); b.mesh.position.set(b.pos[0], b.pos[1], b.pos[2]); b.mesh.rotation.y += dt * 0.25; }
+    const nDots = bodies.length > 1 ? Math.min(bodies.length, N_DOTS) : 0;
+    if (nDots) { const P = dotsGeo.attributes.position.array; for (let i = 0; i < nDots; i++) P.set(bodies[i].pos, i * 3); dotsGeo.attributes.position.needsUpdate = true; }
+    const showOrbits = (on, activeOnly) => { for (const b of bodies) b.line.visible = on && (b.active || !activeOnly); };
+    const showEvent = !!(evKind && el);
+    renderer.info.reset();
     renderer.setClearColor(bg, 1);
     renderer.setScissorTest(false);
     renderer.setViewport(0, 0, w, h);
@@ -260,15 +355,18 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
       renderer.clearDepth();
       const a = w / h;
       earthCam.left = earth.cx - earth.half * a; earthCam.right = earth.cx + earth.half * a; earthCam.top = earth.cy + earth.half; earthCam.bottom = earth.cy - earth.half;
-      earthCam.position.set(0, 0, viewRadius() * 2 + 50); earthCam.updateProjectionMatrix(); earthCam.updateMatrixWorld();
+      earthCam.position.set(0, 0, farZ()); earthCam.updateProjectionMatrix(); earthCam.updateMatrixWorld();
       sysGroup.visible = true; stars.visible = false;
-      planet.scale.setScalar(planetRadius(true));
-      orbitLine.visible = opts.orbit; grid.visible = false; tube.visible = false; los.visible = false; hzMesh.visible = false;
+      dots.visible = false;
+      scalePlanets(true);   // every planet at true scale: the star's depth buffer hides the ones behind it, so simultaneous transits and overlaps show as they are
+      evGroup.visible = showEvent; evRing.quaternion.copy(earthCam.quaternion); evRing.scale.setScalar((EV_PX * 2 * earth.half) / h);
+      showOrbits(opts.orbit, true); grid.visible = false; tube.visible = false;   // edge-on, seven orbit lines across the disc hide the transits: only the active one los.visible = false; hzMesh.visible = false;
       glow.visible = opts.glow && !blueprint; glow.scale.setScalar(7); glowUni.uScale.value = 7; glowUni.uStrength.value = 0.8;
       glow.quaternion.copy(earthCam.quaternion);
-      starUni.uOrtho.value = 1; planetUni.uOrtho.value = 1;
+      starUni.uOrtho.value = 1; sharedUni.uOrtho.value = 1;
       renderer.render(scene, earthCam);
-      placeLabel(lblPlanet, planet.position, opts.labels && pos[2] > 0, earthCam);
+      for (const b of bodies) placeLabel(b.label, b.mesh.position, opts.labels && b.pos[2] > 0, earthCam);
+      placeEventLabel(earthCam);
       lblEarth.style.display = 'none'; lblPeri.style.display = 'none'; lblHZ.style.display = 'none';
       insetFrame.hidden = true;
       return;
@@ -277,7 +375,10 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     if (anim) {
       anim.t = Math.min(1, anim.t + dt / 0.9);
       const k = anim.t * anim.t * (3 - 2 * anim.t);
-      camera.position.lerpVectors(anim.from, anim.to, k);
+      if (anim.arc) {   // swing round the star at a smoothly changing distance (used by highlight(kind, { fly: true }))
+        vA.copy(anim.from).normalize(); vB.copy(anim.to).normalize(); qA.setFromUnitVectors(vA, vB); qI.identity().slerp(qA, k);
+        camera.position.copy(vA).applyQuaternion(qI).multiplyScalar(anim.from.length() + (anim.to.length() - anim.from.length()) * k);
+      } else camera.position.lerpVectors(anim.from, anim.to, k);
       controls.target.set(0, 0, 0);
       if (anim.t >= 1) anim = null;
     }
@@ -286,19 +387,22 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     camera.near = Math.max(0.02, dist * 0.002); camera.updateProjectionMatrix();
 
     sysGroup.visible = true;
-    planet.scale.setScalar(planetRadius(false));
-    orbitLine.visible = opts.orbit; grid.visible = opts.grid || blueprint; stars.visible = opts.stars && !blueprint;
+    scalePlanets(false); dots.visible = nDots > 0;
+    evGroup.visible = showEvent; evRing.quaternion.copy(camera.quaternion);
+    evRing.scale.setScalar((EV_PX * 2 * camera.position.distanceTo(evPos) * Math.tan((camera.fov * Math.PI) / 360)) / h);
+    showOrbits(opts.orbit); grid.visible = opts.grid || blueprint; stars.visible = opts.stars && !blueprint;
     tube.visible = opts.corridor; los.visible = opts.corridor; hzMesh.visible = showHZ;
     glow.visible = opts.glow && !blueprint;
     const gs = Math.max(7, dist * 0.09); // never let the star shrink to nothing when zoomed far out
     glow.scale.setScalar(gs); glowUni.uScale.value = gs; glowUni.uStrength.value = 1;
     glow.quaternion.copy(camera.quaternion);
-    starUni.uOrtho.value = 0; planetUni.uOrtho.value = 0;
+    starUni.uOrtho.value = 0; sharedUni.uOrtho.value = 0;
     renderer.render(scene, camera);
 
-    placeLabel(lblPlanet, planet.position, opts.labels, camera);
+    for (const b of bodies) placeLabel(b.label, b.mesh.position, opts.labels, camera);
+    placeEventLabel(camera);
     placeLabel(lblEarth, earthPos, opts.labels && opts.corridor, camera);
-    placeLabel(lblPeri, periPos, opts.labels && opts.orbit && el.e > 0.02, camera);
+    placeLabel(lblPeri, periPos, opts.labels && opts.orbit && el.e > 0.02 && evKind !== 'periastron', camera);
     placeLabel(lblHZ, hzPos, opts.labels && showHZ, camera);
 
     // inset: orthographic view along the line of sight at true scale
@@ -306,12 +410,13 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     if (opts.inset) {
       const r = insetFrame.getBoundingClientRect(), c = container.getBoundingClientRect();
       const x = r.left - c.left, y = c.bottom - r.bottom, s = r.width;
-      planet.scale.setScalar(planetRadius(true));
-      orbitLine.visible = false; grid.visible = false; stars.visible = false; tube.visible = false; los.visible = false; hzMesh.visible = false;
+      scalePlanets(true); dots.visible = false;
+      evGroup.visible = false;
+      showOrbits(false); grid.visible = false; stars.visible = false; tube.visible = false; los.visible = false; hzMesh.visible = false;
       glow.scale.setScalar(7); glowUni.uScale.value = 7; glowUni.uStrength.value = 0.7;
-      insetCam.position.set(0, 0, viewRadius() * 2 + 50); insetCam.lookAt(0, 0, 0);
+      insetCam.position.set(0, 0, farZ()); insetCam.lookAt(0, 0, 0);
       glow.quaternion.copy(insetCam.quaternion);
-      starUni.uOrtho.value = 1; planetUni.uOrtho.value = 1;
+      starUni.uOrtho.value = 1; sharedUni.uOrtho.value = 1;
       renderer.setScissorTest(true);
       renderer.setViewport(x, y, s, s); renderer.setScissor(x, y, s, s);
       renderer.clear();
@@ -323,14 +428,39 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
 
   return {
     kind: 'three',
+    // sys: { el, rprs, claret, teff, name, look, hz } for the planet on show, and optionally
+    //      planets: [{ el, rprs, name, look, active, color }] to draw the whole system. With `planets` absent or of
+    //      length one the view is the single-planet view. The active entry is the one flagged `active`, else the one
+    //      whose `el` is sys.el, else the first; fields it lacks fall back to the top-level ones.
     setSystem(sys) {
       const first = !el, prev = viewRadius();
-      el = sys.el; rprs = sys.rprs; rmax = el.ars * (1 + el.e);
+      const list = Array.isArray(sys.planets) && sys.planets.length > 1 ? sys.planets.filter((p) => p && p.el) : [];
+      let ia = list.findIndex((p) => p.active); if (ia < 0) ia = list.findIndex((p) => p.el === sys.el); if (ia < 0) ia = 0;
+      const src = list.length > 1 ? list.map((p, i) => (i === ia ? { el: p.el || sys.el, rprs: p.rprs ?? sys.rprs, name: p.name ?? sys.name, look: p.look || sys.look, color: p.color, active: true } : { ...p, active: false }))
+        : [{ el: sys.el, rprs: sys.rprs, name: sys.name, look: sys.look, active: true }];
+      while (slots.length < src.length) slots.push(mkSlot(slots.length));
+      slots.forEach((b, i) => { const on = i < src.length; b.mesh.visible = on; b.line.visible = on; if (!on) b.label.style.display = 'none'; });
+      bodies = slots.slice(0, src.length);
+      bodies.forEach((b, i) => {
+        const p = src[i];
+        b.el = p.el; b.rprs = p.rprs; b.active = p.active; b.color = p.color || null; b.name = p.name || 'planet';
+        if (p.look) b.look = p.look;
+        b.rgb.setRGB(0.6, 0.66, 0.74); if (b.color) { try { b.rgb.set(b.color); } catch { /* keep the grey */ } }
+        // active: the full name, as before. Others: a small label with the planet's letter.
+        const L = b.label, tail = b.name.trim().split(/\s+/).pop();
+        L.textContent = b.active ? b.name : (tail.length <= 2 ? tail : b.name);
+        L.style.fontSize = b.active ? '' : '9px'; L.style.opacity = b.active ? '' : '0.8'; L.style.color = b.active ? '' : (b.color || '#aebccc');
+        L.style.transform = b.active ? '' : 'translate(7px, -140%)'; L.style.zIndex = b.active ? '1' : '';
+        b.line.renderOrder = b.active ? 1 : 0;
+      });
+      act = bodies.find((b) => b.active);
+      { const C = dotsGeo.attributes.color.array; bodies.slice(0, N_DOTS).forEach((b, i) => C.set(b.active ? [1, 1, 1] : [b.rgb.r, b.rgb.g, b.rgb.b], i * 3));
+        dotsGeo.attributes.color.needsUpdate = true; dotsGeo.setDrawRange(0, Math.min(bodies.length, N_DOTS)); }
+      el = act.el; rprs = act.rprs; rmax = el.ars * (1 + el.e);
+      rAll = Math.max(...bodies.map((b) => b.el.ars * (1 + b.el.e))); rprsMax = Math.max(...bodies.map((b) => b.rprs));
       starUni.uLD.value.set(sys.claret[0], sys.claret[1], sys.claret[2], sys.claret[3]);
       const [r, g, b] = teffToRGB(sys.teff);
       starUni.uColor.value.setRGB(r, g, b); glowUni.uColor.value.setRGB(r, g * 0.92, b * 0.8);
-      lblPlanet.textContent = sys.name || 'planet';
-      if (sys.look) autoLook = sys.look;
       hz = sys.hz || null;
       const half = Math.max(1.6, Math.min(4, 1.25 + rprs));
       insetCam.left = -half; insetCam.right = half; insetCam.top = half; insetCam.bottom = -half; insetCam.updateProjectionMatrix();
@@ -340,13 +470,32 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     },
     setTime(t) { time = t; },
     setOptions(o) {
-      const hzWas = opts.hz;
+      const hzWas = opts.hz, rWas = viewRadius();
       Object.assign(opts, o); applyLook();
       if (el) rebuildOrbit();
       if (el && opts.hz !== hzWas && view !== 'earth') setView(opts.hz ? 'top' : view, false);   // step back far enough to see the zone
+      else if (el && view !== 'earth' && viewRadius() !== rWas) setView(view, false);             // opts.fit changed what is framed
     },
     setView(name) { setView(name, false); },
     getView: () => view,
     getOptions: () => ({ ...opts }),
+    // Mark a point on the ACTIVE planet's orbit: 'transit' | 'eclipse' | 'periastron' | 'apastron' | 'ascending', or null to clear.
+    // The marker is fixed in space (it does not move with setTime) and follows the active planet across setSystem calls.
+    // { fly: true } swings the Orbit camera round so the marker is on the near side and inside the frame.
+    highlight(kind, o) {
+      evKind = kind && EVENT_LABELS[kind] ? kind : null;
+      placeEvent();
+      if (evKind && el && o && o.fly && view === 'free') {
+        const n = vB.set(0.15, el.sinI, el.cosI).normalize();   // roughly the orbit normal, so the camera stays above the plane
+        const to = vA.copy(evPos).normalize().multiplyScalar(0.8).addScaledVector(n, 0.55).normalize()
+          .multiplyScalar(Math.max((anim ? anim.to : camera.position).length(), evPos.length() * 2.4 + 5));
+        anim = { from: camera.position.clone(), to: to.clone(), t: 0, arc: true };
+      }
+    },
+    // [X, Y, Z] in stellar radii of that point for the active planet (the position the marker uses), or null.
+    eventPosition: (kind) => (el && EVENT_LABELS[kind] ? eventPosition(el, kind) : null),
+    getHighlight: () => evKind,
+    // what is drawn, for tests and for a "fit" control: number of planets, framed radius and the outermost apastron (stellar radii)
+    getInfo: () => ({ planets: bodies.length, active: act ? bodies.indexOf(act) : -1, frameRadius: viewRadius(), outerRadius: rAll, drawCalls: renderer.info.render.calls }),
   };
 }

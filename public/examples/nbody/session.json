@@ -1,0 +1,599 @@
+{
+ "format": "esl-session",
+ "version": 1,
+ "software": {
+  "name": "exoplanet-science-lab",
+  "version": "0.2.0",
+  "commit": null
+ },
+ "created": "2026-11-15T00:00:00Z",
+ "name": "N-body example",
+ "title": "Synthetic hot Jupiter with a companion near the 2:1 resonance: 72 mid-transit times",
+ "notes": "Synthetic. Open the Timing tab: the O - C shows a sinusoid of about 19 orbits (53 d) from an unseen 0.1 M_Jup companion at 5.315 d. See public/examples/nbody/README.md and truth.json.",
+ "star": {
+  "teff": 5500,
+  "teffErr": 100,
+  "logg": 4.52,
+  "loggErr": 0.1,
+  "feh": 0.03,
+  "fehErr": 0.1,
+  "rstar": 0.877,
+  "rstarErr": 0.02,
+  "mstar": 0.95,
+  "mstarErr": 0.04
+ },
+ "limb_darkening": {
+  "law": "quadratic",
+  "mode": "coeffs",
+  "band": "TESS (approx.)",
+  "coefficients": [
+   0.42,
+   0.24
+  ]
+ },
+ "planets": [
+  {
+   "letter": "b",
+   "parameters": {
+    "rprs": 0.1378,
+    "ars": 9.365,
+    "inc": 86.9,
+    "per": 2.7962904,
+    "tmid": 2459150.69786,
+    "ecc": 0,
+    "omega": 0,
+    "mplanet": 1.169
+   }
+  }
+ ],
+ "kepler": false,
+ "time_reference": 2459150,
+ "data": {
+  "light_curve": null,
+  "radial_velocity": [],
+  "timing": [
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459156.291437,
+    "err": 0.000975,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459159.087725,
+    "err": 0.000524,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459184.250943,
+    "err": 0.000419,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459187.048308,
+    "err": 0.000464,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459189.844537,
+    "err": 0.0004,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459192.64167,
+    "err": 0.000395,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459195.437698,
+    "err": 0.000465,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459198.235864,
+    "err": 0.000501,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459201.032528,
+    "err": 0.000402,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459203.829264,
+    "err": 0.000369,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459206.624955,
+    "err": 0.000378,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459209.421026,
+    "err": 0.000406,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459215.013748,
+    "err": 0.000536,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459242.973673,
+    "err": 0.001001,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459251.363239,
+    "err": 0.000763,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459256.957861,
+    "err": 0.000798,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459259.753747,
+    "err": 0.000663,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459273.734524,
+    "err": 0.000641,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459276.530307,
+    "err": 0.000773,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459307.288948,
+    "err": 0.000827,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459340.844495,
+    "err": 0.000921,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459354.825324,
+    "err": 0.000543,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459514.214881,
+    "err": 0.000725,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459519.807225,
+    "err": 0.000717,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459550.569005,
+    "err": 0.000645,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459561.753102,
+    "err": 0.000538,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459575.733462,
+    "err": 0.000756,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459592.509978,
+    "err": 0.000717,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459609.289645,
+    "err": 0.000993,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459620.475453,
+    "err": 0.000858,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459626.06697,
+    "err": 0.000961,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459631.658324,
+    "err": 0.000821,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459642.843079,
+    "err": 0.00101,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459654.029172,
+    "err": 0.001032,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459665.217558,
+    "err": 0.000837,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459681.99424,
+    "err": 0.000931,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459690.380627,
+    "err": 0.00103,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459701.565984,
+    "err": 0.000724,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459712.753733,
+    "err": 0.000602,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459874.937121,
+    "err": 0.000932,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459880.528984,
+    "err": 0.000755,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459900.107048,
+    "err": 0.000879,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459908.492772,
+    "err": 0.000467,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459911.2892,
+    "err": 0.000489,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459914.085695,
+    "err": 0.000365,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459916.880579,
+    "err": 0.000509,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459919.676139,
+    "err": 0.000511,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459922.472365,
+    "err": 0.000479,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459925.269485,
+    "err": 0.000489,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459928.06589,
+    "err": 0.000364,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459930.860757,
+    "err": 0.000447,
+    "source": "TESS"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459939.253595,
+    "err": 0.000928,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459944.846104,
+    "err": 0.000698,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459950.438709,
+    "err": 0.000864,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2459989.582983,
+    "err": 0.000681,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460003.567939,
+    "err": 0.000656,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460028.732352,
+    "err": 0.000592,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460031.52911,
+    "err": 0.000856,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460059.494183,
+    "err": 0.000674,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460070.679239,
+    "err": 0.000983,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460079.067674,
+    "err": 0.000816,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460087.454703,
+    "err": 0.000837,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460235.661086,
+    "err": 0.000885,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460238.457609,
+    "err": 0.000705,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460241.253729,
+    "err": 0.000872,
+    "source": "ExoClock"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460246.842691,
+    "err": 0.000969,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460249.640041,
+    "err": 0.000943,
+    "source": "Exoplanet Watch"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460255.231942,
+    "err": 0.00068,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460258.028845,
+    "err": 0.000648,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460260.824677,
+    "err": 0.000957,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460263.621109,
+    "err": 0.00081,
+    "source": "Unistellar"
+   },
+   {
+    "planet": "b",
+    "kind": "transit",
+    "time": 2460266.417829,
+    "err": 0.000877,
+    "source": "Exoplanet Watch"
+   }
+  ]
+ },
+ "fit": {
+  "use": {
+   "lc": false,
+   "rv": false,
+   "timing": true
+  },
+  "free": [
+   {
+    "key": "per",
+    "label": "P",
+    "unit": "d",
+    "prior": {
+     "type": "uniform",
+     "a": 2.79529,
+     "b": 2.79729
+    }
+   },
+   {
+    "key": "tmid",
+    "label": "T mid",
+    "unit": "d",
+    "prior": {
+     "type": "uniform",
+     "a": 2459150.67786,
+     "b": 2459150.71786
+    }
+   }
+  ],
+  "fixed": {},
+  "timing_noise": 0,
+  "sampler": {
+   "nlive": 400,
+   "fracRemain": 0.01,
+   "seed": 42,
+   "maxCalls": 1000000
+  }
+ },
+ "result": null
+}

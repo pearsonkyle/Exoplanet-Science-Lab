@@ -27,6 +27,8 @@ step (`python3 -m http.server`), loading three.js from a CDN.
 | `src/core/priors.js` | Uniform, normal, truncated normal, log-uniform as unit-cube transforms |
 | `src/core/nested.js` | `MiniNest`, the nested sampler |
 | `src/core/model.js` | Parameter registry and likelihood (`buildProblem`) |
+| `src/core/periodogram.js` | Lomb-Scargle periodogram of timing residuals, false-alarm levels, sinusoid fits |
+| `src/core/ldspec.js` | Limb darkening for any wavelength range from a wavelength-resolved table |
 | `src/core/rv.js` | Radial velocity of the star, K from masses, a/R★ from Kepler's law |
 | `src/core/catalog.js` | System parameters from the archive snapshot: reference selection, checks, provenance, priors |
 | `src/core/ephemeris.js` | Linear and quadratic ephemerides from mid-transit times, epoch counting, timing-list reader |
@@ -61,7 +63,7 @@ on the disc; arcs that end on the stellar limb use 20 Gauss-Legendre nodes after
 substitution that removes the remaining branch point. There is no `acos` in the inner loop.
 
 Measured against scipy adaptive quadrature over 680 geometries (Rp/R* from 0.01 to 1.2, every
-contact configuration, five profiles): maximum absolute error **6e-13**. A 30-node Gauss-Legendre
+contact configuration, five profiles): maximum absolute error **2.2e-12** on that grid (the solar quadratic profile; the other four are under 6e-13). Over the wider grid of the Validation page (41 light curves and the kernel's branch points, against a 30-digit reference) the worst error is 3.1e-11 in a light curve and 1.4e-10 within 1e-13 of second contact. A 30-node Gauss-Legendre
 rule on the radial form, written to mimic pylightcurve's approach, reaches **1e-5** on the same
 set (worst at grazing geometries). pylightcurve itself was not installed where this was developed,
 so that comparison is against a re-implementation of its method, not the package.
@@ -125,9 +127,9 @@ the same projection the model integrates.
 
 `deriveSystem` reproduces that table's rows from the fitted parameters and the stellar inputs
 (the contaminated/corrected depth rows are left out). Fed the paper's own values, with the
-radius ratio set to the square root of its corrected depth, it returns Rp = 1.034 R_Jup (paper
+radius ratio set to the square root of its corrected depth, it returns Rp = 1.031 R_Jup (paper
 1.032), a = 0.4606 au (0.4603), K = 467.9 m/s (469.2), T_peri and E_mid within 0.001 d, and
-T14 = 0.4987 d (0.4990). The eclipse duration does not match: 0.0834 d here against 0.0717 d in
+T14 = 0.4985 d (0.4990). The eclipse duration does not match: 0.0834 d here against 0.0717 d in
 the paper. Durations here are found by bisection on the projected separation; the paper does not
 say how E14 was computed. The bundled TESS light curve is diluted by HD 80607 and the app no longer
 corrects for that, so a fit to it returns a radius about 30% too small.
@@ -172,10 +174,18 @@ is solar only); at the star's [Fe/H] = 0.35 the table differs from them by 0.004
 Below mu = 0.1 the models have few points and both codes extrapolate. Stars off the grid are clamped: 0.0024 rms
 at log g 3.7, 0.05 rms at 9600 K. The table makes the main bundle 508 kB, just over Vite's warning size.
 
+A **custom wavelength range** is served by a second table (`src/data/ld_spectral.js`, 266 kB, fetched on first
+use; built by `tools/build_ld_spectral.py`): the same PHOENIX models in 357 bins from 200 to 5500 nm, stored as
+a mean plus 40 principal components, combined over the range with photon weighting (`src/core/ldspec.js`). It
+agrees with direct integration of the models to about 0.001 in I(mu), 0.009 at worst (coolest M dwarfs, channels
+a few nm wide), at most 0.72% of a transit depth (`test/ldspec.test.mjs`); the grey estimate it replaces was off by
+0.036 in the median and 0.30 at worst on the same channels. Beyond 5.5 micron (MIRI) other model grids would be
+needed, and below 300 nm real M and K dwarfs emit chromospherically, which the models do not.
+
 **Limb darkening in a fit.** Either sample the coefficients, or "follow the star": sample Teff
 (and [Fe/H] when a table is loaded) with priors at their measured uncertainties and compute the
-coefficients from each sample (`makeLDTie`, tabulated on a 17 x 7 grid and interpolated inside the
-likelihood). The coefficients then stay on the one-dimensional (or two-dimensional) family a star
+coefficients from each sample (`makeLDTie`, tabulated once per fit on a grid that includes every model node inside the prior and
+interpolated inside the likelihood: about 20 ns per call, no allocation). The coefficients then stay on the one-dimensional (or two-dimensional) family a star
 can produce. With the grey model the spread reflects the Teff uncertainty only; with the table it follows Teff and [Fe/H].
 
 ## Habitable zone
@@ -188,15 +198,46 @@ this app, not part of the published limits.
 
 ## The sampler
 
-`MiniNest` follows UltraNest's default strategy: live points are whitened by their covariance, the
-constrained prior is bounded by the union of balls around all live points (MLFriends) intersected
-with a wrapping ellipsoid, and both radii come from bootstrapping. New points are drawn uniformly
-from that region inside the unit cube. The run stops when the live points can hold less than a set
-fraction of the evidence. Also included: an insertion-order test, block handling of likelihood
-plateaus (all the models whose transit misses the data), and a slice-sampling fallback.
+`MiniNest` follows UltraNest's strategy: live points are whitened, the constrained prior is bounded by the
+union of balls around the live points (MLFriends) intersected with a wrapping ellipsoid, and new points are
+drawn uniformly from that region inside the unit cube. The run stops when the live points can hold less than a
+set fraction of the evidence. Since the stress tests of November 2026 it also has:
 
-Not included: UltraNest's reactive tree (variable live points), cluster-aware transforms, warm
-start, resume from disk.
+- whitening about each cluster of live points, so separated islands (period aliases) do not inflate the region;
+- an ellipsoid re-fitted in each bootstrap round, which removes an upward bias of ln Z that grew with dimension
+  (+0.4 at 15 parameters with the fixed shape UltraNest also uses);
+- a slice sampler with directions from the live points and exact detailed balance, entered when region sampling
+  costs more than three slice points and left again when it is cheap;
+- an insertion-order test after every rebuild, with a restart in slice mode when the region fails it;
+- a budget: `maxCalls` (default one million, "Stop after" on the Fit tab) and `maxSeconds`. A stopped run
+  returns what it has with `converged: false`. Stopped late it is a usable posterior; stopped early it has an
+  effective sample size near 1 and its intervals mean nothing, which the Results tab then says instead of
+  showing them as a result;
+- warnings in plain words (`res.warnings`): parameters correlated above 0.95 with advice, a posterior against
+  a prior edge, separate peaks with their weights, low efficiency, low effective sample size.
+
+a/R★ is never sampled. With the inclination free the two trade off through the impact parameter (a fit with
+both free needs 47,000 calls and gives σ(i) = 0.84°, against 11,600 calls and 0.076° with a/R★ fixed). It is
+held at its System value, or follows from M★, R★ and P when "a/R★ from Kepler's law" is on.
+
+Stress suite (`node test/stress.test.mjs`, about 30 s; `npm run test:stress` for all 47 problems, about 5 min),
+400 live points, against truth from analysis or quadrature and against UltraNest 4.6.3 on the same likelihoods:
+
+| Problem | Before | Now | UltraNest |
+| --- | --- | --- | --- |
+| HD 80606 b joint fit, period prior 111 to 112 d | 1M calls, 521 s, not converged | 183k calls, 72 s (34 s in the browser) | 190k calls |
+| Three planets, 17 free parameters | 1M, not converged | 953k, converged | 1M, not converged |
+| Period aliases | 343k, mode weights wrong, no warning | 58k, weights right | 1M, not converged |
+| Correlated Gaussian, 15 parameters, ρ = 0.99 | ln Z +1.36 ± 0.37, no warning | −0.02 ± 0.37 | +0.40 ± 0.57 |
+| Neal's funnel, 4 parameters | ln Z −1.16 ± 0.14, no warning | −0.28 ± 0.17, restarted with a warning | −0.30 ± 0.32 |
+
+Still weak: 20 parameters at ρ = 0.999 stops at the budget (flagged); funnels are sometimes 0.5 to 0.9 low
+without a warning; in slice mode the scatter of ln Z exceeds its quoted error (rms pull up to 1.9); a mode much
+narrower than another can be lost. Calls rose 15 to 50% up to 10 parameters for the unbiased ellipsoid.
+Reparameterisations measured but not built: √e cos ω and √e sin ω (20 to 25% fewer calls), a log-uniform
+jitter prior (30% fewer). Sampling the impact parameter instead of the inclination does not save calls here.
+
+Not included: UltraNest's reactive tree (variable live points), a metric per mode, warm start, resume from disk.
 
 ### Evidence
 
@@ -210,9 +251,9 @@ likelihoods with 1, 2 and 3 free parameters, six seeds each:
 
 | free | quadrature | sampler mean | run scatter | reported error |
 | --- | --- | --- | --- | --- |
-| rprs | 848.969 | 848.960 | 0.13 | 0.10 |
-| rprs, tmid | 845.129 | 845.036 | 0.13 | 0.14 |
-| rprs, tmid, inc | 843.740 | 843.716 | 0.12 | 0.14 |
+| rprs | 1646.019 | 1645.960 | 0.07 | 0.11 |
+| rprs, tmid | 1641.594 | 1641.640 | 0.12 | 0.14 |
+| rprs, tmid, inc | 1640.001 | 1639.956 | 0.12 | 0.16 |
 
 Other checks: correlated Gaussians in 2, 5 and 8 dimensions land within 1.5 reported sigma of the
 analytic value; a 3-D Gaussian over 60 seeds with 200 live points averages +0.07 +- 0.03. A target
@@ -255,6 +296,28 @@ hand in Chrome at desktop and phone widths, including the PNG, PDF, CSV and JSON
 given: there is no conversion between time systems, and the calendar column for upcoming transits is the listed
 time read as UTC.
 
+### Periodic signals in the timing residuals
+
+Under the O − C plot the Timing tab runs `timingPeriodogram` (`src/core/periodogram.js`): a generalised
+Lomb-Scargle periodogram of the times minus the ephemeris, a sinusoid at the strongest peak, the periodogram of
+what is left, a second sinusoid, and a comparison by BIC. A sinusoid is recommended only when its peak is
+significant (false-alarm probability under 1%, Baluev 2008) and it lowers the BIC, because the BIC alone
+prefers a sinusoid in 58% of signal-free lists. Transit epochs are a lattice, so there is a true Nyquist limit
+at two lattice steps; the search runs from there to twice the span.
+
+Checks (`test/periodogram.test.mjs`): power against astropy to 4e-11 of the peak over 20,788 values and four
+normalisations; false-alarm probabilities to 1e-14; fits at EXOTIC's periods agree in χ² to 6e-8; on
+signal-free lists the false-alarm rate is 8.5% at the 10% level and 1.0% at 1%; an injected 2-minute signal in
+30 of 500 epochs is recovered in 93% of trials. On EXOTIC's 40-time example it finds 57.3 d, 2.78 ± 0.16 min.
+The analytic false-alarm level trusts the error bars: with that example's unequal errors it calls a second
+peak significant (9e-5) where a bootstrap gives 22%. The tab has a bootstrap button; it is not the default
+because it takes seconds.
+
+EXOTIC's `plot_periodogram`, for comparison: its second periodogram is computed from data that still contain
+the first sinusoid (`ls` where `ls2` was meant); its `amplitudes` attribute changes between runs on the same
+data; its false-alarm line assumes a narrower frequency range than was searched; the example's 3σ clip removes
+14 of 40 transits because the timing signal itself is counted as outliers.
+
 ## Several epochs in one fit
 
 A dataset can hold several epochs of the same planet: nights from the ground, orbits of a long space light
@@ -286,7 +349,7 @@ Checks (`test/multiepoch.test.mjs`):
 | ln L vs the sum of three single-epoch problems | agrees to 1e-9 |
 | One epoch with an epoch index vs none | identical |
 | Per-epoch normalisations at the truth (1.003, 0.97, 1.02) | 1.1σ, 1.7σ, 0.0σ |
-| Period from a joint fit of five nights (orbits 0, 3, 10, 40, 41; T mid and P free) vs a second route: each night's mid-time from its own likelihood, then `fitEphemeris` | 2.1500200 ± 0.0000070 vs 2.1500198 ± 0.0000069 (0.02σ apart, error ratio 1.017); truth 2.1500082, 1.7σ away |
+| Period from a joint fit of five nights (orbits 0, 3, 10, 40, 41; T mid and P free) vs a second route: each night's mid-time from its own likelihood, then `fitEphemeris` | 2.1500198 ± 0.0000068 vs 2.1500198 ± 0.0000069 (0.00σ apart, error ratio 0.982); truth 2.1500082, 1.7σ away |
 | Combining (date references, order, mixed airmass), removing, splitting by orbit, folding, simulating | pass |
 
 In the browser a simulated four-night set (HAT-P-32 b preset, 1036 points, eight free parameters including P and
@@ -368,11 +431,11 @@ in `public/examples/` and open from the start page.
 | models | RV curve against EXOTIC's, after its Mp/M★ scaling | 1.1e-5 of K (1.7e-4 of K against its default forward difference) |
 | models | mid-eclipse time against pylightcurve | under 1 s |
 | `single_transit` | posterior against EXOTIC's `lc_fitter` on the same data | means within 0.25σ, widths within 15%; 1.8 s against 8 s |
-| `multiple_transit` | five nights with airmass, nine parameters, against `glc_fitter` | means within 0.11σ, widths within 5%; 4.2 s against 57 s |
+| `multiple_transit` | five nights with airmass, nine parameters, against `glc_fitter` | means within 0.11σ, widths within 6%; 4.2 s against 57 s |
 | `ephemeris` | 40 mid-times against statsmodels WLS, before and after the example's 3σ clip | T0, P and errors agree to 1e-6; 26 of 40 survive the clip |
 | `multi_planet` | χ² of the three light-curve files and of the velocities at the injected truth | 45.11, 88.80, 190.58, 37.58: identical to two decimals |
 | `multi_planet` | joint fit of three masses, trend and jitter against EXOTIC's stored fit | widths within 15%, best fit within 0.5σ; 0.7 s; planet d is an upper limit (95%: 3.6 m/s) |
-| `radial_velocity` | HD 80606 b, seven instruments, four free parameters | K 469.6 m/s (paper 469.2), e 0.93156 (0.93183), ω −58.83° (−58.887°); zero points match EXOTIC's |
+| `radial_velocity` | HD 80606 b, seven instruments, four free parameters | K 469.6 m/s (paper 469.2), e 0.93157 (0.93183), ω −58.83° (−58.887°); zero points match EXOTIC's |
 | `joint_rv_transit` | HD 80606 b: TESS + velocities + 4 transit times + 1 eclipse time | K 469.9, a/R★ 94.453, P 111.43681, i 89.242, e 0.93163 against Table 7's 469.22, 94.452, 111.436765, 89.24, 0.93183; 25 s |
 
 Differences from EXOTIC that are deliberate:
@@ -391,6 +454,282 @@ ephemeris is on the Timing tab, see above), eclipse and phase-curve models, per-
 band), the real TOI-1873 data in `examples/toi-3planet` (32,000 points). The 3D view shows one planet at a time.
 The browser runs of these examples (0.6 s for the toy, 1.3 s for HD 80606 velocities, 15 s for the joint fit)
 were driven by hand; the Playwright scripts do not cover them.
+
+## The planet's own light: eclipses, phase curves and maps
+
+`src/core/phasecurve.js` adds the planet's flux to the transit model: the secondary eclipse, a phase curve
+phased to mid-eclipse, and a brightness map in spherical harmonics to degree 3 whose odd terms show only in
+eclipse ingress and egress (eclipse mapping, after github.com/pearsonkyle/Exoplanet-Mapping). A planet has it
+when its `fpfs` is set (System tab, "+ eclipse & phase curve"); the likelihood is still `buildProblem`.
+Parameters: `fpfs` (dayside surface brightness over the star's, so the eclipse depth is `fpfs × rprs²`, EXOTIC's
+convention), `contrast`, `hotspot`, a second harmonic, or `y1m1 … y33` in map mode; optional ellipsoidal and
+beaming terms; light-travel delay. The plot has a Phase view (the orbit folded, eclipse and transit enlarged)
+and a Map view (brightness-temperature map, the hemisphere facing the observer, temperature against phase).
+
+Checks (`test/phasecurve.test.mjs`, 40; `test/phasemodel.test.mjs`, 14): the 16 basis curves against direct
+integration 4.6e-13; uniform eclipse against batman 4.9e-13 (circular), 2.5e-7 at e = 0.93; against starry
+1.2.0 and jaxoplanet 0.2.0 5.6e-7 of the planet's flux; EXOTIC's phase-curve model outside transit and eclipse
+5.0e-13; brightness temperature against scipy 1.6e-9; χ² through `buildProblem` identical to the model used
+directly on all three example sessions. Differences from EXOTIC, on purpose: its eclipse ingress is that of a
+body of radius `rprs·√fpfs` and starts late (up to 29% of the depth during ingress).
+
+Examples (stored results open with them): WASP-43 b at 4.5 µm, one full orbit (6 free, 31,533 calls, 14 s in
+the browser); WASP-43 b eclipse map of degree 1 from seven Spitzer visits (8 free, 55,708 calls, 49 s:
+Fp/F★ 0.1513 ± 0.0029, day 1544 K, night 789 K); a simulated degree-2 map at JWST precision (9 free, 106,773
+calls, 37 s). The Spitzer data are the already-detrended series of the Exoplanet-Mapping repository, binned;
+instrument systematics are not modelled. Y1,−1 (north-south asymmetry) runs into its prior in both map fits,
+and the page says so.
+
+## Exomoons
+
+`src/core/exomoon.js`: the union of the planet's and a moon's disc on a limb-darkened star, the pair orbiting
+its barycentre, after the owner's `exomoon2.py`. Simplified parameters: `rmoon` (Rm/R★), `permoon`, `phmoon`,
+optional `mmoon` and `imoon`; the separation follows from the moon's period and the planet's mass. The Moon
+view of the plot isolates the moon's own dip, planet-moon eclipses and the planet's wobble; "Search for a
+moon" runs a grid over period and phase with noise-only searches for the false-alarm rate.
+
+Checks (`test/exomoon.test.mjs`, 37): two-disc kernel against scipy quadrature 6.5e-14; `exomoon2.py`
+reproduced step by step to 1.3e-8; Pandora's whole light curves to 5.2e-6 (Pandora moves the barycentre on a
+straight line); timing and duration variations within 2.4% and 0.5% of Kipping's amplitudes; an injected moon
+found at S/N 26 while 100 noise-only searches reach 5.0. The `exomoon2.py` configuration itself is unbound
+(2.4 Hill radii) and is flagged. The moon is not drawn in the 3D view. Example fit: 6 free, 50,449 calls, 95 s.
+
+## N-body dynamics
+
+`src/core/nbody.js`: a Wisdom-Holman integrator in Jacobi coordinates (the same map as REBOUND's WHFast) and
+IAS15, with transit times by root finding, the star's radial velocity, stability checks (Hill, AMD, a short
+integration), analytic TTV formulas, and a grid search over a hypothetical perturber that scores each
+simulation against the mid-transit times themselves. With `spec.nbody` set, `buildProblem` takes mid-transit
+times and velocities from the integration; with all masses zero it is the Keplerian model. The Timing tab's
+Dynamics block has the switch, the O − C against the integration, the stability findings, and "Search for an
+unseen companion" (a pool of Web Workers), which can add the companion as a planet and fit it.
+
+Checks (`test/nbody.test.mjs`, 82; `test/nbodymodel.test.mjs`, 8): transit times against REBOUND 5.2.2 IAS15
+1.3e-6 s (this IAS15) and 0.3 s (Wisdom-Holman at its defaults) on EXOTIC's example system; positions equal to
+WHFast to 2e-12 AU; one planet equal to the Keplerian timing and RV models to 3e-6 s and 2e-9 m/s; χ² through
+the likelihood 82.9 against 82.9 from the other integrator directly.
+
+Example: 72 simulated mid-transit times of a hot Jupiter with a 0.1 M Jup companion near 2:1. In the browser
+the search ran 14,112 simulations in 7.6 s and the fit (companion's mass, period and phase free; the
+transiting planet's T0 and period profiled out as a straight line inside the likelihood) took 8,735 calls and
+31 s: 0.1035 ± 0.0068 M Jup (injected 0.100). Sampling the transiting planet's own period and T0 as well did
+not converge in 150,000 calls, which is why the line is profiled. Limits: light curves stay Keplerian (no
+photodynamics), no light-travel time, no MEGNO, mid-eclipse times stay Keplerian, and the χ² surface has
+period aliases every few thousandths of a day: the search returns one solution that fits. Found in EXOTIC and
+Nbody-AI while porting: the committed `nbody.py` takes the radial velocity along a sky axis (a quarter cycle
+off; the uncommitted working copy fixes it), transit times are interpolated linearly between hourly outputs
+(0.5 s), and `ttv_grid.fits` needed by `estimate_prior` is not in the repository.
+
+## Sessions, saved analyses, exports
+
+An analysis is one JSON document (`docs/FORMAT.md`, `src/core/session.js`): system, data, priors, sampler and,
+when there is one, the posterior. "Save" keeps it in the browser (IndexedDB), the Results tab writes it as a
+file, and the same file runs headless (`runSession`), in the Python package and in the MCP server. Results
+also export as LaTeX, JSON, a Markdown report and a Python script that rebuilds the fit with every prior as an
+editable line (`src/core/exportScript.js`). Every worked example opens with a stored posterior
+(`public/examples/results/`, rebuilt by `tools/build_example_results.py`). The Fit tab's "EXOTIC's bounds"
+sets free parameters and uniform bounds the way `exotic.py` does (Rp/R★ in [0, 1.25 × value], i ± 5°, T mid
+within a quarter orbit, airmass coefficient in [−3, 3]).
+
+## Python package
+
+`python/` is the same JavaScript core run from Python (embedded V8 through `mini-racer`, else a Node
+subprocess, else QuickJS), bundled by `npm run build:python`; nothing is translated by hand. `esl.Session`
+(pydantic) loads a browser export, runs it and saves a file the browser opens; `esl.multi_fitter` mirrors
+EXOTIC's `multi_fitter` classes so its three-planet script runs with only the import changed. Five of the six
+stored example results reproduce exactly from Python and the sixth to 0.004σ; 72 pytest tests pass on macOS
+arm64 with Python 3.12 (not run on Linux, Windows or other Python versions; nothing is on PyPI). Speed equals
+Node: about 16,000 likelihood calls per second on a 400-point transit. See `python/README.md`.
+
+## Assistant and MCP server
+
+The Assistant button opens a panel that talks to an OpenAI-compatible endpoint the user types in (a local
+model; nothing is contacted otherwise, and no address ships as a default). It drives the page through 41
+tools over `window.__esl.api`: loading data and examples, priors, fits, model comparison experiments, exports
+and files. `mcp/server.mjs` exposes the same handlers on session documents to any MCP client (stdio or
+local HTTP), confined to a workspace folder. Tests: `test/assistant.test.mjs` (60, no network), `mcp/test.mjs`
+(23). Against the owner's local model, five tasks ran correctly in 20 of 20 final runs, but the small model's
+prose still drops uncertainties and sometimes invents a conversion; `explain_results` exists so the numbers
+come from the software. A public https site cannot call an http endpoint on another machine (mixed content);
+it works from localhost. Not tried: other servers (LM Studio, Ollama), an MCP client other than the SDK's.
+
+## The site
+
+Seven pages, each a real folder with its own `index.html` (no rewrite rules needed on a static host), sharing the
+navigation bar in `src/site/nav.js` and the tokens in `src/site/site.css`:
+
+| Path | What it is | Code |
+| --- | --- | --- |
+| `/` | landing page | `index.html` |
+| `/plan/` | which transits can be observed from a site, and how well their times are known | `src/plan/`, `src/core/observability.js` |
+| `/observe/` | a view of the sky for a place and time | `src/sky/`, `src/core/astro.js`, `src/core/horizon.js` |
+| `/observe/photometry/` | images to light curve: FITS frames, TESS, Kepler and K2 pixels | `src/photometry/`, `src/core/fits.js`, `photometry.js`, `gp.js`, `psd.js` |
+| `/analyze/` | the transit, radial-velocity, timing, phase-curve, moon and dynamics analyzer | `src/main.js` |
+| `/search/` | catalogue browser: NASA archive, exoplanet.eu, TOIs | `src/search/`, `src/core/sources/`, `src/core/relations.js` |
+| `/validation/` | this code against other codes and a 30-digit reference | `src/validation/`, `tools/validation/` |
+
+Everything runs in the visitor's browser; nothing is uploaded. Pages hand work to each other by address:
+`/analyze/?planet=<name>` looks a planet up and offers its parameters, `/plan/?planet=<name>` lists its
+observable transits, `/observe/?planet=…&t=…&lat=…&lon=…&elev=…&transit=<ingress>,<mid>,<egress>&err=<min>`
+points the sky at a target for a transit, and the photometry page passes a light curve to the analyzer through
+`localStorage` (`esl.handoff`) and `/analyze/?handoff=1`. `/analyze/?skipintro` skips the start page. The
+analyzer's first visit offers a tour (the "?" button replays it) that starts with only the system view.
+
+Page checks without the interactive browser: `.venv/bin/python tools/shot.py '<path>' out.png [w h] --wait ms
+--eval "<js>"` takes a headless screenshot of the running dev server and prints console errors.
+
+### Observe: the sky
+
+41,411 stars to V = 8 (XHIP through the d3-celestial data, BSD 3-Clause), constellation lines, Sun, Moon and
+planets, an atmosphere that brightens through twilight, a ground that turns translucent when the view tips
+below the horizon, azimuthal and equatorial grids, the 4,862 exoplanet host stars of the catalogue, and bright
+satellites from CelesTrak propagated with SGP4 (`satellite.js`, the site's only dependency besides three.js).
+Time can be scrubbed, stepped and played; the place is typed or taken from the browser. On a phone an AR mode
+follows the device orientation, with a calibration by pointing at a known object.
+
+A host star's card lists its magnitudes (V, G, T, J, K), distance and type, and for each planet its size
+class, radius, mass, period, temperature and whether it transits (depth, duration), with estimates marked. A
+search box finds planets, hosts, bright stars and solar-system bodies and marks the target; with a transit in
+the address the card shows ingress, mid and egress with altitude and sky state, and "Play the night" runs
+sunset to sunrise in 40 s with the target's track. A Terrain layer draws the horizon from elevation tiles
+(Mapzen/Tilezen on AWS Open Data, 28 to 48 tiles per place, cached): Mauna Kea from Hilo, Mount Wrightson from
+Tucson and Mont Blanc from Geneva come out 0.08° to 0.14° low (200 to 300 m pixels flatten summits);
+buildings and trees are not in the data. VR and passthrough buttons appear when the browser offers WebXR.
+
+Accuracy of `src/core/astro.js` against astropy/ERFA with DE432s (`test/astro.test.mjs`, 65 instants 1975 to
+2050, five sites): sidereal time 0.3″, star altitude and azimuth 25″ (annual aberration is not modelled), Sun
+33″, Moon 12″, Mercury to Mars under 3′, Jupiter 8′ and Saturn 10′ (the limit of Standish's Keplerian elements),
+refraction 6″ above 10°; twilight times 1.0 s, rise and set 5.4 s. The ISS from the page agreed with
+python-sgp4 + astropy to 0.003°. The example planner link puts HAT-P-32 at altitude 64.086° (astropy 64.080°).
+
+Not tested: any real WebXR session (the perspective path was checked on the normal canvas only: 21 stars
+within 0.22 px; a headset has no compass, so the view starts facing the flat view's centre azimuth); AR on a
+real phone, pinch zoom, the geolocation prompt. Local times on the sky page are the browser's zone, the
+planner's are the site's. The star rendering was tuned by eye, not against Stellarium.
+
+### Photometry
+
+`src/core/fits.js` reads image and binary-table HDUs (all BITPIX, BSCALE/BZERO, gzip, tile compression RICE,
+GZIP, PLIO with all dither modes, `.fz`, colour cubes and Bayer mosaics, 33 spellings of the time keywords; not
+HCOMPRESS). `src/core/photometry.js` does sigma-clipped annulus backgrounds, centroids, exact circular and
+elliptical apertures with partial pixels, Gaussian and Moffat PSF fits, optimal extraction (Naylor), source
+detection, tracking through field rotation, meridian flips and jumps by triangle matching, and EXOTIC's search
+over apertures, annuli and comparison stars, scored with the transit model through `buildProblem`.
+`src/core/psd.js` and `src/photometry/diagnostics.js` give the power spectrum against the photon-noise level,
+rms against bin size, and a pixel map of flux against centroid. `src/core/gp.js` and a self-flat-field
+(Vanderburg & Johnson) detrend. Frames run in a Web Worker with a live view. Target pixel files (TESS, Kepler,
+K2) come from the public `stpubdata` bucket; the MAST API and TESScut do not allow cross-origin requests.
+
+Checks (`fits` 89, `photometry` 53, `gp` 9, `psd` 36, `exotic_photometry` 26): tile-compressed files
+bit-identical to astropy; aperture sums 4e-16 and elliptical apertures 1e-15 against photutils; centroids
+1.4e-14 px; UTC to BJD_TDB 0.05 s; GP 1e-13; periodogram and Welch PSD 1e-13 against scipy; rms-vs-bin 7e-15
+against mc3.
+
+EXOTIC's own sample data (HAT-P-32 b, 142 MicroObservatory frames), EXOTIC run through its `main()`:
+
+| | EXOTIC 4.3.1 | This code |
+| --- | --- | --- |
+| Choice | aperture 4.44 px, annulus 7.15 px, no comparison star | aperture 3.71 px, annulus 10.73 px, both comparison stars summed |
+| Residual scatter | 0.573% | 0.496% (0.540% with no comparison star) |
+| Rp/R★ (same χ² fit of each curve) | 0.1562 ± 0.0034 | 0.1452 ± 0.0032 (0.1525 with no comparison star) |
+| T mid − 2458107 | 0.71359 ± 0.00108 | 0.71311 ± 0.00106 |
+| Search | about 30 s for 1,142 fits | 9.1 s for 1,532 fits, 5 s to measure the frames |
+
+BJD within 0.014 s and airmass identical; at EXOTIC's centroids, radii and sky 720 aperture sums agree to
+7.9e-7. At EXOTIC's own aperture cell this code is worse (0.599% against 0.573%) and the reason was not found.
+PSF photometry loses on these undersampled stars in both codes. The 2.3σ gap in Rp/R★ is mostly the choice of
+comparison star. Behaviour in EXOTIC that looks wrong (not changed there): the centroid is a flux-weighted mean
+of a 31 × 31 box with the sky left in (1.5 px from its own Gaussian fit); the least-squares mode minimises the
+fourth power of the residuals; the sky is the mode of a box that includes the star.
+
+Not verified: the live view mid-run, the export buttons and the hand-off by clicking, K2 fetch in a browser
+(Node only), the folder picker and drag-and-drop, a file written by `fpack`. The cut-out demo of the sample
+frames lives in `test/data/` (the sample data states no licence) and works on the dev server only.
+
+### Search and Plan
+
+Catalogues are plug-ins (`src/core/sources/`): the NASA Exoplanet Archive (6,470 planets, one row each from
+`pscomppars` with the period and epoch of the reference that predicts the smallest timing uncertainty today),
+exoplanet.eu (8,479; CC BY 4.0, acknowledgement shown under the table) and the TOI list (8,175). Snapshots are
+built by `tools/build_catalog_table.py` and `tools/build_catalog_eu.py`. The two planet catalogues are matched
+by name, alias, host and letter, then position and period: 98.7% of archive planets find their exoplanet.eu
+entry. The table marks where they disagree (2,138 planets in at least one quantity) and which values are
+estimates. Estimates come from named relations in `src/core/relations.js`, each tested against its source
+(`test/relations.test.mjs`): Chen & Kipping (2017) mass-radius (within 1.4% of the `forecaster` package),
+Pecaut & Mamajek (2013) dwarf sequence, Torres et al. (2010), and exact geometry for depth, duration,
+equilibrium temperature and K. No mass is estimated above 11.3 R⊕, where the relation is not single-valued.
+
+`public/esl-catalog/` is the merged offline build (`tools/build_esl_catalog.py`, documented in
+`tools/README.md`): 8,561 planets with provenance, gap-filling estimates with their relations, and suggested
+priors for 8,556 of them; 2.0 MB gzipped, with checksums and licences in its manifest. TOIs are left out. Only
+the `--no-download` path has been run.
+
+The planner lists transits for a site and date range, one row each, with ingress, mid and egress, the
+propagated uncertainty of the mid-time, altitudes, dark time before and after, and the Moon. "Observable" now
+means the whole region of interest (1 h of baseline before ingress to 1 h after egress) is above 30° with the
+Sun below −18°; complete transits with a short baseline are listed un-bolded with what is lost. A globe shows
+89 observatories (astropy's registry and MPC codes, `tools/build_observatories.py`) with the terminator; a
+crawler (`tools/crawl_observatories.py`, robots.txt obeyed, 2 s per host) found archive, weather or all-sky
+links for 43 of them, and two all-sky images are embedded (Kitt Peak, La Silla), the only ones whose
+organisation's terms page states a Creative Commons licence; whether those general terms cover the camera
+hosts is the owner's call. Tabs give the ephemeris behind every row (with a CSV) and a grid of altitude charts.
+
+`src/core/observability.js` against astropy (`test/observability.test.mjs`): altitude and azimuth 0.01°,
+twilight times 6 s, BJD conversion 4 s. Against the Swarthmore transit finder for Kitt Peak and one week: all
+32 of its events are found, mid-times within 0.7 min, elevations within 0.5°; with the finder's limits 14 are
+observable over the whole region of interest, 17 are complete with a short baseline and 1 is partial.
+
+Caveats: choosing the ephemeris by its quoted errors favours papers with optimistic errors (of 4,312 planets
+with both, 3,044 use a different reference than the archive's default, which predicts 4.3 times less precisely
+at the median); time systems are flagged but not converted; altitudes ignore refraction; exoplanet.eu has 27
+positions more than 0.25° from the archive's; TOIs are not matched to known planets; many crawler seeds were
+typed from memory and failed, so 46 observatories have no links. `astro.js` and `observability.js` overlap
+(Sun, Moon, alt-az) and should be merged. Pinch on the globe and every phone layout were checked only headlessly.
+
+### Validation
+
+`tools/validation/*.py` run batman, PyTransit, exoplanet-core, PyAstronomy, ellc, pylightcurve, EXOTIC,
+pyaneti, radvel, emcee, dynesty and UltraNest (recipe in `validation/README.md`) and store their outputs in
+`public/validation/`. The page recomputes this code's side in the browser, and `test/validation.test.mjs`
+asserts the same tolerances. The reference is Kepler's equation in 30-digit arithmetic plus scipy quadrature of
+the flux integral. The page reads in about nine minutes: a short version, where this code is weaker, where
+another code is the outlier, four comparisons with one chart each, the project's other tests (stored by
+`tools/validation/project_reference.mjs` in `public/validation/project.json`, including phase curves, exomoons
+and N-body), how to reproduce it, what is untested, and 35 references with DOI or arXiv links.
+
+| Comparison | This code | Others |
+| --- | --- | --- |
+| Transit flux, 41 cases, worst error | 3.1e-11 | batman 1e-6 (Claret, by design; 7.6e-5 quadratic, see below), PyTransit 1e-5, pylightcurve and EXOTIC 1e-6, pyaneti 4e-6, ellc 5e-5 |
+| Kepler's equation to e = 0.999 | 2.4e-15 rad | batman and pyaneti 1e-7 to 7e-6 at e = 0.93 |
+| Contact durations to e = 0.93 | 1.3e-10 s | Winn (2010) closed form and PyTransit up to 54 s short |
+| Radial velocity | 1.3e-14 K | radvel 4e-13, pyaneti 1e-6, EXOTIC 2e-4 as shipped |
+| Posterior against dynesty | means 0.06σ, widths 5% | |
+| Coverage of 68% intervals, 300 trials | 67 to 73% | expected 68 ± 2.7% |
+
+Found in other codes (none reported upstream by this project): batman's quadratic kernel is wrong by up to
+9e-3 when the planet's centre is exactly one planet radius from the star's centre; radvel's compiled Kepler
+solver exits at e = 0.999; ellc's reference time is closest approach, not conjunction. Weaknesses here: the
+flux kernel is good to 1e-10 over the wide grid (2.2e-12 on its own test grid); the quadratic law is 2 to 3
+times slower than batman and PyTransit; the sampler's evidence for a funnel-shaped posterior was 0.28 low
+(1.7σ) on the seed rerun this round. Automatic exposure averaging now leaves at most 0.7 ppm (it was 18 ppm
+for a hot Jupiter at 2 and 30 minute cadence). The 30-digit orbit gives 0.08337 d for HD 80606 b's eclipse
+duration, as here; the published 0.0717 d is reproduced by no method tried.
+
+## Calculations changed after an audit (2026-11-15)
+
+- Exposure averaging (`autoSupersample`): the number of sub-samples now scales with the transit depth as well
+  as the exposure over the ingress time; residual 18 ppm → ≤ 0.7 ppm.
+- An epoch with its own exposure time now gets its own sub-sampling in `specFromSession`; before, it was
+  ignored unless the light curve also had an overall exposure.
+- Stored posterior draws: resampled rows were coerced to numbers by `TypedArray.map`, so exported sessions and
+  `runSession` held wrong draws; fixed, and the session test now checks the draws.
+- The evidence test compared against a grid too coarse for its posterior (1639.835 against the true 1640.016);
+  the reference grid is now restricted to the posterior box.
+- `Mjup_Msun` is 9.5459426398e-4 (the IAU nominal GM ratio) in place of a constant with fewer digits.
+- The plotted data no longer move with the sliders: a display normalisation is frozen until new data, a
+  finished fit or "Re-centre data", so only the model and the residuals respond.
+- A light curve handed over from the photometry page was overwritten by the default preset on arrival.
+- `squareroot` in a session file is read as the `sqrt` law (the format document named a law that did not exist).
 
 ## Sample data
 

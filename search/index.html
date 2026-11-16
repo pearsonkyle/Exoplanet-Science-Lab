@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search · Exoplanet Science Lab</title>
+<meta name="description" content="Browse known exoplanets and candidates from the NASA Exoplanet Archive, exoplanet.eu and the TESS Objects of Interest, with the source of every value.">
+<meta name="esl-root" content="../">
+<link rel="stylesheet" href="../src/site/site.css">
+<link rel="stylesheet" href="../src/search/search.css">
+</head>
+<body class="page search-page">
+<header id="sitebar" data-active="search"></header>
+<main id="search-app">
+  <div class="s-top">
+    <h1>Search</h1>
+    <p class="lead" id="s-lead">Known planets and candidates, with the catalogue and reference behind every number. Loading the catalogues…</p>
+  </div>
+  <div class="s-sources" id="s-sources" aria-label="Catalogues"></div>
+  <div class="s-bar">
+    <input type="search" id="s-q" placeholder="Name, host, method, facility…" aria-label="Filter by text" autocomplete="off" spellcheck="false">
+    <button class="btn" id="s-filters-btn" aria-expanded="false" aria-controls="s-filters">Filters <span class="count" id="s-nfilters"></span></button>
+    <button class="btn" id="s-cols-btn" aria-expanded="false" aria-controls="s-cols">Columns</button>
+    <label class="s-unit">Planet units <select id="s-units"><option value="earth">Earth</option><option value="jup">Jupiter</option></select></label>
+    <label class="s-unit" title="Which catalogue's value is shown when both have one">Show first <select id="s-prefer"><option value="nea">NASA archive</option><option value="eu">exoplanet.eu</option></select></label>
+    <span class="s-count" id="s-count" aria-live="polite"></span>
+    <button class="btn" id="s-csv" title="Download the rows that pass the filters, with the columns on show">Export CSV</button>
+  </div>
+  <div class="s-pop" id="s-cols" hidden></div>
+  <div class="s-filters" id="s-filters" hidden></div>
+  <div class="s-legend" id="s-legend"></div>
+  <div class="s-main">
+    <div class="vt" id="s-table" tabindex="0" role="grid" aria-label="Planets and candidates"></div>
+    <aside class="s-detail" id="s-detail" hidden aria-label="Details"></aside>
+  </div>
+  <p class="note" id="s-foot"></p>
+</main>
+<script type="module" src="../src/site/nav.js"></script>
+<script type="module" src="../src/search/main.js"></script>
+</body>
+</html>

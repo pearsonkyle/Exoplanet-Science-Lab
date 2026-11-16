@@ -6,7 +6,7 @@ import { eventTimes } from './kepler.js';
 
 export const C = {
   Rsun: 6.957e8, Rjup: 7.1492e7, Rearth: 6.3781e6, AU: 1.495978707e11,
-  GMsun: 1.32712440018e20, Mjup_Msun: 9.545942e-4 /* IAU 2015 nominal GM_Jup / GM_Sun */, G: 6.6743e-11, Msun: 1.98841e30, day: 86400, TeffSun: 5772,
+  GMsun: 1.32712440018e20, Mjup_Msun: 9.5459426398e-4 /* IAU 2015 nominal GM_Jup / GM_Sun = 1.26686534e17 / 1.32712440018e20 */, G: 6.6743e-11, Msun: 1.98841e30, day: 86400, TeffSun: 5772,
 };
 
 /**

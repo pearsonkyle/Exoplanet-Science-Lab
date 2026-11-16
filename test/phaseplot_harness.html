@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- Throwaway harness for src/ui/phaseplot.js. Dev server on :5173, then
+     .venv/bin/python tools/shot.py 'test/phaseplot_harness.html?ex=wasp43b_phasecurve&theme=dark' /tmp/phase.png 1200 1500 --wait 1500
+     ?ex= wasp43b_phasecurve | wasp43b_eclipse_map | wasp18b_sim_eclipse_map     ?theme= dark | light     ?phase= degrees from eclipse for the globe -->
+<meta charset="utf-8"><title>phase plots</title>
+<style>body{margin:0;background:#0b0f18;color:#ccc;font:13px system-ui}canvas{display:block;margin:0 0 6px 0}</style>
+<canvas id="a"></canvas><canvas id="b"></canvas><canvas id="c"></canvas><pre id="log"></pre>
+<script type="module">
+import { LC_THEMES } from '/src/ui/lightcurve.js';
+import { renderPhaseCurve, renderPlanetMap, renderTemperaturePhase, phasePlotData, mapPlotData, temperaturePlotData } from '/src/ui/phaseplot.js';
+const q = new URLSearchParams(location.search), ex = q.get('ex') || 'wasp43b_phasecurve', th = LC_THEMES[q.get('theme') || 'dark'];
+if (q.get('theme') === 'light') document.body.style.background = '#fff';
+const s = await (await fetch(`/examples/phasecurve/${ex}.json`)).json();
+const lc = s.data.light_curve, tref = s.time_reference, pp = s.planets[0].parameters;
+const params = { ...pp, tmid: pp.tmid - tref, ldLaw: s.limb_darkening.law, ld: s.limb_darkening.coefficients, rstar: s.star.rstar };
+const data = { t: lc.time.map((t) => t - tref), f: lc.flux, e: lc.flux_err, epoch: lc.epoch };
+const band = s.phase.band_micron, tstar = s.star.teff, W = Math.min(1200, innerWidth), dpr = 2;
+const setup = (id, h) => { const c = document.getElementById(id); c.width = W * dpr; c.height = h * dpr; c.style.width = W + 'px'; c.style.height = h + 'px'; const ctx = c.getContext('2d'); ctx.scale(dpr, dpr); return ctx; };
+const pd = phasePlotData(data, params, { ltt: s.phase.ltt }, { label: s.title });
+pd.info = [`depth ${(pd.depth * 1e6).toFixed(0)} ppm`, `night ${(pd.night * 1e6).toFixed(0)} ppm`];
+renderPhaseCurve(setup('a', 560), W, 560, pd, th, { groups: lc.epochs && lc.epochs.length > 1 && lc.epochs.length < 6 ? lc.epochs.map((e) => e.name) : null });
+const md = mapPlotData(params, { tstar, band, phase: +(q.get('phase') || 40), label: 'Brightness temperature map' });
+renderPlanetMap(setup('b', 400), W, 400, md, th);
+const td = temperaturePlotData(params, { tstar, band, map: md, label: 'Temperature of the hemisphere facing the observer' });
+renderTemperaturePhase(setup('c', 470), W, 470, td, th);
+document.getElementById('log').textContent = JSON.stringify({ ex, n: data.t.length, bins: pd.bins.x.length, vmin: md.vmin, vmax: md.vmax, info: td.info });
+window.__done = true;
+</script>

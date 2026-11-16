@@ -53,7 +53,8 @@ export const EXAMPLES = [
     async load(get) {
       return {
         name: 'HD 80606', star: { ...HD80606_STAR, rstar: 1.066 }, ldLaw: 'nonlinear', ld: LD_TESS_HD80606, band: 'TESS (approx.)',
-        planets: [{ letter: 'b', values: { ...HD80606_B } }], kepler: true, lc: null, rv: await hd80606RV(get), timing: [],
+        planets: [{ letter: 'b', values: { ...HD80606_B } }], kepler: true, lc: null, rv: await hd80606RV(get),
+        timing: HD80606_TIMES.map((x) => ({ ...x, planet: 'b' })),   // listed on the Timing tab; not in this fit unless ticked
         use: { lc: false, rv: true, timing: false }, free: ['per', 'omega', 'ecc', 'mplanet'],
         priors: { per: U(111.3, 111.5), omega: U(-65, -55), ecc: U(0.92, 0.94), mplanet: U(3, 4.5) }, view: 'rv', fold: true, tab: 'fit',
         note: 'Velocities only, with the four free parameters and bounds of EXOTIC’s rv_example.py. Press Run on the Fit tab.',
@@ -97,6 +98,55 @@ export const EXAMPLES = [
         view: 'rv', fold: true, tab: 'fit',
         note: 'EXOTIC’s default for this toy: the three masses, the stellar trend and the jitter are free; the ephemerides are held. Tick Rp/R★, P, i or T mid on the Fit tab to open it up.',
       };
+    },
+  },
+  {
+    id: 'phasecurve', kinds: ['transit'], title: 'WASP-43 b: full-orbit phase curve', sub: 'Spitzer 4.5 µm, one orbit: transit, two eclipses and the day-night cycle',
+    exotic: 'EXOTIC phase-curve model (transit + eclipse + harmonics), same parametrisation', sessionFile: 'examples/phasecurve/wasp43b_phasecurve.json',
+    adjust(doc) { doc.ui = { ...(doc.ui || {}), view: 'phase', fold: false }; return doc; },
+  },
+  {
+    id: 'eclipsemap', kinds: ['transit'], title: 'WASP-43 b: eclipse map', sub: 'Spitzer 4.5 µm: a phase curve, four more eclipses and two transits; map of degree 1',
+    exotic: 'not in EXOTIC (after github.com/pearsonkyle/Exoplanet-Mapping)', sessionFile: 'examples/phasecurve/wasp43b_eclipse_map.json',
+    adjust(doc) { doc.ui = { ...(doc.ui || {}), view: 'map', fold: false }; return doc; },
+  },
+  {
+    id: 'eclipsemap-sim', kinds: ['transit'], title: 'Eclipse map at JWST precision', sub: 'simulated: three eclipses and a transit of a WASP-18 b-like planet; map of degree 2',
+    exotic: 'not in EXOTIC (after github.com/pearsonkyle/Exoplanet-Mapping)', sessionFile: 'examples/phasecurve/wasp18b_sim_eclipse_map.json',
+    adjust(doc) { doc.ui = { ...(doc.ui || {}), view: 'map', fold: false }; return doc; },
+  },
+  {
+    id: 'exomoon', kinds: ['transit'], title: 'A planet with a moon', sub: 'simulated: a Jupiter at 45 d with a 2.2 Earth-radius moon, twelve transits',
+    exotic: 'not in EXOTIC (from the owner’s exomoon2.py)', sessionFile: 'examples/exomoon/session.json',
+    // the stored session is a planet-only fit; these make it the planet + moon fit its notes describe
+    adjust(doc) {
+      const m = doc.fit.moon || { free: [] };
+      doc.fit.free = [...doc.fit.free, ...m.free.filter((f) => f.key !== 'mmoon')];
+      doc.fit.fixed = { ...(doc.fit.fixed || {}), mmoon: doc.planets[0].parameters.mmoon };
+      doc.notes = 'Simulated: a Jupiter-size planet at 45 d with a moon of 2.2 Earth radii on a 3.7 d orbit (Rm/R★ 0.02), twelve transits at 250 ppm. The moon’s radius, period and phase are free; the plot’s Moon view shows its effects in isolation, and “Search for a moon” on the System tab (after removing it) finds it from scratch.';
+      doc.ui = { ...(doc.ui || {}), view: 'moon', fold: false };
+      return doc;
+    },
+  },
+  {
+    id: 'decay', kinds: ['ephemeris'], title: 'Orbital decay of WASP-12 b', sub: '457 mid-transit times over 15 years: is the period changing?',
+    exotic: 'ephemeris/fit_decay.py',
+    async load(get, ctx) {
+      // the system comes from the catalog snapshot (so its values carry their sources); the times from EXOTIC's example
+      const sess = await ctx.catalogSession('WASP-12 b', ['ephemeris']);
+      const rows = (await get('examples/ephemeris/wasp12_decay_times.csv')).trim().split(/\r?\n/).slice(1).map((l) => l.split(','));
+      const letter = sess.planets[0].letter;
+      return { ...sess, timing: rows.map((r) => ({ t: Number(r[0]), e: Number(r[1]), kind: 'transit', planet: letter, src: r[2] })), timingOrder: 2, tab: 'timing',
+        note: 'The Timing tab holds the 457 times of EXOTIC’s orbital-decay example, with the quadratic ephemeris selected. χ²/dof is far above 1, so the quoted uncertainty of dP/dt is too small by about the square root of that.' };
+    },
+  },
+  {
+    id: 'nbody', kinds: ['ephemeris'], title: 'Timing variations from an unseen companion', sub: 'simulated: 72 mid-transit times of a hot Jupiter pulled by a 0.1 M Jup planet near the 2:1 resonance',
+    exotic: 'nbody/example.py (same system; the times here come from this page’s own integrator)', sessionFile: 'examples/nbody/session.json',
+    adjust(doc) {
+      doc.notes = 'Simulated: 72 mid-transit times of a 1.17 M Jup planet at 2.797 d over 1110 days. The O − C on the Timing tab shows a sinusoid of about 20 orbits (57 d). “Search for an unseen companion” under Dynamics simulates companions on a grid of mass and period and finds the 0.1 M Jup planet near the 2:1 resonance that causes it; “Add it as a planet and fit” then samples its mass with the N-body model.';
+      doc.ui = { ...(doc.ui || {}), tab: 'timing' };
+      return doc;
     },
   },
   {

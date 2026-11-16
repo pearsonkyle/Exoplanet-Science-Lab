@@ -1,8 +1,10 @@
 # Architecture
 
 ```
-index.html            page shell, import map for no-build use
-src/main.js           state (S), panels, fit orchestration, undo, exports
+index.html            landing page; plan/ observe/ analyze/ search/ validation/ each hold a page
+src/site/             shared navigation bar and tokens
+src/sky/ src/plan/ src/search/ src/photometry/ src/validation/   page code (DOM), one folder per page
+src/main.js           the analyzer: state (S), panels, fit orchestration, undo, exports
 src/core/             science, no DOM  ── importable from Node
   kepler.js           Kepler solver, orbit position, event times, contact durations
   limbdark.js         laws, conversions to Claret coefficients, validity
@@ -21,13 +23,26 @@ src/core/             science, no DOM  ── importable from Node
   catalog.js          archive snapshot reader: reference selection, physical checks, provenance, priors
   ephemeris.js        ephemeris fits to mid-transit times, epoch counting, timing-list reader
   stats.js            RNG, quantiles, special functions
-src/worker/           Web Worker entry for fits
+  session.js          the session document (docs/FORMAT.md): validate, spec for buildProblem, headless runSession
+  exportScript.js     a session as a Python script, a Markdown report, LaTeX tables
+  phasecurve.js       the planet's own light: eclipse, phase curve, spherical-harmonic maps, temperatures
+  exomoon.js          planet + moon transit, moon search
+  nbody.js            Wisdom-Holman and IAS15 integrators, dynamical transit times and RVs, stability, perturber grid
+  periodogram.js      generalised Lomb-Scargle for timing residuals; psd.js: power spectra and noise diagnostics
+  astro.js observability.js horizon.js     sky positions, transit observability, terrain horizon
+  fits.js photometry.js gp.js              images to light curves
+  sources/ relations.js                    catalogue plug-ins, merging, gap-filling relations
+  pyentry.js pyshim.js                     entry points of the Python bundle (tools/build_core_bundle.mjs)
+src/assistant/        in-page assistant: tool table, handlers over window.__esl.api, the loop, the panel
+mcp/                  MCP server: the same handlers on session documents
+python/               the esl package: this core run from Python
+src/worker/           Web Worker entries: fits, photometry frames, the N-body perturber grid
 src/ui/               canvas plots, export (PNG/PDF/LaTeX/JSON), movie recorder, timingTab.js (first per-tab module)
 src/viz/              three.js scene, GLSL, 2D fallback
 src/data/             bundled datasets and tables
 test/                 Node tests + headless-browser drivers
-tools/                offline builders (limb darkening table)
-validation/           comparisons against published results (to be filled)
+tools/                offline builders (limb darkening, catalogues, observatories, example results, Python bundle); tools/README.md
+validation/           the Validation page; its recipe is validation/README.md
 ```
 
 ## How a fit flows
@@ -60,6 +75,18 @@ derived quantities use. Light-curve observations are the epochs of `S.data`; vel
 says which kinds of data enter the fit. A "session" (`src/ui/examples.js`) is the plain description of a system and
 its data that `applySession` loads; examples and catalog look-ups both produce one.
 
-The parameter registry is currently a flat list for one planet and one dataset. The first structural job before
-multi-planet or multi-dataset work is to make parameters namespaced (planet, dataset, star) and to split
-`src/main.js` (about 700 lines) into per-tab modules.
+Optional models hang off the same keys. A planet has its own light when `fpfs` (or `fpfs@c`) is defined, a moon
+when `rmoon` is; `S.phase` and `spec.phase` hold the options shared by the planets (`mode`, `lmax`, `ltt`, band).
+`S.nbody` / `spec.nbody` (`{ epoch, linear, ... }`) switches mid-transit times and velocities to an N-body
+integration. `activeParams(..., { moons, phase })` lists their parameters in groups `moon` and `phase`.
+
+Plot views other than the light curve go through `plotFor(view)` in `main.js`, which returns
+`{ data, render(ctx, W, H, data, theme, opts) }`; the screen, the exported figure and the movie all draw that, and
+`data.setTime(t)` moves a figure's time cursor. Per-tab modules receive an `app` object: `buildTimingTab` and
+`buildDynamics` (`src/ui/dynamics.js`) are the pattern.
+
+`window.__esl.api` (`makeAPI()` in `main.js`) is the scripted surface of the analyzer, used by the headless
+checks, the stored-results builder and the assistant.
+
+`src/main.js` is about 2,100 lines. The split still to do: state and undo; session import/export; one module per
+tab (System, Data, Fit, Results) on the pattern above; plot views.

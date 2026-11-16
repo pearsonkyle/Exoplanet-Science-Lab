@@ -1,0 +1,92 @@
+<!doctype html>
+<!-- Standalone harness for the system view (src/viz/scene.js and fallback2d.js), served by the Vite dev server:
+     test/scene_harness.html?sys=trappist|hd80606|single|wide (&list=1 with single: a one-entry planets list) &view=free|earth|top &highlight=transit|eclipse|periastron|apastron|ascending
+       &t=<days after the active planet's mid-transit> &active=<index> &fit=auto|active|all &fly=1 &align=1 (all planets transit at t = 0)
+       &fallback=1 (2D canvas) &enlarge=1 &hz=1 &style=blueprint &labels=0 &inset=0 &play=<days per second>
+     window.viz is the view; window.sysArg the argument given to setSystem. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ESL scene harness</title>
+<link rel="stylesheet" href="/src/style.css">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  #stage { position: fixed; inset: 0; }
+  #viz { position: absolute; inset: 0; }
+  #hud { position: absolute; right: 10px; top: 8px; font: 11px ui-monospace, monospace; color: #9fdcff; text-align: right; white-space: pre; pointer-events: none; }
+</style>
+</head>
+<body>
+<section id="stage">
+  <div id="viz"></div>
+  <div id="labels"></div>
+  <div class="inset-frame" id="insetframe"><span>As seen from Earth · true scale</span></div>
+  <div id="hud"></div>
+</section>
+<script type="module">
+import { orbitElements } from '/src/core/kepler.js';
+import { createFallbackViz } from '/src/viz/fallback2d.js';
+
+const q = new URLSearchParams(location.search);
+const claret = [0, 0.9, 0, -0.25];
+const COLORS = ['#ff8a5c', '#ffd166', '#7bdff2', '#b2f7a8', '#c9a7ff', '#ff9ecf', '#9fb4ff'];
+
+function trappist() {
+  const P = [1.51, 2.42, 4.05, 6.10, 9.21, 12.35, 18.77], A = [20.5, 28.1, 39.6, 52.0, 68.4, 83.2, 109], K = [0.085, 0.083, 0.060, 0.070, 0.079, 0.086, 0.057];
+  const I = [89.73, 89.78, 89.90, 89.79, 89.74, 89.74, 89.80], PH = [0, 0.31, 0.62, 0.17, 0.48, 0.83, 0.27];
+  const align = q.get('align') === '1', active = +(q.get('active') ?? 0);
+  // align=1: mid-transits staggered by a few minutes so that the discs are side by side or overlapping on the star at t = 0
+  const planets = P.map((per, i) => ({ el: orbitElements({ per, tmid: align ? (i - 3) * 0.004 : PH[i] * per, ars: A[i], inc: I[i], ecc: 0, omega: 0 }), rprs: K[i], name: 'TRAPPIST-1 ' + 'bcdefgh'[i], look: i === 0 ? 'lava' : 'earth', active: i === active, color: COLORS[i] }));
+  const a = planets[active];
+  return { el: a.el, rprs: a.rprs, claret, teff: 2566, name: a.name, look: a.look, hz: null, planets };
+}
+function hd80606() {
+  const el = orbitElements({ per: 111.4367, tmid: 0, ars: 94.45, inc: 89.27, ecc: 0.9313, omega: -58.7 });
+  return { el, rprs: 0.1, claret: [0, 0.75, 0, -0.2], teff: 5574, name: 'HD 80606 b', look: 'jupiter', hz: null };
+}
+function wide() {   // periods a factor of about 125 apart: a hot planet at a/R* = 8 and a cold one at 200 (e = 0.3)
+  const active = +(q.get('active') ?? 0);
+  const planets = [{ per: 3, ars: 8, inc: 88.5, ecc: 0, omega: 0, rprs: 0.1, look: 'jupiter' }, { per: 375, ars: 200, inc: 89.9, ecc: 0.3, omega: 110, rprs: 0.08, look: 'neptune' }]
+    .map((p, i) => ({ el: orbitElements({ ...p, tmid: i * 40 }), rprs: p.rprs, name: 'Wide ' + 'bc'[i], look: p.look, active: i === active, color: COLORS[i + 2] }));
+  const a = planets[active];
+  return { el: a.el, rprs: a.rprs, claret: [0, 0.8, 0, -0.2], teff: 5800, name: a.name, look: a.look, hz: null, planets };
+}
+function single() {   // a plain hot Jupiter, with a one-entry `planets` list: must look exactly like the list being absent
+  const el = orbitElements({ per: 2.15, tmid: 0, ars: 6.05, inc: 88.9, ecc: 0, omega: 0 });
+  const s = { el, rprs: 0.15, claret: [0, 0.8, 0, -0.2], teff: 6200, name: 'HAT-P-32 b', look: 'jupiter', hz: null };
+  if (q.get('list') === '1') s.planets = [{ el, rprs: 0.15, name: 'HAT-P-32 b', look: 'jupiter', active: true }];
+  return s;
+}
+
+const box = document.querySelector('#viz'), labels = document.querySelector('#labels'), inset = document.querySelector('#insetframe');
+let viz;
+if (q.get('fallback') === '1') viz = createFallbackViz(box, labels, inset, 'forced by ?fallback=1');
+else {
+  try { viz = await (await import('/src/viz/scene.js')).createViz(box, labels, inset, (err) => { console.error('render error', err); box.innerHTML = ''; viz = window.viz = createFallbackViz(box, labels, inset, String(err)); viz.setSystem(sysArg); }); }
+  catch (err) { console.warn('WebGL view failed, using the 2D fallback:', err); box.innerHTML = ''; viz = createFallbackViz(box, labels, inset, String(err)); }
+}
+const sysArg = ({ trappist, hd80606, single, wide })[q.get('sys') || 'trappist']();
+const o = {};
+for (const k of ['enlarge', 'hz', 'labels', 'inset', 'orbit', 'corridor', 'grid', 'glow', 'stars']) if (q.has(k)) o[k] = q.get(k) === '1';
+for (const k of ['fit', 'style', 'look']) if (q.has(k)) o[k] = q.get(k);
+if (Object.keys(o).length) viz.setOptions(o);
+viz.setSystem(sysArg);
+let t = sysArg.el.tmid + +(q.get('t') || 0);
+viz.setTime(t);
+if (q.has('view')) viz.setView(q.get('view'));
+if (q.has('highlight')) viz.highlight(q.get('highlight'), { fly: q.get('fly') === '1' });
+window.viz = viz; window.sysArg = sysArg;
+
+const rate = +(q.get('play') || 0), hud = document.querySelector('#hud');
+let last = performance.now(), frames = 0, fps = 0, acc = 0;
+(function tick(now) {
+  requestAnimationFrame(tick);
+  const dt = (now - last) / 1000; last = now; frames++; acc += dt;
+  if (acc > 0.5) { fps = frames / acc; frames = 0; acc = 0; }
+  if (rate) { t += rate * dt; window.viz.setTime(t); }
+  const info = window.viz.getInfo ? window.viz.getInfo() : {};
+  hud.textContent = `${window.viz.kind} · ${info.planets ?? '?'} planet(s) · t = ${(t - sysArg.el.tmid).toFixed(3)} d\n${info.drawCalls ?? '-'} draw calls · ${fps.toFixed(0)} fps`;
+})(last);
+</script>
+</body>
+</html>

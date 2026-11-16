@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Observe · Exoplanet Science Lab</title>
+<meta name="description" content="The sky from where you are: stars, planets, satellites and the stars that have planets, at any time.">
+<meta name="esl-root" content="../">
+<link rel="stylesheet" href="../src/site/site.css">
+<link rel="stylesheet" href="../src/sky/sky.css">
+</head>
+<body class="skypage">
+<header id="sitebar" data-active="observe"></header>
+<main id="sky">
+  <canvas id="gl" aria-label="The sky"></canvas>
+  <canvas id="labels" aria-hidden="true"></canvas>
+
+  <div class="sky-top">
+    <button id="locBtn" class="chip" title="Observing location">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.4"/></svg>
+      <span>Location</span>
+    </button>
+    <div id="find" class="find" role="combobox" aria-expanded="false" aria-owns="findList" aria-haspopup="listbox">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5"/></svg>
+      <input id="findInput" type="search" placeholder="Find a planet, star or host" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Find a target in the sky" aria-controls="findList" aria-autocomplete="list">
+      <ul id="findList" class="findlist" role="listbox" hidden></ul>
+    </div>
+    <span class="grow"></span>
+    <button id="vrBtn" class="chip" title="Stand inside the sky in a VR headset (WebXR)" hidden>VR</button>
+    <button id="ptBtn" class="chip" title="The sky over the camera image, on devices with WebXR passthrough" hidden>Passthrough</button>
+    <button id="arBtn" class="chip" title="Follow where the phone points" hidden>AR</button>
+    <a class="chip" href="photometry/" title="Measure brightness from images">Photometry</a>
+  </div>
+
+  <div id="locPanel" class="panel" hidden>
+    <h3>Observing location</h3>
+    <div class="fields">
+      <label>Latitude <input id="lat" type="number" min="-90" max="90" step="any" inputmode="decimal"> <small>north positive</small></label>
+      <label>Longitude <input id="lon" type="number" min="-180" max="180" step="any" inputmode="decimal"> <small>east positive</small></label>
+    </div>
+    <div class="row"><button id="locSave" class="btn primary">Set</button><button id="locGeo" class="btn">Use my position</button></div>
+    <p id="locMsg" class="note" aria-live="polite"></p>
+    <p class="note">The position is kept in this browser only (localStorage). Nothing is sent to a server.</p>
+  </div>
+
+  <div id="info" class="panel info" hidden>
+    <button class="x" id="infoClose" aria-label="Close">×</button>
+    <div id="cardHead" class="card-head" title="Tap to fold or unfold"></div>
+    <div id="cardLive" class="grid card-live"></div>
+    <div id="cardActions" class="card-actions"></div>
+    <div id="cardTransit" class="card-transit"></div>
+    <div id="cardBody" class="card-body"></div>
+  </div>
+  <div id="xrOverlay" class="xr-overlay" hidden><button id="xrExit" class="chip">Exit</button></div>
+  <div id="terrainNote" class="terrain-note" hidden>
+    <button id="terrainMore" class="linklike" aria-expanded="false">Terrain data: Mapzen, USGS and others</button>
+    <div id="terrainSources" class="panel terrain-sources" hidden></div>
+  </div>
+  <div id="status" class="status" role="status" hidden></div>
+
+  <div id="arBar" class="arbar" hidden>
+    <span class="note">Compass off? Put the cross on one of these and tap it:</span>
+    <span id="arTargets" class="targets"></span>
+    <button id="arReset" class="chip">Reset</button>
+    <button id="arExit" class="chip">Exit AR</button>
+  </div>
+
+  <div id="timePanel" class="panel timepanel" hidden>
+    <h3>Date and time</h3>
+    <label>Local date and time <input id="dt" type="datetime-local" step="1"></label>
+    <label>Time of day <input id="tod" type="range" min="0" max="1439" step="1"></label>
+    <div class="fields">
+      <label>Play at <select id="rate"><option value="night">the night in 40 s</option><option value="1" selected>real time</option><option value="60">1 min / s</option><option value="600">10 min / s</option><option value="3600">1 hour / s</option><option value="21600">6 hours / s</option><option value="86400">1 day / s</option></select></label>
+      <label>Step by <select id="step"><option value="60000">1 minute</option><option value="600000">10 minutes</option><option value="3600000" selected>1 hour</option><option value="86400000">1 day</option><option value="86164090.5">1 sidereal day</option><option value="604800000">1 week</option></select></label>
+    </div>
+    <p class="note">Drag the clock sideways to scrub. Times are in this browser's time zone.</p>
+  </div>
+
+  <div id="nightBar" class="nightbar" hidden>
+    <button id="nightPlay" class="chip" title="Run from sunset to sunrise (and across the transit) in 40 seconds">Play the night</button>
+    <div class="nightwrap"><canvas id="nightCanvas" aria-label="The night: twilight, the altitude of the target and the transit window. Drag to change the time."></canvas></div>
+    <div id="nightLabel" class="nightlabel"></div>
+  </div>
+
+  <footer class="sky-bar">
+    <div id="layers" class="layers" role="toolbar" aria-label="Layers"></div>
+    <div class="timebox">
+      <button id="back" class="tbtn" title="Step back"></button>
+      <button id="play" class="tbtn" title="Pause"></button>
+      <button id="fwd" class="tbtn" title="Step forward"></button>
+      <button id="now" class="tbtn text" title="Return to the present, in real time">Now</button>
+      <div id="readout" class="readout" role="button" tabindex="0" title="Drag to scrub time, tap for more">
+        <div class="l1"><span id="clock">--:--:--</span></div>
+        <div class="l2"><span id="date"></span></div>
+        <div class="l3"><span id="utc"></span></div>
+      </div>
+    </div>
+  </footer>
+</main>
+<script type="module" src="../src/site/nav.js"></script>
+<script type="module" src="../src/sky/main.js"></script>
+</body>
+</html>

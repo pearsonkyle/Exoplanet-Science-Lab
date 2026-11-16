@@ -356,21 +356,60 @@ export function readLDTable(text) {
  * tie = { law, source: 'grey' | 'grid', band: [nm, nm], grid, filter, logg, teffRange: [lo, hi], fehRange: [lo, hi] }
  */
 export function makeLDTie(tie) {
-  const nT = 17, [t0, t1] = tie.teffRange, useZ = tie.source === 'grid';
-  const nZ = useZ ? 7 : 1, [z0, z1] = tie.fehRange || [0, 0];
+  const [t0, t1] = tie.teffRange, useZ = tie.source === 'grid', [z0, z1] = tie.fehRange || [0, 0];
   const at = (T, Z) => (tie.source === 'grid' ? interpLDGrid(tie.grid, T, tie.logg, Z, tie.filter).coeffs : fitLaw(tie.law, greyProfile(T, tie.band[0], tie.band[1], { nmu: 40 })).coeffs);
+  // Knots: 17 (Teff) and 7 ([Fe/H]) evenly spaced points, as before, plus, for a table, every node of the
+  // table inside the range. interpLDGrid is linear between nodes, so with the nodes among the knots the
+  // tie reproduces it exactly wherever the cell is complete, however wide the prior. Evenly spaced points
+  // alone cut the corners at the nodes: 0.004 rms in I(mu) for an M dwarf with a 2000 K wide prior, 0.02
+  // for a prior spanning the whole table (test/ldspec.test.mjs measures both).
+  const ix = useZ ? indexFor(tie.grid, tie.filter) : null;
+  const Ts = tieKnots(t0, t1, 17, ix && ix.teff), Zs = useZ ? tieKnots(z0, z1, 7, ix.feh) : Float64Array.of(z0, z0);
+  const nT = Ts.length, nZ = useZ ? Zs.length : 1;
   const nc = at(0.5 * (t0 + t1), 0.5 * (z0 + z1)).length, tab = new Float64Array(nT * nZ * nc);
-  for (let i = 0; i < nT; i++) for (let j = 0; j < nZ; j++) tab.set(at(t0 + ((t1 - t0) * i) / (nT - 1), nZ > 1 ? z0 + ((z1 - z0) * j) / (nZ - 1) : z0), (i * nZ + j) * nc);
-  return (teff, feh, out) => {
-    let x = ((teff - t0) / (t1 - t0)) * (nT - 1); x = x < 0 ? 0 : x > nT - 1 ? nT - 1 : x;
-    const i = Math.min(nT - 2, Math.floor(x)), fx = x - i;
-    let j = 0, fy = 0;
-    if (nZ > 1) { let y = ((feh - z0) / (z1 - z0)) * (nZ - 1); y = y < 0 ? 0 : y > nZ - 1 ? nZ - 1 : y; j = Math.min(nZ - 2, Math.floor(y)); fy = y - j; }
-    for (let k = 0; k < nc; k++) {
-      const a = tab[(i * nZ + j) * nc + k], b = tab[((i + 1) * nZ + j) * nc + k];
-      if (nZ > 1) { const c = tab[(i * nZ + j + 1) * nc + k], d = tab[((i + 1) * nZ + j + 1) * nc + k]; out[k] = (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy; }
-      else out[k] = a * (1 - fx) + b * fx;
+  for (let i = 0; i < nT; i++) for (let j = 0; j < nZ; j++) tab.set(at(Ts[i], Zs[j]), (i * nZ + j) * nc);
+  return tabulatedTie({ teff: Ts, feh: nZ > 1 ? Zs : null, nc, tab });
+}
+
+/** Sorted knots on [lo, hi]: n evenly spaced points and those of `nodes` strictly inside. Always at least two. */
+function tieKnots(lo, hi, n, nodes) {
+  const k = []; for (let i = 0; i < n; i++) k.push(lo + ((hi - lo) * i) / (n - 1));
+  if (nodes) for (const x of nodes) if (x > lo && x < hi) k.push(x);
+  k.sort((a, b) => a - b);
+  const tol = 1e-9 * Math.max(1, Math.abs(lo), Math.abs(hi)), out = [k[0]];
+  for (const x of k) if (x - out[out.length - 1] > tol) out.push(x);
+  if (out.length < 2) out.push(out[0]);
+  return Float64Array.from(out);
+}
+
+/**
+ * The function a fit calls: (teff, feh, out) -> out, coefficients interpolated bilinearly in a table
+ * { teff: knots, feh: knots or null, nc, tab } with tab[(iTeff * nFeh + iFeh) * nc + k]. Knots need not be
+ * evenly spaced; arguments outside them are clamped. It allocates nothing and costs about 10 ns a call:
+ * the interval is found from an evenly spaced index (four cells per knot) and at most a few steps.
+ */
+export function tabulatedTie({ teff, feh, nc, tab }) {
+  const index = (k) => {
+    const n = k.length, lo = k[0], span = k[n - 1] - lo, m = 4 * n, lut = new Int32Array(m), inv = span > 0 ? m / span : 0;
+    for (let c = 0, i = 0; c < m; c++) { const x = lo + (span * c) / m; while (i < n - 2 && k[i + 1] <= x) i++; lut[c] = i; }
+    return { k, n, lo, inv, lut, m };
+  };
+  const X = index(teff), Y = feh ? index(feh) : null, nZ = feh ? feh.length : 1;
+  const xk = X.k, xl = X.lut, yk = Y ? Y.k : null, yl = Y ? Y.lut : null;
+  return (T, Z, out) => {
+    let c = ((T - X.lo) * X.inv) | 0; c = c < 0 ? 0 : c >= X.m ? X.m - 1 : c;
+    let i = xl[c]; while (i < X.n - 2 && xk[i + 1] <= T) i++;
+    let fx = xk[i + 1] > xk[i] ? (T - xk[i]) / (xk[i + 1] - xk[i]) : 0; fx = fx < 0 ? 0 : fx > 1 ? 1 : fx;
+    if (yk === null) {
+      const p = i * nc;
+      for (let k = 0; k < nc; k++) out[k] = tab[p + k] * (1 - fx) + tab[p + nc + k] * fx;
+      return out;
     }
+    c = ((Z - Y.lo) * Y.inv) | 0; c = c < 0 ? 0 : c >= Y.m ? Y.m - 1 : c;
+    let j = yl[c]; while (j < Y.n - 2 && yk[j + 1] <= Z) j++;
+    let fy = yk[j + 1] > yk[j] ? (Z - yk[j]) / (yk[j + 1] - yk[j]) : 0; fy = fy < 0 ? 0 : fy > 1 ? 1 : fy;
+    const p = (i * nZ + j) * nc, q = p + nZ * nc;
+    for (let k = 0; k < nc; k++) out[k] = (tab[p + k] * (1 - fx) + tab[q + k] * fx) * (1 - fy) + (tab[p + nc + k] * (1 - fx) + tab[q + nc + k] * fx) * fy;
     return out;
   };
 }

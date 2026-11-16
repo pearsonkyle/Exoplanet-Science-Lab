@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- Standalone harness for the detrending diagnostics (src/photometry/diagnostics.js on numbers from src/core/psd.js),
+     served by the Vite dev server:  test/diagnostics_harness.html  (&surface=gp for the Gaussian-process surface
+     instead of the order-2 polynomial; &light=1 for a light theme; &uneven=1 for a ground-based-like night:
+     400 unevenly spaced points, Lomb-Scargle PSD).
+     The data are syntheticRollSeries(): a K2-like series with a known intrapixel sensitivity and a 5.88 h roll.
+     window.diag holds the numbers that were drawn. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ESL diagnostics harness</title>
+<style>
+  html, body { margin: 0; background: #0b0f18; }
+  body.light { background: #fff; }
+  .row { display: flex; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<div class="row"><canvas id="psd0"></canvas><canvas id="psd1"></canvas></div>
+<div class="row"><canvas id="rms0"></canvas><canvas id="rms1"></canvas></div>
+<div class="row"><canvas id="map"></canvas></div>
+<script type="module">
+import { periodogramPsd, lombScarglePsd, logBinPsd, fitRedNoise, whiteNoiseLevel, photonNoiseLevel, rmsVsBin, pixelMap, polySurface, gpSurface, syntheticRollSeries } from '../src/core/psd.js';
+import { renderPsd, renderRmsBin, renderPixelMap } from '../src/photometry/diagnostics.js';
+import { PHOT_THEME } from '../src/photometry/plots.js';
+
+const q = new URLSearchParams(location.search), light = q.get('light') === '1', uneven = q.get('uneven') === '1';
+const theme = light ? { ...PHOT_THEME, bg: '#ffffff', frame: '#9aa3b5', grid: '#e4e7ee', text: '#4b5568', strong: '#111827', data: '#374151', model: '#0b77c2', star: '#b26a00', ok: '#16794a', post: '#6d3fc9' } : PHOT_THEME;
+if (light) { document.body.classList.add('light'); document.documentElement.style.background = '#fff'; }
+function canvas(id, w, h) { const cv = document.getElementById(id), dpr = 2; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return ctx; }
+
+let S = syntheticRollSeries();
+if (uneven) {   // keep 400 of the first 700 cadences at random and jitter the times: uneven sampling
+  let s = 12345; const u = () => { s = (Math.imul(1664525, s) + 1013904223) >>> 0; return s / 4294967296; };
+  const idx = []; for (let i = 0; i < 700; i++) if (u() < 400 / 700) idx.push(i);
+  const pick = (a) => Float64Array.from(idx, (i) => a[i]);
+  S = { ...S, t: Float64Array.from(idx, (i) => S.t[i] + 0.3 * S.dt * (u() - 0.5)), x: pick(S.x), y: pick(S.y), resid: pick(S.resid), err: pick(S.err), sys: pick(S.sys) };
+}
+const n = S.resid.length, photonSigma = 1.5e-4;
+const pm = pixelMap(S.x, S.y, S.resid, { nx: 28, ny: 14 });
+const useGp = q.get('surface') === 'gp';
+const surf = useGp ? gpSurface([S.x, S.y], S.resid, null, pm.grid, { maxHyper: 250, maxCond: 600 }) : polySurface(S.x, S.y, S.resid, 2, null, { grid: pm.grid });
+const trend = useGp ? surf.trend : surf.fitted, clean = Float64Array.from(S.resid, (v, i) => v - trend[i]);
+const meanOf = (a) => a.reduce((s, v) => s + v, 0) / a.length, m0 = meanOf(S.resid), m1 = meanOf(clean);
+const spectrum = (r) => (uneven ? lombScarglePsd(S.t, r) : periodogramPsd(r, S.dt));
+const marks = [{ f: 1 / S.rollPeriod, label: 'roll 5.88 h' }, { f: 1 / (3 / 24), label: 'transit 3 h' }];
+const W2 = 700, out = { n, surface: useGp ? 'gp' : 'poly2', rmsBefore: surf.rmsBefore, rmsAfter: surf.rmsAfter };
+[[S.resid, 'psd0', 'rms0', 'before detrending'], [clean, 'psd1', 'rms1', `after removing the ${useGp ? 'GP' : 'order-2 polynomial'} surface`]].forEach(([r, idPsd, idRms, label], k) => {
+  const sp = spectrum(r), f = sp.f, p = sp.p, lb = logBinPsd(f, p, 28), fit = fitRedNoise(lb.f, lb.p, { nAvg: lb.n });
+  const dt = uneven ? sp.dt : S.dt, white = whiteNoiseLevel(S.err, dt), photon = photonNoiseLevel(photonSigma, dt);
+  renderPsd(canvas(idPsd, W2, 300), W2, 300, { f, p, binned: lb, white, photon, fit, marks, fUnit: '1/d', pScale: 1e12, yLabel: 'PSD (ppm² d)', title: `Residual power spectrum, ${label}` }, theme);
+  const rb = rmsVsBin(r, uneven ? { dt } : { dt, t: S.t });
+  renderRmsBin(canvas(idRms, W2, 250), W2, 250, { n: rb.n, rms: rb.rms, expected: rb.expected, rmsErr: rb.rmsErr, dt, beta: { value: rb.beta, n: rb.nBeta }, title: `Time averaging, ${label}` }, theme);
+  out[k ? 'after' : 'before'] = { fit: { W: fit.W, A: fit.A, gamma: fit.gamma, knee: fit.knee, red: fit.red, deltaCost: fit.deltaCost }, white, photon, beta: rb.beta, nBeta: rb.nBeta, beta12: rb.betaAt(12) };
+});
+renderPixelMap(canvas('map', 1400, 330), 1400, 330, { map: Float64Array.from(pm.mean, (v) => v - m0), surface: Float64Array.from(surf.surface, (v) => v - m0), x: S.x, y: S.y, grid: pm.grid, count: pm.count,
+  title: `Pixel map: mean residual against the centroid (${n} points, ${pm.grid.nx} × ${pm.grid.ny} bins; mean removed)`, titles: ['binned residuals', useGp ? 'removed surface (Gaussian process)' : 'removed surface (order-2 polynomial)', 'binned residuals − surface'] }, theme);
+window.diag = out;
+</script>
+</body>
+</html>

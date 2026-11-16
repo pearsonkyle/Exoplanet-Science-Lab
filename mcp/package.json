@@ -1,0 +1,16 @@
+{
+  "name": "exoplanet-science-lab-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Exoplanet Science Lab: build, fit and summarise transit, radial-velocity and timing analyses as ESL session documents, without a browser.",
+  "type": "module",
+  "private": true,
+  "bin": { "esl-mcp": "./server.mjs" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node test.mjs"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0"
+  }
+}

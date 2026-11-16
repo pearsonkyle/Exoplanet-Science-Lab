@@ -6,6 +6,9 @@ import { LD_LAWS, toClaret, checkProfile } from './limbdark.js';
 import { makeTransform } from './priors.js';
 import { derived, orbitElements, eclipseTime } from './kepler.js';
 import { makeRV, semiAmplitude, arsFromKepler } from './rv.js';
+import { makePlanetMoonTransit, moonParamsFrom, moonSupersample, MOON_PARAMS, moonKey } from './exomoon.js';
+import { makePhaseCurve, PHASE_PARAMS, PHASE_FIELDS, mapKeys } from './phasecurve.js';
+import { dynamicalModel } from './nbody.js';
 import { makeLDTie } from './ldest.js';
 
 export const PARAMS = [
@@ -36,8 +39,13 @@ export const STAR_PARAMS = [
 export function autoSupersample(exptimeDays, values) {
   if (!(exptimeDays > 0)) return 1;
   const d = derived(values), tau = Math.max((d.t14 - d.t23) / 2, 1e-4);
-  if (exptimeDays < tau / 8) return 1;
-  return Math.min(15, 2 * Math.ceil((1.5 * exptimeDays) / tau) + 1);
+  // Averaging n evenly spaced samples of a curve leaves an error of about (curvature) x (exposure / n)^2 / 24.
+  // During ingress the flux changes by the depth over tau and its curvature is of order 4 depth / tau^2, so
+  // n = (exposure / tau) sqrt(depth / (6 tol)) keeps the error near tol = 1 ppm. (The old rule of thumb left
+  // up to 18 ppm for a hot Jupiter at 2 and 30 minute cadence.)
+  const n = Math.ceil((exptimeDays / tau) * Math.sqrt(Math.max(d.depth, 1e-6) / 6e-6));
+  if (n <= 1) return 1;
+  return Math.min(41, n % 2 ? n : n + 1);
 }
 
 // Parameters of the star's motion and of each radial-velocity dataset, and the stellar mass and radius
@@ -52,7 +60,12 @@ export const MASS_PARAMS = [
   { key: 'rstar', label: 'R★', unit: 'R☉', min: 0.05, max: 10, step: 0.001, digits: 3, star: true, help: 'Stellar radius. Turns the semi-major axis into a/R★' },
 ];
 
-export const PARAM_BY_KEY = Object.fromEntries([...PARAMS, ...RV_PARAMS, ...MASS_PARAMS].map((p) => [p.key, p]));
+export const PARAM_BY_KEY = Object.fromEntries([...PARAMS, ...RV_PARAMS, ...MASS_PARAMS, ...MOON_PARAMS, ...PHASE_PARAMS].map((p) => [p.key, p]));
+export { MOON_PARAMS, moonKey, PHASE_PARAMS, PHASE_FIELDS };
+/** Which phase-curve parameters a planet has for a phase description { mode: 'harmonic' | 'map', lmax }. */
+export function phaseKeysFor(ph = {}) {
+  return ph.mode === 'map' ? ['fpfs', ...mapKeys(Math.min(3, Math.max(1, ph.lmax || 1))), 'ellip', 'beam'] : ['fpfs', 'contrast', 'hotspot', 'h2c', 'h2s', 'ellip', 'beam'];
+}
 
 /** Key of a planet-level parameter: the first planet (suffix '') is unscoped, others are "name@c". */
 export const planetKey = (field, sfx) => (sfx ? field + '@' + sfx : field);
@@ -72,6 +85,8 @@ export const paramFor = (key) => PARAM_BY_KEY[key.split('@')[0]];
  * opts.kepler:  a/R* follows from Kepler's law, so `ars` is not a parameter and M*, R* are
  * opts.mass:    list the planet mass (needed with velocities or opts.kepler)
  * opts.rv:      names of the radial-velocity datasets; adds the trend terms and one jitter each
+ * opts.moons:   suffixes of the planets that have a moon; adds that moon's radius, period, phase, mass ratio and tilt
+ * opts.phase:   { [sfx]: { mode, lmax } } for the planets whose own light is modelled (eclipse, phase curve, map)
  */
 export function activeParams(ldLaw, air, opts = {}) {
   const n = LD_LAWS[ldLaw].names.length, planets = opts.planets && opts.planets.length ? opts.planets : [{ sfx: '', letter: '' }], many = planets.length > 1;
@@ -82,6 +97,10 @@ export function activeParams(ldLaw, air, opts = {}) {
     if (p.key === 'mplanet' && !(opts.mass || opts.kepler)) continue;
     out.push({ ...p, key: planetKey(p.key, pl.sfx), base: p.key, planet: pl.sfx, label: many ? `${p.label} · ${pl.letter}` : p.label, group: 'planet' });
   }
+  // a moon belongs to its planet: its keys carry the planet's scope ("rmoon", "rmoon@c")
+  for (const pl of planets) if ((opts.moons || []).includes(pl.sfx)) for (const p of MOON_PARAMS) { if (p.optional) continue; out.push({ ...p, key: moonKey(p.key, pl.sfx), base: p.key, planet: pl.sfx, label: many ? `${p.label} · ${pl.letter}` : p.label, group: 'moon' }); }
+  // the planet's own light: its keys carry the planet's scope as well ("fpfs", "fpfs@c")
+  for (const pl of planets) if (opts.phase && opts.phase[pl.sfx]) for (const k of phaseKeysFor(opts.phase[pl.sfx])) { const p = PARAM_BY_KEY[k]; out.push({ ...p, key: planetKey(k, pl.sfx), base: k, planet: pl.sfx, label: many ? `${p.label} · ${pl.letter}` : p.label, group: 'phase' }); }
   for (const p of PARAMS) if (p.ld !== undefined && p.ld < n) out.push({ ...p, base: p.key, label: LD_LAWS[ldLaw].names[p.ld], group: 'ld' });
   if (Array.isArray(air) && air.length > 1) air.forEach((has, s) => { if (has) out.push({ ...PARAM_BY_KEY.a2, key: epochKey(s), base: 'a2', label: `airmass k · epoch ${s + 1}`, epoch: s, group: 'baseline' }); });
   else if (Array.isArray(air) ? air[0] : air) out.push({ ...PARAM_BY_KEY.a2, base: 'a2', group: 'baseline' });
@@ -134,6 +153,12 @@ export const PLANET_FIELDS = ['rprs', 'ars', 'inc', 'per', 'tmid', 'ecc', 'omega
  * keys (rprs, per, ...); planet 'c' reads "rprs@c", "per@c", ... and falls back to the plain key
  * for anything not given. Limb darkening belongs to the star and is shared.
  *
+ * A planet's own light: when values has "fpfs" (or "fpfs@c"), that planet's curve is the transit, the eclipse and the
+ * phase curve of phasecurve.js, with spec.phase = { mode: 'harmonic' | 'map', lmax, ltt, angle, positive_map }.
+ * A planet with a moon: when values has "rmoon" (or "rmoon@c"), that planet's transit is the planet-moon model of
+ * exomoon.js (the pair about its barycentre, the union of the two discs on the star). An unbound or overlapping
+ * configuration is outside the prior.
+ *
  * spec.kepler: a/R* of each planet is not a parameter but follows from Kepler's third law with
  * values.mstar [M Sun], values.rstar [R Sun] and the planet's mass, so photometry, velocities
  * and timing describe one orbit.
@@ -142,6 +167,12 @@ export const PLANET_FIELDS = ['rprs', 'ars', 'inc', 'per', 'tmid', 'ecc', 'omega
  * with K_p from "K" when given, else from mplanet, mstar, P, e, i (rv.js). Each dataset d has its
  * own zero point gamma_d, integrated out analytically like a1, and its own jitter "jit@rv<d>"
  * added in quadrature to the errors (the normalisation term keeps it from growing freely).
+ *
+ * spec.nbody = { epoch, event, dt, stepsPerOrbit, integrator, exactSync, corrector }: the planets pull on each other. Mid-transit times and
+ * radial velocities then come from an N-body integration (nbody.js) started from the planets' parameters, read as
+ * osculating elements at `epoch` (same time system as tmid). Every planet needs a mass and the star its mass. With all
+ * planet masses zero this is the Keplerian model. With nbody.linear each planet's simulated times are shifted and stretched
+ * by a best-fitting straight line in epoch (profiled), so the T0 and period of a planet with times need not be sampled. Light curves and mid-eclipse times stay Keplerian (no photodynamics yet).
  *
  * Timing: mid-transit or mid-eclipse times of a planet, compared with tmid + E P (or the
  * superior conjunction + E P), E the nearest whole orbit; spec.timingNoise [d] is added in quadrature.
@@ -178,6 +209,10 @@ export function buildProblem(spec) {
   const names = sfx.map((s) => Object.fromEntries(PLANET_FIELDS.map((fld) => [fld, s && has(planetKey(fld, s)) ? planetKey(fld, s) : fld])));
   const pv = sfx.map(() => ({ rprs: 0, ars: 0, inc: 0, per: 0, tmid: 0, ecc: 0, omega: 0, mplanet: 0, K: undefined }));
   const fluxes = new Array(nPl), lcPl = nPl > 1 ? sfx.map(() => new Float64Array(N)) : null;
+  // phase curves: a planet has one when its "fpfs" is defined; its keys are scoped like the moon's (never shared between planets)
+  const phKeys = sfx.map((s) => Object.fromEntries(PHASE_FIELDS.map((k) => [k, planetKey(k, s)])));
+  const sp = spec.phase || {}, phOpts = { ltt: !!sp.ltt && spec.values.rstar > 0, phase: sp.angle === 'time' ? 'time' : 'orbit', positiveMap: !!sp.positive_map };
+  if (sp.mode) phOpts.map = sp.mode === 'map';
 
   // ---- radial velocities
   const rvs = spec.rv || [], nRv = rvs.length;
@@ -192,6 +227,10 @@ export function buildProblem(spec) {
   const tim = (spec.timing || []).map((x) => ({ ...x, p: Math.max(0, sfx.indexOf(x.planet || '')), model: new Float64Array(x.t.length), epoch: new Int32Array(x.t.length) }));
   const tNoise2 = (spec.timingNoise || 0) ** 2;
   const els = new Array(nPl);
+  // ---- N-body: which timing sets and velocities the integration predicts
+  const nb = spec.nbody || null, timDyn = nb ? tim.filter((x) => x.kind !== 'eclipse') : [];
+  const dynReq = nb ? { timing: timDyn.map((x) => ({ planet: x.p, t: x.t })), rv: rvs.map((d) => ({ t: d.t })), event: nb.event || 'conjunction', dt: nb.dt, stepsPerOrbit: nb.stepsPerOrbit, integrator: nb.integrator, exactSync: nb.exactSync, corrector: nb.corrector } : null;
+  let dyn = null;
 
   function evaluate(theta) {
     for (let i = 0; i < keys.length; i++) v[keys[i]] = theta[i];
@@ -212,7 +251,14 @@ export function buildProblem(spec) {
           const prof = checkProfile(toClaret(tp.ldLaw, tp.ld), 24);
           if (!prof.ok) return null;                      // negative or limb-brightened profiles are outside the prior
         }
-        fluxes[p] = makeTransit(tp);
+        const moon = moonParamsFrom(v, sfx[p], { mplanet: q.mplanet, mstar: v.mstar });
+        if (v[phKeys[p].fpfs] !== undefined && v[phKeys[p].fpfs] !== null) {
+          // the planet's own light: transit, eclipse and the phase curve between them (phasecurve.js)
+          const pp = { ...tp, rstar: v.rstar }; for (const k of PHASE_FIELDS) { const x = v[phKeys[p][k]]; if (x !== undefined && x !== null) pp[k] = x; }
+          if (pp.fpfs < 0) return null;
+          const pc = makePhaseCurve(pp, phOpts); if (!pc.ok) return null; fluxes[p] = pc;
+        } else if (moon) { const fm = makePlanetMoonTransit({ ...tp, ...moon }); if (!fm.ok) return null; fluxes[p] = fm; }
+        else fluxes[p] = makeTransit(tp);
       }
       if (tim.length) els[p] = orbitElements(q);
       if (nRv) {
@@ -222,6 +268,10 @@ export function buildProblem(spec) {
       }
     }
     if (data) ldArr = tie ? tp0.ld.slice() : null;
+    if (nb && (timDyn.length || nRv)) {
+      dyn = dynamicalModel({ mstar: v.mstar, rstar: v.rstar, epoch: nb.epoch, planets: pv.map((q) => ({ per: q.per, tmid: q.tmid, ecc: q.ecc, omega: q.omega, inc: q.inc, mplanet: q.mplanet || 0 })) }, dynReq);
+      if (!dyn.ok) return null;                           // unbound, a close encounter, or a planet that stopped transiting
+    }
 
     let chi2 = 0, lnL = lnNorm, chi2lc = 0, chi2rv = 0, chi2tim = 0;
     // ---- light curve
@@ -259,7 +309,8 @@ export function buildProblem(spec) {
       let sw = 0, swr = 0, swrr = 0, lns = 0;
       for (let i = 0; i < n; i++) {
         const dt = D.t[i] - rvTref; let m = lin * dt + quad * dt * dt;
-        for (let p = 0; p < nPl; p++) { const x = rvFns[p](D.t[i]); rvPl[d][p][i] = x; m += x; }
+        for (let p = 0; p < nPl; p++) { const x = rvFns[p](D.t[i]); rvPl[d][p][i] = x; if (!dyn) m += x; }
+        if (dyn) m += dyn.rv[d][i];                       // the star's reflex motion from the integration; rvPl keeps the Keplerian parts for plots
         mod[i] = m;
         const s2 = D.e[i] * D.e[i] + jit * jit, wi = 1 / s2, r = D.v[i] - m;
         sw += wi; swr += wi * r; swrr += wi * r * r; lns += Math.log(s2);
@@ -270,9 +321,18 @@ export function buildProblem(spec) {
     }
     // ---- timing
     for (const x of tim) {
-      const el = els[x.p], t0 = x.kind === 'eclipse' ? eclipseTime(el) : el.tmid;
+      const el = els[x.p], t0 = x.kind === 'eclipse' ? eclipseTime(el) : el.tmid, dk = dyn ? timDyn.indexOf(x) : -1, dt = dk >= 0 ? dyn.timing[dk] : null;
+      // nbody.linear: a straight line in epoch (a shift and a stretch of this planet's simulated times) is fitted to the
+      // residuals by weighted least squares, so its own T0 and period need not be sampled. Profiled, not marginalised.
+      let l0 = 0, l1 = 0, eM = 0;
+      if (dt && nb.linear && x.t.length > 2) {
+        let sw = 0, se = 0; for (let i = 0; i < x.t.length; i++) { const wi = 1 / (x.e[i] * x.e[i] + tNoise2); sw += wi; se += wi * dt.epoch[i]; }
+        eM = se / sw; let a = 0, b = 0, c = 0, d = 0, g = 0;
+        for (let i = 0; i < x.t.length; i++) { const wi = 1 / (x.e[i] * x.e[i] + tNoise2), Ei = dt.epoch[i] - eM, ri = x.t[i] - dt.model[i]; a += wi; b += wi * Ei; c += wi * Ei * Ei; d += wi * ri; g += wi * Ei * ri; }
+        const det = a * c - b * b; if (det > 0) { l0 = (c * d - b * g) / det; l1 = (a * g - b * d) / det; }
+      }
       for (let i = 0; i < x.t.length; i++) {
-        const E = Math.round((x.t[i] - t0) / el.per), m = t0 + E * el.per, s2 = x.e[i] * x.e[i] + tNoise2, r = x.t[i] - m;
+        const E = dt ? dt.epoch[i] : Math.round((x.t[i] - t0) / el.per), m = dt ? dt.model[i] + l0 + l1 * (E - eM) : t0 + E * el.per, s2 = x.e[i] * x.e[i] + tNoise2, r = x.t[i] - m;
         x.model[i] = m; x.epoch[i] = E;
         chi2tim += (r * r) / s2; lnL += -0.5 * (r * r) / s2 - 0.5 * (Math.log(s2) + 1.8378770664093453);
       }

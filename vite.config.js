@@ -4,7 +4,8 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   base: './',
   worker: { format: 'es' },
-  build: { target: 'es2022' },
+  // one HTML entry per section: real folders, so the site needs no rewrite rules on a static host
+  build: { target: 'es2022', rollupOptions: { input: Object.fromEntries(['index', 'plan/index', 'observe/index', 'observe/photometry/index', 'analyze/index', 'search/index', 'validation/index'].map((p) => [p.replace('/index', '').replace('/', '-') || 'index', p + '.html'])) } },
   // Dev only: the NASA Exoplanet Archive sends no CORS headers, so a live query from the page goes through
   // /nea/TAP/sync?query=...&format=json. The deployed site uses the static snapshot in public/catalog instead
   // (tools/build_catalog.py).

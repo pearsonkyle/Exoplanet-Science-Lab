@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Validation · Exoplanet Science Lab</title>
+<meta name="description" content="Exoplanet Science Lab's transit, orbit, radial-velocity and sampling routines compared with batman, PyTransit, exoplanet-core, PyAstronomy, ellc, pylightcurve, EXOTIC, pyaneti, radvel, emcee, dynesty and UltraNest and with a 30-digit reference: results, weaknesses, how each comparison was run, and references.">
+<meta name="esl-root" content="../">
+<link rel="stylesheet" href="../src/site/site.css">
+<link rel="stylesheet" href="../src/validation/validation.css">
+</head>
+<body class="page">
+<header id="sitebar" data-active="validation"></header>
+<main id="val">
+  <header class="vhead">
+    <h1>Validation</h1>
+    <p class="lead">Can the numbers this site computes be trusted? Every model the analyzer fits with is compared here with twelve
+      independent codes and a reference accurate to 30 digits. Their answers are stored; this site’s side is recomputed in your
+      browser each time the page opens.</p>
+    <p class="vmeta" id="readtime">About 8 minutes to read</p>
+    <p id="status" class="vstatus" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span>Loading the stored references and recomputing…</p>
+  </header>
+
+  <div class="vlayout">
+    <nav id="toc" class="vtoc" aria-label="On this page">
+      <h2>On this page</h2>
+      <ol>
+        <li><a href="#summary">The short version</a></li>
+        <li><a href="#weaker">Where this code is weaker</a></li>
+        <li><a href="#outliers">Where another code is the outlier</a></li>
+        <li><a href="#comparisons">The four comparisons</a>
+          <ol>
+            <li><a href="#transit">The dimming of the star</a></li>
+            <li><a href="#orbit">The orbit and its timing</a></li>
+            <li><a href="#rv">The star’s velocity</a></li>
+            <li><a href="#fits">Fits and their error bars</a></li>
+          </ol></li>
+        <li><a href="#project">Checks elsewhere in the project</a></li>
+        <li><a href="#reproduce">Reproduce it</a></li>
+        <li><a href="#limits">What has not been tested</a></li>
+        <li><a href="#references">References</a></li>
+      </ol>
+    </nav>
+
+    <div id="sections">
+      <section id="summary">
+        <h2><span class="n">1</span>The short version</h2>
+        <p>Four things are tested: how much a star dims when a planet crosses it; where the planet is on its orbit, and when; how
+          fast the star moves toward and away from us; and whether a fit returns the right values with honest error bars.</p>
+        <p>Every code gets identical inputs. The answers are compared with a reference computed independently of all of them (the
+          orbit in 30-digit arithmetic, the blocked light by numerical integration), against tolerances fixed in advance.</p>
+        <div class="vbody"></div>
+      </section>
+
+      <section id="weaker">
+        <h2><span class="n">2</span>Where this code is weaker, or wrong</h2>
+
+        <div class="vbody"></div>
+      </section>
+
+      <section id="outliers">
+        <h2><span class="n">3</span>Where another code is the outlier</h2>
+        <p>When codes disagree, the reference shows which one is off. Five cases where it was not this one:</p>
+        <div class="vbody"></div>
+      </section>
+
+      <section id="comparisons">
+        <h2><span class="n">4</span>The four comparisons</h2>
+        <p>Each gives a number to remember and one chart; the rest opens on request.</p>
+
+        <section id="transit">
+          <h3><span class="n">4.1</span>The dimming of the star</h3>
+          <p>The fraction of starlight a planet blocks as it crosses the star, for about forty combinations of planet size, path,
+            orbit shape and limb darkening. An error here becomes an error in the planet’s radius.</p>
+          <div class="vbody"></div>
+        </section>
+
+        <section id="orbit">
+          <h3><span class="n">4.2</span>The orbit and its timing</h3>
+          <p>Where the planet is at a given time (Kepler’s equation), when it passes behind the star, and how long transits and
+            eclipses last. Elongated orbits are the hard case: a solver that stops early puts the planet in the wrong place.</p>
+          <div class="vbody"></div>
+        </section>
+
+        <section id="rv">
+          <h3><span class="n">4.3</span>The star’s velocity</h3>
+          <p>The speed of the star along our line of sight as its planet pulls it around. Velocity codes are known for differing
+            by a sign or by 180° in the angle ω, so the conventions are tested along with the numbers.</p>
+          <div class="vbody"></div>
+        </section>
+
+        <section id="fits">
+          <h3><span class="n">4.4</span>Fits and their error bars</h3>
+          <p>Four simulated data sets are fitted with this site’s sampler and, independently, with emcee, dynesty and UltraNest.
+            The sampler should not matter, and a 68% interval should hold the truth 68% of the time.</p>
+          <div class="vbody"></div>
+        </section>
+      </section>
+
+      <section id="project">
+        <h2><span class="n">5</span>Checks elsewhere in the project</h2>
+        <p>The rest of the site has its own tests against independent software, summarised here from their last stored run.</p>
+        <div class="vbody"></div>
+      </section>
+
+      <section id="reproduce">
+        <h2><span class="n">6</span>Reproduce it</h2>
+        <div class="vbody"></div>
+      </section>
+
+      <section id="limits">
+        <h2><span class="n">7</span>What has not been tested</h2>
+        <div class="vbody"></div>
+      </section>
+
+      <section id="references">
+        <h2><span class="n">8</span>References</h2>
+        <p>Checked against Crossref, arXiv or the Astrophysics Source Code Library on 15 November 2026.</p>
+        <div class="vbody"></div>
+      </section>
+    </div>
+  </div>
+  <noscript><p class="note">This page computes its comparisons in the browser and needs JavaScript. The stored reference values are in
+    <code>public/validation/</code> and the recipe to regenerate them in <code>validation/README.md</code>.</p></noscript>
+</main>
+<footer class="sitefoot">References generated by <code>tools/validation/</code> · stored in <code>public/validation/</code> · asserted by <code>test/validation.test.mjs</code></footer>
+<script type="module" src="../src/site/nav.js"></script>
+<script type="module" src="../src/validation/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photometry · Exoplanet Science Lab</title>
+<meta name="description" content="Turn your own FITS images, or TESS and Kepler target pixel files, into a light curve in the browser. Nothing is uploaded.">
+<meta name="esl-root" content="../../">
+<link rel="stylesheet" href="../../src/site/site.css">
+<link rel="stylesheet" href="../../src/photometry/photometry.css">
+</head>
+<body class="page photpage">
+<header id="sitebar" data-active="observe"></header>
+<main id="phot">
+  <div class="phead">
+    <div>
+      <a class="back" href="../">&larr; Sky view</a>
+      <h1>Photometry</h1>
+      <p class="lead">Images in, light curve out. Open a folder of FITS frames from your telescope, or a TESS / Kepler target pixel file. Everything is computed in this tab; your files are not uploaded.</p>
+    </div>
+  </div>
+  <div id="app"></div>
+  <noscript><p class="note">This page needs JavaScript.</p></noscript>
+</main>
+<script type="module" src="../../src/site/nav.js"></script>
+<script type="module" src="../../src/photometry/main.js"></script>
+</body>
+</html>
