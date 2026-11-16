@@ -76,7 +76,7 @@ def main():
                 items.append(node)
         if not items:
             continue
-        md = [f"## `esl.{path.stem}`\n" if path.stem != "__init__" else "## `esl`\n"]
+        md = []
         mod_doc = ast.get_docstring(tree)
         if mod_doc:
             md.append(esc(mod_doc.split("\n\n")[0].replace("``", "`")) + "\n")
@@ -99,32 +99,48 @@ def main():
             else:
                 md.append(f"### {node.name}\n\n```python\n{sig(node)}\n```\n")
                 md.append(doc_block(node))
-        sections.append("\n".join(md))
+        title = f"esl.{path.stem}" if path.stem != "__init__" else "esl"
+        blurb = (ast.get_docstring(tree) or "").split("\n")[0].strip()
+        sections.append(f":::: details {title}" + (f" — {esc(blurb)}" if blurb else "") + "\n\n::: v-pre\n\n" + "\n".join(md) + "\n:::\n\n::::\n")
     head = """---
-outline: [2, 3]
+outline: [2, 2]
 ---
 # Python package: `esl`
 
-The same science code as the website, from Python: the package runs the site's JavaScript core (bundled,
-unmodified) in an embedded engine, so a fit gives the browser's numbers. Install it straight from GitHub:
+The website's science core, from Python: the package runs the same JavaScript (bundled, unmodified) in an embedded
+engine, so a fit here gives the browser's numbers. New to it? Start with the [labs](../labs/).
 
 ```sh
-pip install "git+https://github.com/pearsonkyle/Exoplanet-Science-Lab.git#subdirectory=python"
+pip install "git+https://github.com/pearsonkyle/Exoplanet-Science-Lab.git#subdirectory=python" matplotlib
 ```
 
-```python
-import esl
+## Cheat sheet
 
-session = esl.Session.load("session.json")   # a file saved from the Analyze page, or built in Python
-fit = session.run(progress=True)
-print(fit.result.table())
-```
+| You want to | Call |
+| --- | --- |
+| run an analysis saved on the website | `fit = esl.Session.load("session.json").run()` |
+| start from a known planet | `s = esl.lookup("HD 80606 b").session` |
+| read a light curve / velocities | `esl.read_light_curve(path_or_text)` · `esl.read_rv(path_or_text)` |
+| describe a fit | `esl.Session(planets=[...], data=esl.Data(...), fit=esl.FitSettings(free=[esl.FreeParameter(key="rprs", prior=esl.Prior.uniform(0.05, 0.2))]))` |
+| read the result | `fit.result.table()` · `fit.result["rprs"].median` · `fit.result.derived["K"]` · `fit.result.logZ` |
+| plot it | `esl.plot.light_curve(fit)` · `esl.plot.radial_velocity(fit, fold=True)` · `esl.plot.corner(fit)` · `esl.plot.oc(fit)` |
+| keep it | `fit.save("out.json")` (opens on the website) · `fit.to_markdown()` · `fit.to_latex()` · `fit.to_script()` |
+| a model curve | `esl.transit(t, dict(rprs=..., ars=..., inc=..., per=..., tmid=..., ld=[...], law="quadratic"))` · `esl.radial_velocity(t, params)` |
+| an ephemeris and O − C | `eph = esl.fit_ephemeris(times, errors, period=P)` · `esl.plot.ephemeris(eph, times, errors)` |
+| timing variations | `pg = esl.periodogram(times, errors, period=P); print(pg)` · `esl.plot.periodogram(pg)` |
+| limb darkening for a star | `esl.limb_darkening(teff=5600, logg=4.4, feh=0.0, band="TESS")` |
 
-Generated from the package's docstrings (`tools/docs/gen_python.py`).
+Parameter keys: `rprs` (Rp/R★), `ars` (a/R★, never fitted on its own), `inc` (deg), `per` (d), `tmid` (BJD), `ecc`,
+`omega` (deg), `mplanet` (M_Jup), `K` (m/s), `jit@rv1` (jitter of the first velocity set); a second planet's keys end
+in its letter: `per@c`. The full format of a session is in [Session format](../FORMAT).
+
+## Full reference
+
+Generated from the package's docstrings (`tools/docs/gen_python.py`). Open a module:
 
 """
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(head + "::: v-pre\n\n" + "\n".join(sections) + "\n:::\n")
+    OUT.write_text(head + "\n".join(sections))
     print(f"docs/reference/python.md: {len(sections)} modules")
 
 

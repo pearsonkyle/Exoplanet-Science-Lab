@@ -16,6 +16,7 @@ export const SECTIONS = [
   { id: 'analyze', label: 'Analyze', href: 'analyze/', blurb: 'Light curves from images, spectra over time, and fits of transits, radial velocities and timing.', hint: 'Fit light curves, RVs and timing' },
   { id: 'search', label: 'Search', href: 'search/', blurb: 'Browse known planets and candidates, with where every number comes from.', hint: 'Known planets and candidates' },
   { id: 'methods', label: 'Methods', href: 'methods/', blurb: 'Methods, validation and references: the equations and limits, how the models compare with other codes and published results, and what to cite.', hint: 'Equations, validation, how to cite' },
+  { id: 'docs', label: 'Docs', href: 'docs/', blurb: 'Guides, Python labs, and the API references for the browser, the Python package and the MCP server.', hint: 'Guides, labs and APIs' },
 ];
 
 /** The site root as a URL, from the page's esl-root meta tag (the page's own folder when absent). */

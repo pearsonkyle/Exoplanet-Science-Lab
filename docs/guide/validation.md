@@ -939,6 +939,41 @@ HAT-P-32 b frames (MicroObservatory) the focus map measures 35 stars at 2.37 px 
 in the SPOC and Kepler layouts (one gzipped) are read to 1e-6 d and 1e-9 in relative error with the flagged and
 blank rows left out.
 
+**Sky coordinates, target by name, Gaia comparison stars, optimal apertures** (`src/core/platesolve.js`,
+`src/core/fieldstars.js`, `optimalAperture` / `gainFromSky` in `src/core/imexam.js`, `src/photometry/wcs.js`). The
+Field card solves the first frame against Gaia DR3 (VizieR, CORS) by triangle matching and a least-squares TAN /
+TAN-SIP fit, places the target from its name (site catalogue, then CDS Sesame through the VizieR mirror, which answers
+with CORS), ranks comparison stars with Gaia G, BP−RP, Gaia and VSX variability and faint neighbours, and centres the
+aperture search on the target's SNR-optimal radius. nova.astrometry.net was checked on 2026-11-16 with an Origin
+header: `api/login` (OPTIONS and POST) and `api/jobs` send no Access-Control-Allow-Origin, so the page links to it
+and loads the wcs.fits it returns instead of calling it. Checks (`platesolve` 37, `test/make_platesolve_reference.py`
+with astropy 6.0.1 and photutils 1.11): the WCS fit equals astropy's `fit_wcs_from_points` on the same lists to
+1e-7 px (TAN), 3e-6 px (TAN, Dec 78°, 0.15 px noise) and 0.010 px (SIP order 2, 0.1 px noise); exact positions give
+the true WCS to 1e-5″; header round trips through `readWcs` exact; 24 / 24 synthetic fields solved (random rotation
+and mirror, 3% scale error, pointing off by up to 40% of the field, 25% of stars missing, 15% spurious, SIP in a
+quarter) within 0.1 px of a fit to the true pairs, slowest 82 ms; random stars against an unrelated catalogue: no
+solution claimed. EXOTIC's HAT-P-32 b frame (5.2″/px, 152 × 166 px, Gaia G < 17 saved offline): 57 of 71 stars
+matched, rms 0.74″ (0.14 px), 5.163″/px, mirrored, north 179.6° from +y, from the catalogue position, from the header
+pointing 15′ away and with no scale at all (1–20″/px, 0.5 s); the independent astropy solution (DAOStarFinder,
+brute-force match, 69 stars, rms 1.63″) differs by at most 1.13″ (0.22 px) over the frame and puts HAT-P-32 0.06 px
+from here. Frames 21 and 48 solved on their own agree with frame 1's WCS carried by the tracking transform to 1.0″.
+The re-centring by a Gaussian fit matters: with the detection's box centroids the rms was 2.49″. The optimal radius
+matches the analytic maximum to 2% (0.682 FWHM for a faint star, 1.45 FWHM for a bright one); the gain bound from the
+sky is 2.484 e⁻/ADU against 2.489. Found on the way: one of the two comparison stars of the HAT-P-32 b demo
+(full-frame pixel 465, 183) is HAT-125-0001606, a BY Draconis variable in VSX (0.02 mag in V) and 0.96 mag redder in
+BP−RP than the target; the other ranks first here. HAT-P-32 itself carries Gaia's VARIABLE flag (its transits). Also
+changed: the image-only ranking marked every star of these frames "elongated" (all have e ≈ 0.43 at 155°); a star
+now counts as elongated only beyond the field's median by 0.15. Headless Chromium against live VizieR
+(`test/platesolve_check.py`, built copy on :8971, `?demo=3&inspect`): "Solve WCS" matched 53 stars, rms 0.65″ (3000
+Gaia stars to G 19.5 fetched); HAT-P-32 placed 0.08 px from the demo's centroid; RA / Dec in the hover readout; "Use
+as target", "Rank with Gaia" (18 usable of 70; 3 variables set aside, 61 VSX entries), "Add the best" 3, "Set
+apertures" (T 1.94 px = 1.89 σ with the gain bounded at 263 e⁻/ADU from the sky; search 0.9–3.9 σ); the four
+assistant tools; frame 31's WCS through the tracking transform within 0.06 px of the star; at 390 px every control of
+the card 40 px or more; no page errors. Not verified: a frame with a header SIP WCS or an astrometry.net wcs.fits
+loaded through the button (`wcsFromHeader` is tested on headers written here), the six-step scale search against
+live VizieR (offline only), fields with fewer than about 20 stars, and whether the narrower aperture range changes the
+HAT-P-32 b reduction (not rerun).
+
 **TESS, Kepler and K2 pixels and light curves** (`src/photometry/mast.js`, `src/core/lcprep.js`, `src/core/k2.js`,
 `src/photometry/prep.js`, `src/photometry/series.js`). "Find files" lists every product the public bucket holds for a
 star (TIC, KIC, EPIC, TOI or a catalogue name): SPOC 2-minute and 20-second light curves and TPFs, TESS-SPOC and QLP

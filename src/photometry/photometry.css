@@ -172,3 +172,25 @@ label.chk input { margin: 0; }
 #aavsoBox { margin-top: 10px; }
 #aavsoBox .grid2 { margin-bottom: 8px; }
 @media (pointer: coarse) { details.detrend label.chk { min-height: 40px; } details.detrend summary { min-height: 40px; display: flex; align-items: center; } }
+
+/* the Field card: sky coordinates, target by name, Gaia-ranked comparisons, optimal apertures (src/photometry/wcs.js) */
+.field .fsec + .fsec { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.field h3 { font-size: 13px; margin: 0 0 6px; }
+.field .frow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.field .frow input[type=text] { flex: 1 1 160px; min-width: 0; }
+.field .status { margin: 4px 0 6px; }
+.field .fopt { margin-top: 6px; font-size: 12px; }
+.field .fopt summary { cursor: pointer; color: var(--dim); padding: 4px 0; }
+.field .fl { display: flex; flex-direction: column; gap: 3px; margin: 6px 0; font-size: 12px; color: var(--dim); }
+.field .fl.chk { flex-direction: row; align-items: center; gap: 6px; }
+.field .okline { font-size: 12px; color: var(--ok); }
+.granked { margin: 6px 0; padding-left: 22px; font-size: 12px; }
+.granked li { padding: 3px 0; border-bottom: 1px solid var(--line); }
+.granked li > span { display: inline-block; width: calc(100% - 44px); font-family: var(--mono); color: var(--text); overflow-wrap: anywhere; vertical-align: middle; }
+.granked li small { display: block; font-family: var(--sans, inherit); color: var(--dim); }
+.granked li.bad > span { color: var(--faint); }
+.granked li button { float: right; background: none; border: 0; color: var(--model); cursor: pointer; font-size: 15px; padding: 0 6px; }
+@media (pointer: coarse), (max-width: 760px) {
+  .field .btn, .field select, .field input[type=text], .field .fopt summary, .field .fl.chk { min-height: 40px; }
+  .granked li button { min-width: 40px; min-height: 40px; }
+}

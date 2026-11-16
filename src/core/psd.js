@@ -214,6 +214,69 @@ export function lombScarglePsd(t, y, freqs = null, opts = {}) {
   return { f: Float64Array.from(freqs), p, dt };
 }
 
+/**
+ * PSD of a series with gaps (TESS orbits and momentum dumps, Spitzer AORs, nights): the Lomb-Scargle PSD of each
+ * unbroken stretch, scaled with the median cadence, averaged on one frequency grid weighted by the number of points.
+ * lombScarglePsd on the whole series takes the cadence as span / (n - 1), which a gap inflates (a 1-day gap in a
+ * 27-day TESS sector raises the level by 4%; nights a week apart by orders of magnitude), and its lowest frequencies
+ * are the gaps' spectral window. Here a stretch is split off where consecutive points are more than gapFactor
+ * cadences apart; stretches shorter than minPoints are left out; a frequency below 1 / (span of a stretch) takes no
+ * power from that stretch. With no usable stretch, lombScarglePsd of everything with the median cadence.
+ * @param opts { gapFactor = 5, minPoints = 64, maxFreqs = 4000, dy }
+ * @returns { f, p, dt (median cadence), segments: [[i0, i1)] used, nUsed, fallback (bool) }
+ */
+export function gappedPsd(t, y, opts = {}) {
+  const n = t.length, { gapFactor = 5, minPoints = 64, maxFreqs = 4000 } = opts;
+  const sp = localSegments(t, gapFactor), dt = sp.dt;
+  const segs = sp.segments.filter(([a, b]) => b - a >= minPoints);
+  if (!segs.length || !(dt > 0)) { const r = lombScarglePsd(t, y, null, { dt, dy: opts.dy }); return { ...r, segments: [], nUsed: 0, fallback: true }; }
+  let span = 0; for (const [a, b] of segs) span = Math.max(span, t[b - 1] - t[a]);
+  const fNyq = 0.5 / dt, fMin = 1 / span;
+  // a linear grid at the resolution of the longest stretch, thinned to a log grid when it would be too long
+  const nLin = Math.floor((fNyq - fMin) * span) + 1;
+  const f = nLin <= maxFreqs ? Float64Array.from({ length: nLin }, (_, k) => fMin + k / span) : Float64Array.from({ length: maxFreqs }, (_, k) => fMin * Math.pow(fNyq / fMin, k / (maxFreqs - 1)));
+  const acc = new Float64Array(f.length), wsum = new Float64Array(f.length);
+  for (const [a, b] of segs) {
+    const ts = t.subarray ? t.subarray(a, b) : t.slice(a, b), ys = y.subarray ? y.subarray(a, b) : y.slice(a, b), m = b - a, T = ts[m - 1] - ts[0], dts = medianStep(ts);   // the stretch's own median cadence: stitched data and a changed exposure time keep their level; dropped points do not inflate it
+    let k0 = 0; while (k0 < f.length && f[k0] < 1 / T) k0++;
+    if (k0 >= f.length) continue;
+    const r = lombScarglePsd(ts, ys, f.subarray(k0), { dt: dts, dy: opts.dy ? (opts.dy.subarray ? opts.dy.subarray(a, b) : opts.dy.slice(a, b)) : undefined });
+    for (let k = 0; k < r.p.length; k++) if (Number.isFinite(r.p[k])) { acc[k0 + k] += m * r.p[k]; wsum[k0 + k] += m; }
+  }
+  const keep = []; for (let k = 0; k < f.length; k++) if (wsum[k] > 0) keep.push(k);
+  return { f: Float64Array.from(keep, (k) => f[k]), p: Float64Array.from(keep, (k) => acc[k] / wsum[k]), dt, segments: segs, nUsed: segs.length, fallback: false,
+    parts: segs.map(([a, b]) => ({ a, b, n: b - a, dt: medianStep(t.subarray ? t.subarray(a, b) : t.slice(a, b)) })) };
+}
+/**
+ * Unbroken stretches judged by the local cadence: a step is a gap when it exceeds gapFactor times the larger of the
+ * median spacings of the 8 steps before it and the 8 after it. A change of cadence (2-min data stitched to 30-min
+ * data, a longer exposure later in the night) is then not a gap, while a real gap between them still is.
+ */
+export function localSegments(t, gapFactor = 5, w = 8) {
+  const n = t.length; if (n < 2) return { segments: n ? [[0, n]] : [], dt: NaN };
+  const d = Float64Array.from({ length: n - 1 }, (_, i) => t[i + 1] - t[i]), med = (a, b) => { const v = Array.from(d.subarray(Math.max(0, a), Math.max(0, Math.min(d.length, b)))).sort((p, q) => p - q); return v.length ? v[v.length >> 1] : NaN; };
+  const segments = []; let i0 = 0;
+  for (let i = 0; i < n - 1; i++) {
+    const left = med(i - w, i), right = med(i + 1, i + 1 + w), ref = Math.max(Number.isFinite(left) ? left : 0, Number.isFinite(right) ? right : 0);
+    if (ref > 0 && d[i] > gapFactor * ref) { segments.push([i0, i + 1]); i0 = i + 1; }
+  }
+  segments.push([i0, n]);
+  return { segments, dt: Float64Array.from(d).sort()[(n - 1) >> 1] };
+}
+/** Median spacing of consecutive times (sorted). */
+function medianStep(t) { const d = []; for (let i = 1; i < t.length; i++) if (t[i] > t[i - 1]) d.push(t[i] - t[i - 1]); d.sort((a, b) => a - b); return d.length ? d[d.length >> 1] : NaN; }
+/**
+ * The white level matching gappedPsd's average: sum over the stretches of n_k 2 mean(err^2)_k dt_k / sum n_k, so a
+ * mix of cadences (stitched sectors, a changed exposure time) is compared with the level it should have.
+ * err: per-point errors (or one number); parts: gappedPsd(...).parts. Without parts, whiteNoiseLevel(err, dt).
+ */
+export function gappedWhiteLevel(err, parts, dt) {
+  if (!parts || !parts.length) return whiteNoiseLevel(err, dt);
+  let s = 0, w = 0;
+  for (const q of parts) { const e = typeof err === 'number' ? err : (err.subarray ? err.subarray(q.a, q.b) : err.slice(q.a, q.b)); const lv = whiteNoiseLevel(e, q.dt); if (Number.isFinite(lv)) { s += q.n * lv; w += q.n; } }
+  return w ? s / w : whiteNoiseLevel(err, dt);
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // Noise levels
 
@@ -416,7 +479,7 @@ function solve3(H, g, lam) {
  */
 export function rmsVsBin(resid, opts = {}) {
   const n = resid.length; if (n < 4) throw new Error('rmsVsBin needs at least 4 points');
-  const segs = opts.segments ?? (opts.t ? splitSegments(opts.t, { gapFactor: opts.gapFactor }).segments : [[0, n]]);
+  const segs = opts.segments ?? (opts.t ? (opts.byTime ? localSegments(opts.t, opts.gapFactor ?? 5).segments : splitSegments(opts.t, { gapFactor: opts.gapFactor }).segments) : [[0, n]]);
   let mean = 0; for (let i = 0; i < n; i++) mean += resid[i]; mean /= n;
   let v = 0; for (let i = 0; i < n; i++) v += (resid[i] - mean) * (resid[i] - mean); const sigma1 = Math.sqrt(v / n);
   const maxBin = Math.max(1, Math.floor(opts.maxBin ?? n / 2));
@@ -427,8 +490,19 @@ export function rmsVsBin(resid, opts = {}) {
     if (nlog) { const set = new Set(); for (let k = 0; k < nlog; k++) set.add(Math.round(Math.exp(Math.log(maxBin) * k / Math.max(1, nlog - 1)))); sizes = [...set].sort((a, b) => a - b); }
     else { sizes = []; for (let s = 1; s <= maxBin; s += Math.max(1, Math.floor(opts.binStep ?? 1))) sizes.push(s); }
   }
+  // opts.byTime (with opts.t): bins of a fixed duration N x the median cadence, laid on the clock from the start of
+  // each stretch, rather than runs of N consecutive points. Then missing points, a changed exposure time or stitched
+  // data with other cadences still give bins of one duration; a bin needs at least half its nominal points, and the
+  // white-noise expectation uses each bin's own occupancy: sigma1^2 mean(1 / n_b) M / (M - 1).
+  const byTime = !!(opts.byTime && opts.t), cad = byTime ? medianStep(opts.t) : NaN;
   const one = (N) => {
-    let M = 0, q = 0;
+    let M = 0, q = 0, inv = 0;
+    if (byTime) {
+      const tau = N * cad, need = Math.max(1, Math.ceil(N / 2));
+      for (const [a, b] of segs) { const t0 = opts.t[a]; let i = a; while (i < b) { const k = Math.floor((opts.t[i] - t0) / tau + 1e-9); let j = i, s = 0; while (j < b && Math.floor((opts.t[j] - t0) / tau + 1e-9) === k) { s += resid[j]; j++; } const nb = j - i; if (nb >= need) { s /= nb; q += s * s; inv += 1 / nb; M++; } i = j; } }
+      const rms = M ? Math.sqrt(q / M) : NaN, expected = M > 1 ? sigma1 * Math.sqrt(inv / M * M / (M - 1)) : NaN;
+      return { M, rms, expected, rmsErr: rms / Math.sqrt(2 * M), beta: rms / expected };
+    }
     for (const [a, b] of segs) for (let i0 = a; i0 + N <= b; i0 += N) { let s = 0; for (let i = i0; i < i0 + N; i++) s += resid[i]; s /= N; q += s * s; M++; }
     const rms = M ? Math.sqrt(q / M) : NaN, expected = M > 1 ? sigma1 * Math.sqrt(M / (N * (M - 1))) : NaN;
     return { M, rms, expected, rmsErr: rms / Math.sqrt(2 * M), beta: rms / expected };

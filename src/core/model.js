@@ -357,6 +357,8 @@ export function buildProblem(spec) {
     event: nb.event || 'conjunction', dt: nb.dt, stepsPerOrbit: nb.stepsPerOrbit, integrator: nb.integrator, exactSync: nb.exactSync, corrector: nb.corrector } : null;
   let dyn = null;
 
+  // a planet whose mass is free and whose K is not: its velocities follow the mass (a catalogue session carries both)
+  const massDrivesK = names.map((nm) => keys.includes(nm.mplanet) && !keys.includes(nm.K));
   // each planet's resolved parameters (pv) from the current values v, with the checks every model shares; false outside the prior
   function resolvePlanets() {
     for (let p = 0; p < nPl; p++) {
@@ -409,7 +411,8 @@ export function buildProblem(spec) {
       }
       if (tim.length) els[p] = orbitElements(q);
       if (nRv) {
-        const K = Number.isFinite(q.K) ? q.K : semiAmplitude(q.per, q.ecc, q.inc, q.mplanet || 0, v.mstar);
+        // a fixed K (a catalogue's) gives way to a free mass: otherwise the mass would be sampled without changing the model
+        const K = Number.isFinite(q.K) && !massDrivesK[p] ? q.K : semiAmplitude(q.per, q.ecc, q.inc, q.mplanet || 0, v.mstar);
         if (!Number.isFinite(K)) return null;
         rvFns[p] = makeRV({ per: q.per, tmid: q.tmid, ecc: q.ecc, omega: q.omega, K });
         if (rmOn) {

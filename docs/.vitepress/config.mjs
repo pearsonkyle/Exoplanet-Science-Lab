@@ -25,9 +25,10 @@ export default defineConfig({
     siteTitle: 'ESL Docs',
     nav: [
       { text: 'Guide', link: '/guide/getting-started', activeMatch: '/guide/' },
+      { text: 'Python labs', link: '/labs/', activeMatch: '/labs/' },
       { text: 'Reference', items: [
-        { text: 'Browser API (try it)', link: '/reference/browser-api' },
-        { text: 'MCP tools (try it)', link: '/reference/mcp-tools' },
+        { text: 'Browser API (playground)', link: '/reference/browser-api' },
+        { text: 'MCP tools', link: '/reference/mcp-tools' },
         { text: 'Python package', link: '/reference/python' },
         { text: 'JavaScript core', link: '/reference/core/' },
         { text: 'Session format', link: '/FORMAT' },
@@ -41,6 +42,15 @@ export default defineConfig({
           { text: 'Getting started', link: '/guide/getting-started' },
           { text: 'A tour of the site', link: '/guide/site' },
           { text: 'Worked examples', link: '/guide/examples' },
+        ] },
+        { text: 'Python labs', collapsed: false, items: [
+          { text: 'Overview', link: '/labs/' },
+          { text: '1 · First transit fit', link: '/labs/lab01_first_transit' },
+          { text: '2 · A real TESS transit', link: '/labs/lab02_tess_transit' },
+          { text: '3 · Radial velocities', link: '/labs/lab03_radial_velocities' },
+          { text: '4 · Joint fit', link: '/labs/lab04_joint_fit' },
+          { text: '5 · Ephemerides and decay', link: '/labs/lab05_ephemeris' },
+          { text: '6 · Hidden planet from TTVs', link: '/labs/lab06_ttv' },
         ] },
         { text: 'Run it yourself', items: [
           { text: 'Python package', link: '/guide/python' },

@@ -151,4 +151,15 @@ const rng = makeRng(11);
   check('periastron epoch posterior is one peak before the transit', t.med < tm && t.med > tm - P && t.plus + t.minus < 0.5 * P,
     `median ${t.med.toFixed(3)} +${t.plus.toFixed(3)} -${t.minus.toFixed(3)} d (before: 0.180 +0.081 -2.059); omega 70-110 deg spans ${(40 / 360 * P).toFixed(3)} d`);
 }
+// ---- a free mass with a catalogue K also set (third review, 2026-11-16) -----------------------------------------------
+{
+  // a catalogue session carries both mplanet and K; with the mass free and K not, the velocities must follow the mass
+  // (before, the fixed K won and the mass was sampled without changing the model: its posterior was the prior)
+  const t = Array.from({ length: 40 }, (_, i) => i * 3), v = { per: 30, tmid: 0, ecc: 0, omega: 0, inc: 90, rprs: 0.1, ars: 30, mplanet: 1, K: 100, mstar: 1, ld0: 0, ld1: 0, ld2: 0, ld3: 0 };
+  const K1 = semiAmplitude(30, 0, 90, 1, 1), rv = [{ name: 'a', t, v: t.map((x) => -K1 * Math.sin(2 * Math.PI * x / 30)), e: t.map(() => 1) }];
+  const p = buildProblem({ values: v, free: [{ key: 'mplanet', prior: { type: 'uniform', a: 0, b: 10 } }], rv, ldLaw: 'nonlinear' });
+  const at1 = p.loglike([1]), at2 = p.loglike([2]), pk = buildProblem({ values: v, free: [{ key: 'K', prior: { type: 'uniform', a: 0, b: 1000 } }], rv, ldLaw: 'nonlinear' });
+  check('a free planet mass drives the velocities even when a fixed K is also given', at1 > at2 + 100 && Math.abs(pk.loglike([K1]) - at1) < 1e-6,
+    `ln L at the true mass ${at1.toFixed(1)}, at twice it ${at2.toFixed(1)}; with K free instead the same ln L at K = ${K1.toFixed(2)} m/s`);
+}
 process.exit(ok ? 0 : 1);

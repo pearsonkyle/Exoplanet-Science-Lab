@@ -3,15 +3,16 @@
 import { siteRoot } from '../site/nav.js';
 import { openFits, readTargetPixelFile, framePointing, frameTime, pixelScale } from '../core/fits.js';
 import { centroidIter, detectSources, fitPsf, lightCurveFor, tpfLightCurve, pipelineMask, tpfMedianImage, medianOf, runningMedian, METHOD_LABEL } from '../core/photometry.js';
-import { lombScarglePsd, welchPsd, splitSegments, whiteNoiseLevel, photonNoiseLevel, logBinPsd, fitRedNoise, rmsVsBin, pixelMap, polySurface } from '../core/psd.js';
+import { gappedPsd, gappedWhiteLevel, lombScarglePsd, welchPsd, splitSegments, whiteNoiseLevel, photonNoiseLevel, logBinPsd, fitRedNoise, rmsVsBin, pixelMap, polySurface } from '../core/psd.js';
 import { FITS_NAME, readHeaderOnly, frameKind, loadFrame, splitFits, makeFitter, PHOT_VERSION, tpfPld } from './pipeline.js';
 import { DETREND_COLUMNS } from '../core/detrend.js';
 import { aavsoReport } from '../core/aavso.js';
 import { ImageViewer } from './viewer.js';
 import { createInspector } from './inspect.js';
+import { createFieldTools } from './wcs.js';
 import { rankComparisons, saturationLevel, psfShape } from '../core/imexam.js';
 import { renderPanel, fitCanvas, PHOT_THEME, renderFov } from './plots.js';
-import { renderPsd, renderRmsBin, renderPixelMap } from './diagnostics.js';
+import { renderPsd, renderRmsBin, renderPixelMap, renderPixelResponse, durationLabel } from './diagnostics.js';
 import { BUCKET, tessProducts, keplerProducts, k2Products, chooseProducts, fetchBytes, resolveTarget } from './mast.js';
 import { expandZips, ZIP_NAME } from '../core/zip.js';
 import { createSeries } from './series.js';
@@ -92,6 +93,7 @@ app.append(
         h('span', { class: 'readout', id: 'readout', 'aria-live': 'off' }, typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 'pinch to zoom, drag to pan, tap to pick' : 'scroll to zoom, drag to pan'))),
     h('div', { class: 'side' },
       h('div', { class: 'card', id: 'cardInspect', hidden: true }),
+      h('div', { class: 'card field', id: 'cardWcs', hidden: true }),
       h('div', { class: 'card', id: 'cardStars' }),
       h('div', { class: 'card', id: 'cardSet' }),
       h('div', { class: 'card' },
@@ -103,11 +105,14 @@ app.append(
   h('section', { class: 'res series', id: 'series', hidden: true }));
 
 const viewer = new ImageViewer($('img'));
-viewer.onHover = (x, y, v) => { $('readout').textContent = `x ${x.toFixed(1)}  y ${y.toFixed(1)}  ${Number.isFinite(v) ? (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toPrecision(4)) : ''}`; };
+viewer.onHover = (x, y, v) => { $('readout').textContent = `x ${x.toFixed(1)}  y ${y.toFixed(1)}  ${Number.isFinite(v) ? (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toPrecision(4)) : ''}${field.radec(x, y)}`; };
 const insp = createInspector({ P, viewer, h, $, card: $('cardInspect'), bar: $('toolbar'), gain: () => numOf('sGain'), note: (t) => { $('readout').textContent = t; }, addStar: (x, y, asTarget) => addStarAt(x, y, asTarget) });
 viewer.onClick = (x, y, e) => { if (!insp.click(x, y)) onImageClick(x, y, e); };
-viewer.onDraw = (c, v) => { drawOverlay(c, v); insp.draw(c, v); };
+viewer.onDraw = (c, v) => { drawOverlay(c, v); field.draw(c, v); insp.draw(c, v); };
 window.__phot.inspector = insp;
+// sky coordinates, the target by name, Gaia-ranked comparisons and SNR-optimal apertures (src/photometry/wcs.js)
+const field = createFieldTools({ P, h, $, viewer, siteRoot, setStatus: (id, t, c) => setStatus(id, t, c), addStarAt: (x, y, t) => addStarAt(x, y, t), showFrame: (i) => showFrame(i), buildStarsCard: () => buildStarsCard(), gain: () => numOf('sGain') });
+window.__phot.fieldTools = field;
 
 const setStatus = (id, text, cls = '') => {
   const el = $(id); el.textContent = text; el.className = 'status ' + cls;
@@ -238,7 +243,7 @@ function enterWork() {
   $('bMedian').hidden = P.mode !== 'tpf';
   $('stLo').value = P.mode === 'tpf' ? 0 : 10; $('stHi').value = P.mode === 'tpf' ? 100 : 99.8; viewer.stretch.lo = +$('stLo').value; viewer.stretch.hi = +$('stHi').value;
   viewer.fitted = false;
-  buildStarsCard(); buildSettings(); insp.reset();
+  buildStarsCard(); buildSettings(); insp.reset(); field.reset();
   setStatus('stRun', ''); $('runNote').textContent = P.mode === 'tpf' ? '' : 'pick the target first';
 }
 
@@ -542,30 +547,36 @@ function diagnose() {
   const pick = (a) => Float64Array.from(idx, (i) => a[i]), t = pick(lc.time), r = pick(cur), r0 = pick(before), e = pick(lc.err), m = r.reduce((a, b) => a + b, 0) / r.length;
   for (let i = 0; i < r.length; i++) r[i] -= m;
   const dts = Float64Array.from({ length: t.length - 1 }, (_, i) => t[i + 1] - t[i]), dt = medianOf(dts);
-  let sp;
-  if (idx.length <= 3000) sp = lombScarglePsd(t, r);
-  else {
-    // Welch over the continuous stretches; when gaps (K2 thruster firings left out, downlinks) leave no stretch as long as a
-    // segment, the Lomb-Scargle periodogram of all points instead
-    const seg = splitSegments(t).segments; let np2 = 256; while (np2 * 8 <= idx.length && np2 < 4096) np2 *= 2;
-    try { sp = welchPsd(r, dt, { nperseg: np2, segments: seg }); } catch { try { sp = welchPsd(r, dt, { nperseg: 128, segments: seg }); } catch { sp = lombScarglePsd(t, r); } }
-  }
+  // the spectrum of every unbroken stretch, averaged (src/core/psd.js gappedPsd): TESS orbit gaps and momentum dumps,
+  // K2 thruster firings left out, or several nights do not bias the level or put the gaps' window into the low frequencies
+  const sp = gappedPsd(t, r);
   const f = Array.from(sp.f).filter((v) => v > 0), p = Array.from(sp.p).slice(sp.p.length - f.length), lb = logBinPsd(f, p, 26);
   let fit = null; try { fit = fitRedNoise(lb.f, lb.p, { nAvg: lb.n }); } catch { fit = null; }
-  const white = whiteNoiseLevel(e, sp.dt || dt), ph = lc.photErr ? medianOf(pick(lc.photErr).filter(Number.isFinite)) : NaN, phStar = lc.photErrStar ? medianOf(pick(lc.photErrStar).filter(Number.isFinite)) : NaN;
+  const white = gappedWhiteLevel(e, sp.parts, sp.dt || dt),   // per stretch with its own cadence, as the spectrum is averaged
+    ph = lc.photErr ? medianOf(pick(lc.photErr).filter(Number.isFinite)) : NaN, phStar = lc.photErrStar ? medianOf(pick(lc.photErrStar).filter(Number.isFinite)) : NaN;
   const marks = [];
   if (P.result.kind === 'tpf' && P.result.meta.mission === 'K2') marks.push({ f: 24 / 5.88, label: 'K2 roll 5.9 h' });
   if (lc.fit && lc.fit.hasTransit && lc.fit.duration > 0) marks.push({ f: 1 / lc.fit.duration, label: `transit ${(lc.fit.duration * 24).toFixed(1)} h` });
-  const rb = rmsVsBin(r, { dt, t });
+  const rb = rmsVsBin(r, { dt, t, byTime: true });   // bins of one duration on the clock: lost frames, a changed exposure time or stitched data keep the bins honest
   const g = Math.max(6, Math.min(24, Math.round(Math.sqrt(idx.length / 5)))), x = pick(lc.x), y = pick(lc.y), m0 = r0.reduce((a, b) => a + b, 0) / r0.length;
   const pm = pixelMap(x, y, r0, { nx: g, ny: g });
   let surface, sName;
   if (trendPts) { const tp = pick(trendPts), ok = tp.every(Number.isFinite); surface = ok ? pixelMap(x, y, tp, { nx: g, ny: g, range: [pm.grid.x0, pm.grid.x1, pm.grid.y0, pm.grid.y1] }).mean : null; sName = P.gp.kind === 'sff' ? 'self-flat-field correction (binned)' : P.gp.kind === 'pld' ? 'pixel-level decorrelation (binned)' : P.gp.kind === 'regress' ? 'decorrelation trend (binned)' : 'Gaussian-process trend (binned)'; }
   let poly = null; try { poly = polySurface(x, y, r0, 2, null, { grid: pm.grid }); } catch { poly = null; }
   if (!surface && poly) { surface = poly.surface; sName = 'order-2 polynomial surface (a fit, not removed)'; }
-  return { n: idx.length, dt: sp.dt || dt, f, p, lb, fit, white, photon: Number.isFinite(ph) ? photonNoiseLevel(ph, sp.dt || dt) : null, photonStar: Number.isFinite(phStar) ? photonNoiseLevel(phStar, sp.dt || dt) : null, ph, phStar, marks, rb, pm, surface, sName, m0, x, y, poly, rms: Math.sqrt(r.reduce((a, b) => a + b * b, 0) / r.length), detrended: !!after, method: idx.length <= 3000 ? 'Lomb-Scargle' : 'Welch' };
+  // relative pixel response at each frame (the Spitzer-style pixel map): 1 + the fitted systematics in (x, y), or
+  // 1 + an order-2 surface fitted to the residuals when nothing has been fitted, else the residual itself
+  let resp, respLabel;
+  if (trendPts) { const tp = pick(trendPts), mt = medianOf(Array.from(tp).filter(Number.isFinite)); resp = Float64Array.from(tp, (v) => 1 + v - mt); respLabel = 'relative pixel response (fitted)'; }
+  else if (poly && poly.fitted) { const mf = medianOf(Array.from(poly.fitted)); resp = Float64Array.from(poly.fitted, (v) => 1 + v - mf); respLabel = 'relative pixel response (order-2 surface)'; }
+  else { resp = Float64Array.from(r0, (v) => 1 + v - m0); respLabel = 'relative flux'; }
+  return { resp, respLabel, gaps: sp.nUsed, n: idx.length, dt: sp.dt || dt, f, p, lb, fit, white, photon: Number.isFinite(ph) ? gappedWhiteLevel(ph, sp.parts, sp.dt || dt) : null, photonStar: Number.isFinite(phStar) ? gappedWhiteLevel(phStar, sp.parts, sp.dt || dt) : null, ph, phStar, marks, rb, pm, surface, sName, m0, x, y, poly, rms: Math.sqrt(r.reduce((a, b) => a + b * b, 0) / r.length), detrended: !!after, method: sp.fallback ? 'Lomb-Scargle' : sp.nUsed > 1 ? `Lomb-Scargle averaged over ${sp.nUsed} stretches` : 'Lomb-Scargle' };
 }
 
+// ------------------------------------------------------------------------------------------- results
+// the diagnostics are shown for every observation; each can be folded away
+const showPsd = () => P.showPsd !== false;
+const showMap = () => P.showMap !== false;
 // ------------------------------------------------------------------------------------------- results
 function renderResults() {
   const el = $('res'), R = P.result, lc = P.lc, row = R.opt.tried[P.sel], best = P.sel === R.opt.best; el.hidden = false; el.innerHTML = '';
@@ -603,7 +614,9 @@ function renderResults() {
     h('span', { class: 'dim', id: 'gpNote', style: 'font-size:12px' })),
     detrendCard());
   el.append(h('h2', { style: 'margin-top:14px' }, 'Is the noise white? Does the flux follow the star across the detector?'),
-    h('div', { class: 'plots two' }, h('div', { class: 'card' }, cPsd), h('div', { class: 'card' }, cRms)), h('div', { class: 'card', style: 'margin-top:10px' }, cMap), h('p', { class: 'note2', id: 'diagNote' }));
+    h('div', { class: 'plots two', id: 'diagPlots' }, h('div', { class: 'card', id: 'psdCard' }, cPsd), h('div', { class: 'card' }, cRms)),
+    h('div', { class: 'row diagbtns' }, h('button', { class: 'btn sm', id: 'bPsd', onclick: () => { P.showPsd = !showPsd(); draw(); } }), h('button', { class: 'btn sm', id: 'bMap', onclick: () => { P.showMap = !showMap(); draw(); } })),
+    h('div', { class: 'card', id: 'mapCard', style: 'margin-top:10px' }, cMap), h('p', { class: 'note2', id: 'diagNote' }));
   // tried table
   const tried = R.opt.tried.map((t, i) => ({ t, i })).sort((a, b) => (a.t.scatter - b.t.scatter) || 0), hasP = R.kind === 'stack' && R.opt.tried.some((t) => t.params);
   const head = R.kind === 'stack' ? ['method', 'aperture [px]', 'annulus [px]', 'comparison', 'scatter [%]', 'robust [%]', 'points', hasP ? 'Rp/R★' : 'depth [%]', ...(hasP ? ['T mid − ' + Math.floor(lc.time[0])] : [])] : ['aperture', 'pixels', 'scatter [ppm]', 'EXOTIC std [e⁻/s]', 'median flux', 'cadences'];
@@ -652,15 +665,17 @@ function renderResults() {
     const D = diagnose(); P.diag = D;
     if (D) {
       const ppm = lc.kind === 'tpf' || D.rms < 2e-3, sc = ppm ? 1e12 : 1e4, unit = ppm ? 'ppm' : '%', u1 = ppm ? 1e6 : 100;
-      g = fitCanvas(cPsd, 300); renderPsd(g.ctx, g.W, g.H, { f: D.f, p: D.p, binned: D.lb, white: D.white, photon: lc.kind === 'stack' && !R.gainKnown && D.ph > D.rms ? null : D.photon, fit: D.fit, marks: D.marks, fUnit: '1/d', pScale: sc, yLabel: `PSD (${unit}² d)`, title: `Power spectrum of the residuals${D.detrended ? ' after detrending' : ''} (${D.method}, ${D.n} points)` }, th);
+      const ps = showPsd(), ms = showMap(); $('psdCard').hidden = !ps; $('diagPlots').classList.toggle('two', ps); $('mapCard').hidden = !ms;
+      $('bPsd').textContent = ps ? 'Hide the power spectrum' : 'Show the power spectrum'; $('bMap').textContent = ms ? 'Hide the pixel map' : 'Show the pixel map';
+      if (ps) { g = fitCanvas(cPsd, 300); renderPsd(g.ctx, g.W, g.H, { f: D.f, p: D.p, binned: D.lb, white: D.white, photon: lc.kind === 'stack' && !R.gainKnown && D.ph > D.rms ? null : D.photon, fit: D.fit, marks: D.marks, fUnit: '1/d', pScale: sc, yLabel: `PSD (${unit}² d)`, title: `Power spectrum of the residuals${D.detrended ? ' after detrending' : ''} (${D.method}, ${D.n} points)` }, th); }
       g = fitCanvas(cRms, 300); renderRmsBin(g.ctx, g.W, g.H, { n: D.rb.n, rms: D.rb.rms, expected: D.rb.expected, rmsErr: D.rb.rmsErr, dt: D.dt, beta: { value: D.rb.beta, n: D.rb.nBeta }, scale: u1, unit, title: `Scatter against bin size${D.detrended ? ' after detrending' : ''}` }, th);
-      g = fitCanvas(cMap, 330); renderPixelMap(g.ctx, g.W, g.H, { map: Float64Array.from(D.pm.mean, (v) => v - D.m0), surface: D.surface ? Float64Array.from(D.surface, (v) => v - (P.gp ? 0 : D.m0)) : null, x: D.x, y: D.y, grid: D.pm.grid, count: D.pm.count, title: `Pixel map: mean residual against the target's centroid (${D.n} points, ${D.pm.grid.nx} × ${D.pm.grid.ny} bins; before detrending)`, titles: ['binned residuals', D.sName || 'surface', 'binned residuals − surface'] }, th);
+      if (ms) { g = fitCanvas(cMap, Math.min(560, Math.max(320, Math.round(0.62 * (cMap.clientWidth || 600))))); renderPixelResponse(g.ctx, g.W, g.H, { x: D.x, y: D.y, response: D.resp, label: D.respLabel, title: `Pixel map: ${D.respLabel} at the target's centroid in each frame (${D.n} frames)` }, th); }
       const pct = (v) => (ppm ? (1e6 * v).toFixed(0) + ' ppm' : (100 * v).toFixed(3) + '%');
       $('diagNote').textContent = `Residual rms ${pct(D.rms)} per point. ` + (lc.kind === 'stack'
         ? (R.gainKnown ? `Expected from photon noise of the stars alone ${pct(D.phStar)}, with the measured sky noise under the aperture ${pct(D.ph)} (gain ${R.fitOpts.gain} e⁻/ADU; scintillation is not included). ` : D.ph > D.rms ? `The headers give no gain. At 1 e⁻/ADU photon noise alone would be ${pct(D.phStar)}, more than the scatter measured, so the camera's gain is at least ${((D.phStar / D.rms) ** 2).toFixed(1)} e⁻/ADU; enter it under Settings to see the photon-noise limit. ` : `The headers give no gain; at an assumed 1 e⁻/ADU photon noise would be ${pct(D.phStar)} (${pct(D.ph)} with the sky). `) + 'The error-bar line is the scatter used as the uncertainty of every point. '
         : `The pipeline's error bars (photon and read noise) give ${pct(medianOf(Array.from(lc.err)))}. `)
         + `β = ${D.rb.beta.toFixed(2)} at ${D.rb.nBeta} points per bin (1 for white noise; multiply error bars by β when the noise is correlated). `
-        + (D.fit && D.fit.red ? `The spectrum rises towards low frequencies as f^−${D.fit.gamma.toFixed(1)} below ${D.fit.knee.toFixed(1)} per day.` : 'The spectrum shows no power-law rise.')
+        + (!showPsd() ? '' : D.fit && D.fit.red ? `The spectrum rises as f^−${D.fit.gamma.toFixed(1)} on timescales longer than ${durationLabel(1440 / D.fit.knee)}${lc.fit && lc.fit.duration > 0 ? ` (the transit lasts ${durationLabel(lc.fit.duration * 1440)})` : ''}.` : 'The spectrum shows no power-law rise.') + (showPsd() && D.gaps > 1 ? ` It averages ${D.gaps} unbroken stretches.` : '')
         + (D.poly ? ` An order-2 surface in (x, y) would take the rms from ${pct(D.poly.rmsBefore)} to ${pct(D.poly.rmsAfter)}.` : '');
     }
   };
@@ -1053,6 +1068,7 @@ const HATP32 = { stars: [[424, 286], [465, 183], [512, 263]], planet: { per: 2.1
         if (ctx.files && ctx.files.write) { const w = await ctx.files.write(r.name, r.text, 'text/plain'); return { written: w.name, points: r.points }; }
         download(r.text, 'text/plain', r.name); return { saved: r.name, points: r.points };
       } },
+    ...field.tools({ obj, N, T, r4 }),
     { name: 'photometry_run', core: true, description: 'Run the reduction: measure every frame (or the target pixel file), try every aperture, annulus and comparison choice, and keep the light curve with the least scatter. Returns what was selected and the quality of the result.',
       parameters: obj({}),
       async run() {

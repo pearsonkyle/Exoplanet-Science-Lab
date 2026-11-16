@@ -1,19 +1,30 @@
 # Python package
 
-The `esl` package runs the website's own JavaScript core (bundled, unmodified) inside an embedded engine, so a fit in Python gives the same numbers as the browser, and a session saved on the site runs unchanged.
+The `esl` package runs the website's own science code from Python, so a fit in a script gives the browser's numbers,
+and a session saved on the site (Analyze → Save session) runs unchanged.
 
 ## Install
 
-From GitHub, no release needed:
-
 ```sh
-pip install "git+https://github.com/pearsonkyle/Exoplanet-Science-Lab.git#subdirectory=python"
-# a tag or branch: ...Exoplanet-Science-Lab.git@v0.2.0#subdirectory=python
+pip install "git+https://github.com/pearsonkyle/Exoplanet-Science-Lab.git#subdirectory=python" matplotlib
 ```
 
-Extras: `[plot]` for matplotlib figures, `[quickjs]` for the alternative engine. Python 3.9 or later; the default engine (`mini-racer`) ships wheels for Linux, macOS and Windows.
+Python 3.9 or later; Linux, macOS and Windows. No Node.js needed: the JavaScript core ships inside the package.
 
-From a clone, for development:
+## Learn it
+
+The **[labs](../labs/)** walk through the package with real data, one notebook each:
+
+1. [Your first transit fit](../labs/lab01_first_transit): session, priors, fit, results
+2. [A real TESS transit](../labs/lab02_tess_transit): start from the catalogue
+3. [Radial velocities](../labs/lab03_radial_velocities): an eccentric orbit, jitter
+4. [One orbit for everything](../labs/lab04_joint_fit): a joint fit
+5. [Ephemerides and orbital decay](../labs/lab05_ephemeris): O − C, periodograms
+6. [A hidden planet weighed by its pull](../labs/lab06_ttv): TTVs and N-body
+
+The [Python reference](../reference/python) starts with a one-page cheat sheet.
+
+## From a clone
 
 ```sh
 cd python
@@ -21,24 +32,9 @@ pip install -e ".[test]"
 pytest
 ```
 
-## Use
-
-```python
-import esl
-
-# a session saved from Analyze (Results → Save session), or one of the worked examples
-session = esl.Session.load("my_session.json")
-fit = session.run(progress=True)
-print(fit.result.table())
-
-# the models directly
-import numpy as np
-t = np.linspace(-0.1, 0.1, 500)
-flux = esl.transit(t, dict(rprs=0.1, ars=8.8, inc=87, per=2.15, tmid=0, ld=[0.4, 0.2], law="quadratic"))
-```
-
-Everything public is listed in the [Python reference](../reference/python).
+The older example scripts in `python/examples` reproduce EXOTIC's examples and check the numbers against EXOTIC's own fits.
 
 ## Releases
 
-Until there is a PyPI release, install from git as above. Releasing later is one step: tag `py-v0.2.0` and the `python-release` workflow builds the wheel (with the bundled core) and publishes it through PyPI's trusted publishing; see [Development](./development#publishing-the-python-package).
+Until there is a PyPI release, install from git as above (add `@<tag>` after `.git` for a fixed version). Publishing
+later is one tag: see [Development](./development#publishing-the-python-package).

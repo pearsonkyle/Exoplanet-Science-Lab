@@ -295,7 +295,8 @@ export function focusMap(data, w, h, opts = {}) {
 /**
  * Rank the detected stars as comparison stars for a target: similar brightness (|ln flux ratio|), unsaturated,
  * isolated (no neighbour brighter than 10% of the star within `crowd` FWHM), far enough from the edge for the sky
- * annulus, and with a round, normal-width profile when shapes are given (a galaxy or a blend is wider than the PSF).
+ * annulus, and with a round, normal-width profile when shapes are given (a galaxy or a blend is wider than the PSF;
+ * elongation counts when it exceeds 0.3 and the field's median by 0.15, so a field-wide stretch singles out no star).
  * @param sources  [{ x, y, flux, peak, saturated, fwhm? }] (detectSources output, optionally with psfShape fields)
  * @param target   { x, y, flux }
  * @param opts     { w, h, fwhm = 4, edge (px, default 4 FWHM), crowd = 4, saturation = Infinity, maxRatio = 10 }
@@ -305,6 +306,8 @@ export function focusMap(data, w, h, opts = {}) {
 export function rankComparisons(sources, target, opts = {}) {
   const { w = Infinity, h = Infinity, fwhm = 4, crowd = 4, saturation = Infinity, maxRatio = 10 } = opts, edge = opts.edge ?? 4 * fwhm;
   const wid = sources.map((s) => s.fwhm).filter(Number.isFinite), medW = wid.length ? median(wid) : NaN;
+  // elongation against the field's: when every star is stretched the same way (tracking, optics), none is singled out
+  const ell = sources.map((s) => s.ellipticity).filter(Number.isFinite), medE = ell.length >= 5 ? median(ell) : 0, eLim = Math.max(0.3, medE + 0.15);
   const out = [];
   for (const s of sources) {
     if (Math.hypot(s.x - target.x, s.y - target.y) < 2 * fwhm) continue;
@@ -317,8 +320,57 @@ export function rankComparisons(sources, target, opts = {}) {
     const de = Math.min(s.x, s.y, w - 1 - s.x, h - 1 - s.y);
     if (de < edge) { notes.push('near the edge'); pen += 2; }
     if (Number.isFinite(s.fwhm) && medW > 0 && s.fwhm > 1.3 * medW) { notes.push('wider than the other stars'); pen += 1.5; }
-    if (Number.isFinite(s.ellipticity) && s.ellipticity > 0.3) { notes.push('elongated'); pen += 1; }
+    if (Number.isFinite(s.ellipticity) && s.ellipticity > eLim) { notes.push(medE > 0.15 ? 'more elongated than the other stars' : 'elongated'); pen += 1; }
     out.push({ ...s, ratio, isolation: iso, score: pen, usable: notes.length === 0 || (notes.length === 1 && /fainter|brighter/.test(notes[0]) && ratio > 0.05 && ratio < 20), notes });
   }
   return out.sort((a, b) => a.score - b.score);
 }
+
+// ---------------------------------------------------------------------------------------------------------
+// Optimal aperture
+
+/**
+ * The aperture radius with the highest signal to noise, from a curve of growth (radialProfile's `growth`): for each
+ * radius r, S(r) / sqrt(S(r)/gain + A(r) sky² (1 + A(r)/nSky)), with A = pi r² and sky the noise per pixel in counts
+ * (sky photons and read noise; default the radial profile's annulus sigma). For a Gaussian star on a sky-limited frame
+ * the maximum is at r = 1.585 sigma = 0.673 FWHM (Howell 1989, PASP 101, 616; Naylor 1998, MNRAS 296, 339); a bright
+ * star's photon noise moves it outward, which is why the reduction still searches a range of radii around it.
+ * @param prof radialProfile output (growth.r, growth.flux, backgroundSigma, flux)
+ * @param opts { skySigma, gain = 1 (Infinity: no photon noise from the star; 'sky': gainFromSky), nSky = Infinity (pixels in the sky annulus), minRadius = 0.5 }
+ * @returns { radius, snr, fraction (of the flux inside rmax), curve: { r, snr } } or null without a usable curve of growth
+ */
+export function optimalAperture(prof, opts = {}) {
+  const { nSky = Infinity, minRadius = 0.5 } = opts, sky = Number.isFinite(opts.skySigma) ? opts.skySigma : prof.backgroundSigma;
+  const gain = opts.gain === 'sky' ? gainFromSky(prof.background, prof.backgroundSigma).gain : opts.gain ?? 1;
+  if (!prof || !prof.growth || !(sky >= 0)) return null;
+  const { r, flux } = prof.growth, snr = new Float64Array(r.length);
+  let best = -1;
+  for (let i = 0; i < r.length; i++) {
+    const S = flux[i], A = Math.PI * r[i] * r[i];
+    snr[i] = r[i] >= minRadius && S > 0 ? S / Math.sqrt(S / gain + A * sky * sky * (1 + A / nSky)) : NaN;
+    if (Number.isFinite(snr[i]) && (best < 0 || snr[i] > snr[best])) best = i;
+  }
+  if (best < 0) return null;
+  // parabola through the peak and its neighbours, for a radius between the grid steps
+  let rad = r[best];
+  if (best > 0 && best < r.length - 1 && Number.isFinite(snr[best - 1]) && Number.isFinite(snr[best + 1])) { const a = snr[best - 1], b = snr[best], c = snr[best + 1], den = a - 2 * b + c; if (den < 0) rad = r[best] + 0.5 * (a - c) / den * (r[best + 1] - r[best]); }
+  const total = prof.flux > 0 ? prof.flux : flux[flux.length - 1];
+  return { radius: rad, snr: snr[best], fraction: total > 0 ? flux[best] / total : NaN, gain, curve: { r, snr } };
+}
+
+/**
+ * A lower bound on the gain [e-/ADU] from the sky alone, when no GAIN keyword is known: the sky's variance is
+ * sky / gain + read noise², so gain >= sky / variance (equal when read noise is negligible). Using the bound overstates
+ * the stars' photon noise a little. A sky-subtracted frame (sky near 0) bounds nothing: gain Infinity (sky-limited).
+ * `sigma` is taken to be a 3-sigma-clipped estimate (as radialProfile's backgroundSigma) and corrected for the clipping.
+ * @returns { gain, bound: true when a bound was found }
+ */
+export function gainFromSky(sky, sigma, { clipped = 3 } = {}) {
+  // a sigma-clipped standard deviation is low for Gaussian noise: by 1.3% at 3 sigma (sqrt of the truncated variance)
+  const k = clipped ? Math.sqrt(1 - 2 * clipped * Math.exp(-clipped * clipped / 2) / Math.sqrt(2 * Math.PI) / (1 - 2 * normTail(clipped))) : 1, s = sigma / k;
+  const g = sky > 0 && s > 0 ? sky / (s * s) : NaN;
+  return Number.isFinite(g) && g > 0.05 ? { gain: g, bound: true } : { gain: Infinity, bound: false };
+}
+
+// upper tail of the standard normal, P(Z > z) (Abramowitz & Stegun 7.1.26 through erfc, |error| < 1.5e-7)
+function normTail(z) { const x = z / Math.SQRT2, t = 1 / (1 + 0.3275911 * x), e = ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return 0.5 * e; }

@@ -4,7 +4,7 @@
 // and numpy.linalg.lstsq for the polynomial surface; analytic values for the noise formulae; and a synthetic
 // K2-like series with a known intrapixel sensitivity that the map, the surfaces, the PSD and beta must recover.
 import { readFileSync } from 'node:fs';
-import { fft, periodogramPsd, welchPsd, lombScarglePsd, splitSegments, whiteNoiseLevel, photonNoiseLevel, photonNoise, scintillation, logBinPsd, fitRedNoise, digamma, trigamma, rmsVsBin, percentile, pixelMap, polySurface, polyTerms, surfaceOnGrid, gpSurface, syntheticRollSeries } from '../src/core/psd.js';
+import { fft, periodogramPsd, welchPsd, lombScarglePsd, splitSegments, whiteNoiseLevel, photonNoiseLevel, photonNoise, scintillation, logBinPsd, fitRedNoise, digamma, trigamma, rmsVsBin, percentile, pixelMap, polySurface, polyTerms, surfaceOnGrid, gpSurface, syntheticRollSeries, gappedPsd, gappedWhiteLevel } from '../src/core/psd.js';
 import { makeRng } from '../src/core/stats.js';
 let ok = true; const check = (name, cond, info = '') => { console.log((cond ? 'ok   ' : 'FAIL ') + name + (info ? '   ' + info : '')); if (!cond) ok = false; };
 const ref = JSON.parse(readFileSync(new URL('./psd_reference.json', import.meta.url)));
@@ -262,6 +262,45 @@ for (let i = 0; i < pn; i++) pkeep[i] = pr.u() < 0.8 ? 1 : 0;
   t0 = performance.now(); welchPsd(y, 1, { nperseg: 1024 }); const c = performance.now() - t0;
   const tt = Float64Array.from({ length: 1000 }, (_, i) => i + 0.3 * rng.next()); t0 = performance.now(); lombScarglePsd(tt, y.subarray(0, 1000)); const d = performance.now() - t0;
   check('periodogramPsd of 20,000 points in under 100 ms', a < 100 && b < 100, `n = 20000 (Bluestein, 65536-point transforms): ${a.toFixed(1)} ms; n = 19997 (prime): ${b.toFixed(1)} ms; welch nperseg 1024: ${c.toFixed(1)} ms; lombScarglePsd n = 1000 at 499 frequencies: ${d.toFixed(0)} ms`);
+}
+// ---- gaps: the PSD averaged over unbroken stretches keeps the white level where it belongs ---------------------------------
+{
+  const R = makeRng(31), dt = 2 / 1440, sig = 1e-3, w = whiteNoiseLevel(sig, dt);
+  // a TESS-like sector: 27 d of 2-min cadences, a 1.2-day downlink gap, 2% of the cadences flagged out
+  const t = [], y = []; for (let i = 0; i < 27 / dt; i++) { const ti = i * dt; if (ti > 13 && ti < 14.2) continue; if (R.next() < 0.02) continue; t.push(ti); y.push(sig * R.normal()); }
+  const T = Float64Array.from(t), Y = Float64Array.from(y), mean = (r) => r.p.reduce((a, b) => a + b, 0) / r.p.length;
+  const g = gappedPsd(T, Y), whole = lombScarglePsd(T, Y);
+  check('gapped PSD: the white level of a TESS-like sector with a downlink gap', Math.abs(mean(g) / w - 1) < 0.03 && g.nUsed === 2 && !g.fallback,
+    `mean level ${(mean(g) / w).toFixed(4)} of 2 sigma^2 dt over ${g.nUsed} stretches (one Lomb-Scargle over everything: ${(mean(whole) / w).toFixed(4)}, high by the gap's share of the span); tolerance 3%`);
+  // ground-based: three 6-hour nights a week apart (the gaps dwarf the data)
+  const tn = [], yn = []; for (const n0 of [0, 7, 14]) for (let i = 0; i < 0.25 / dt; i++) { tn.push(n0 + i * dt); yn.push(sig * R.normal()); }
+  const gn = gappedPsd(Float64Array.from(tn), Float64Array.from(yn)), wn = lombScarglePsd(Float64Array.from(tn), Float64Array.from(yn));
+  check('gapped PSD: three nights a week apart', Math.abs(mean(gn) / w - 1) < 0.06 && gn.nUsed === 3, `level ${(mean(gn) / w).toFixed(3)} (one Lomb-Scargle: ${(mean(wn) / w).toFixed(1)} times too high); tolerance 6%`);
+  // a 3-hour sinusoid in the gapped sector: the peak lands on it
+  const Ys = Float64Array.from(T, (ti, i) => Y[i] + 4e-4 * Math.sin(2 * Math.PI * ti / 0.125)), gs = gappedPsd(T, Ys);
+  let kmax = 0; for (let k = 1; k < gs.p.length; k++) if (gs.p[k] > gs.p[kmax]) kmax = k;
+  check('gapped PSD: a 3-hour signal peaks at 3 hours', Math.abs(1 / gs.f[kmax] / 0.125 - 1) < 0.01, `peak at ${(24 / gs.f[kmax]).toFixed(3)} h`);
+  // no usable stretch: the plain periodogram with the median cadence, said so
+  const few = gappedPsd(Float64Array.from({ length: 40 }, (_, i) => i * dt * (i % 7 ? 1 : 30)), Float64Array.from({ length: 40 }, () => sig * R.normal()));
+  check('gapped PSD: too few points in every stretch falls back to one periodogram', few.fallback === true && few.p.length > 0, `${few.p.length} frequencies`);
+}
+// ---- stitched data and changed exposure times -------------------------------------------------------------------------------
+{
+  const R = makeRng(47), sig = 1e-3, mean = (r) => r.p.reduce((a, b) => a + b, 0) / r.p.length;
+  // two datasets stitched: 10 days at 2 min, a 3-day gap, 10 days at 30 min (TESS 2-min and FFI cadence)
+  const t = [], y = []; for (let i = 0; i < 10 / (2 / 1440); i++) { t.push(i * 2 / 1440); y.push(sig * R.normal()); } for (let i = 0; i < 10 / (30 / 1440); i++) { t.push(13 + i * 30 / 1440); y.push(sig * R.normal()); }
+  const T = Float64Array.from(t), Y = Float64Array.from(y), g = gappedPsd(T, Y), wl = gappedWhiteLevel(sig, g.parts, g.dt);
+  check('stitched cadences: the averaged spectrum sits on the matching white level', Math.abs(mean(g) / wl - 1) < 0.05 && g.parts.length === 2 && Math.abs(g.parts[1].dt * 1440 - 30) < 1e-6,
+    `level ${(mean(g) / wl).toFixed(3)} of the n-weighted 2 sigma^2 dt over stretches at ${g.parts.map((q) => (q.dt * 1440).toFixed(0) + ' min').join(' and ')} (one cadence for both would be off by ${(wl / (2 * sig * sig * g.dt)).toFixed(1)}x); tolerance 5%`);
+  // a ground night: 60 s exposures for 3.6 h, then 120 s for 3.6 h, 5% of the frames lost
+  const tn = [], yn = []; let tt = 0; while (tt < 0.3) { if (R.next() > 0.05) { tn.push(tt); yn.push(sig * R.normal()); } tt += tt < 0.15 ? 60 / 86400 : 120 / 86400; }
+  const Tn = Float64Array.from(tn), Yn = Float64Array.from(yn), bt = rmsVsBin(Yn, { t: Tn, byTime: true }), bc = rmsVsBin(Yn, { t: Tn });
+  let worst = 0; for (let j = 0; j < bt.n.length; j++) if (bt.M[j] >= 10) worst = Math.max(worst, Math.abs(bt.rms[j] / bt.expected[j] - 1));
+  check('rms against bin duration on a night with a changed exposure time and lost frames: white noise reads as white', Math.abs(bt.beta - 1) < 0.25 && worst < 0.45,
+    `beta ${bt.beta.toFixed(2)} by duration (by point count, split at every lost frame: ${bc.beta.toFixed(2)}); largest |rms/expected - 1| with 10+ bins ${worst.toFixed(2)}`);
+  // and correlated noise on the same sampling is still seen
+  let walk = 0; const Yr = Float64Array.from(Yn, (v, i) => { walk = 0.97 * walk + 4e-4 * R.normal(); return v + walk; }), br = rmsVsBin(Yr, { t: Tn, byTime: true });
+  check('rms against bin duration: red noise on the same night gives beta well above 1', br.beta > 1.5, `beta ${br.beta.toFixed(2)}`);
 }
 console.log(`total ${((performance.now() - T0) / 1000).toFixed(1)} s`);
 process.exit(ok ? 0 : 1);

@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "de1da3ca76e44db7",
- "esbuild": "0.21.5",
+ "sourceHash": "c66ba6381619f7f1",
+ "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1268346,
-   "sha256": "e53ceb6b2fdc355df20689052b9299a0137e73830e6d8090e05005e193c310f4"
+   "bytes": 1308019,
+   "sha256": "b6e90d9f59023594cd5f1ddad711f1fe091b5222e4ac0c70a3d6d1a504f51c8a"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -29,6 +29,7 @@
   "src/core/ephemeris.js",
   "src/core/exomoon.js",
   "src/core/exportScript.js",
+  "src/core/fieldstars.js",
   "src/core/fitRunner.js",
   "src/core/fits.js",
   "src/core/gp.js",
@@ -52,6 +53,7 @@
   "src/core/phasecurve.js",
   "src/core/photometry.js",
   "src/core/physical.js",
+  "src/core/platesolve.js",
   "src/core/priors.js",
   "src/core/psd.js",
   "src/core/pyentry.js",
@@ -288,6 +290,11 @@
    "pyLiteral",
    "pythonScriptFor"
   ],
+  "fieldstars": [
+   "contamination",
+   "crossMatch",
+   "rankWithCatalog"
+  ],
   "fitRunner": [
    "runFit"
   ],
@@ -364,6 +371,7 @@
    "focusMap",
    "lineProfile",
    "lmFit",
+   "optimalAperture",
    "pixelTable",
    "psfShape",
    "radialProfile",
@@ -683,6 +691,25 @@
    "physicalOptions",
    "physicalPriorVolume"
   ],
+  "platesolve": [
+   "atEpoch",
+   "fitWcs",
+   "gaiaConeUrl",
+   "makeWcs",
+   "matchCatalog",
+   "parseGaia",
+   "parseSesame",
+   "parseVsx",
+   "separation",
+   "sesameUrl",
+   "solveField",
+   "starsForSolving",
+   "tanDeproject",
+   "tanProject",
+   "vsxConeUrl",
+   "wcsFromHeader",
+   "wcsThrough"
+  ],
   "priors": [
    "PRIOR_TYPES",
    "makeTransform",
@@ -693,7 +720,10 @@
    "digamma",
    "fft",
    "fitRedNoise",
+   "gappedPsd",
+   "gappedWhiteLevel",
    "gpSurface",
+   "localSegments",
    "logBinPsd",
    "lombScarglePsd",
    "percentile",

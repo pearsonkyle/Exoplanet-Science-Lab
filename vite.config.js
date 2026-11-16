@@ -1,8 +1,31 @@
 import { defineConfig } from 'vite';
 
 // Relative base so the built site can be dropped into any sub-path.
+// Dev only: the docs are a separate VitePress site (built into dist/docs for Pages). The dev server sends /docs/... to
+// `npm run docs:dev` on :5174 when it runs, and otherwise says how to start it.
+const DOCS_DEV = 'http://localhost:5174';
+const docsInDev = {
+  name: 'esl-docs-in-dev',
+  configureServer(server) {
+    server.middlewares.use(async (req, res, next) => {
+      if (!/^\/docs(\/|$)/.test(req.url)) return next();
+      const up = await fetch(DOCS_DEV + '/docs/', { signal: AbortSignal.timeout(400) }).then((r) => r.ok, () => false);
+      if (up) { res.statusCode = 302; res.setHeader('Location', DOCS_DEV + req.url); return res.end(); }
+      res.statusCode = 404; res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.end(`<!doctype html><meta charset="utf-8"><title>Docs</title><body style="font:15px system-ui;background:#0b0f18;color:#dfe6f3;padding:40px;max-width:640px">
+<h2>The docs are not served by this dev server</h2><p>Start them in another terminal with <code>npm run docs:dev</code> (port 5174) and reload,
+or read the <a style="color:#5fd4ff" href="https://pearsonkyle.github.io/Exoplanet-Science-Lab/docs/">published docs</a>.</p>
+<p><a style="color:#5fd4ff" href="/">Back to the app</a></p>`);
+    });
+  },
+};
+
 export default defineConfig({
   base: './',
+  // real folders, no single-page fallback: an unknown address is a 404, not the home page at the wrong depth
+  // (its relative links would then nest: /docs/plan/plan/...)
+  appType: 'mpa',
+  plugins: [docsInDev],
   worker: { format: 'es' },
   // one HTML entry per section: real folders, so the site needs no rewrite rules on a static host
   build: { target: 'es2022', rollupOptions: { input: Object.fromEntries(['index', 'plan/index', 'observe/index', 'analyze/index', 'analyze/photometry/index', 'analyze/spectroscopy/index', 'search/index', 'methods/index',

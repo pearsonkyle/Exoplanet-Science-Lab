@@ -101,16 +101,16 @@ async function mcpTools() {
   const { TOOL_SPECS } = await import(join(ROOT, 'src', 'assistant', 'toolspec.js'));
   const groups = {};
   for (const t of TOOL_SPECS) (groups[t.group || 'other'] = groups[t.group || 'other'] || []).push(t);
-  const where = (t) => (t.where === 'browser' ? 'in the page only' : t.where === 'mcp' ? 'MCP server only' : 'page and MCP server');
-  let md = `---\noutline: [2, 3]\n---\n# MCP and assistant tools\n\nThe tools the in-page assistant and the MCP server share, generated from \`src/assistant/toolspec.js\`. The page's tools act on the analyzer; the MCP server's act on a session document (\`docs/FORMAT.md\`) with the same science code. Flags: **read-only** changes nothing; **long** may take minutes (a fit); **asks first** needs the user's consent in the page.\n\n## Try it against your server\n\nStart the MCP server on your computer with this site allowed to call it (it still listens on 127.0.0.1 only):\n\n\`\`\`sh\nnode mcp/server.mjs --workspace ~/esl-work --http 8765 --allow-origin <this site's origin>\n\`\`\`\n\nThen connect below; every tool on this page gets a **Try it** box. See [MCP server](/guide/mcp) for the details.\n\n<McpConnect />\n\n`;
+  const first = (d) => esc(String(d || '').split(/(?<=\.)\s/)[0]);
+  const args = (t) => { const p = t.parameters.properties || {}, req = t.parameters.required || []; const names = Object.keys(p); return names.length ? names.map((n) => (req.includes(n) ? `**${n}**` : n)).join(', ') : '—'; };
+  const where = (t) => (t.where === 'browser' ? 'page' : t.where === 'mcp' ? 'MCP' : 'both');
+  let md = `---\noutline: [2, 2]\n---\n# MCP and assistant tools\n\nThe tools the MCP server and the in-page assistant share (generated from \`src/assistant/toolspec.js\`). Arguments in **bold** are required; ✎ marks tools that change something. *Where*: both, the page only (they need the open page), or the MCP server only. How to connect a client: [MCP server](../guide/mcp).\n\n`;
   for (const [g, list] of Object.entries(groups)) {
-    md += `## ${g[0].toUpperCase() + g.slice(1)}\n\n`;
-    for (const t of list) {
-      const flags = [t.readOnly ? 'read-only' : null, t.long ? 'long' : null, t.confirm ? 'asks first' : null, where(t)].filter(Boolean).join(' · ');
-      md += `### ${t.name}\n\n<small>${flags}</small>\n\n${esc(t.description)}\n\n${table(t.parameters.properties, t.parameters.required || [])}\n`;
-      if (t.where !== 'browser') md += `<McpTry tool="${t.name}" :args='${JSON.stringify(example(t.parameters)).replace(/'/g, '&#39;')}' />\n\n`;
-    }
+    md += `## ${g[0].toUpperCase() + g.slice(1)}\n\n| Tool | What it does | Arguments | Where |\n| --- | --- | --- | --- |\n`;
+    for (const t of list) md += `| \`${t.name}\`${t.readOnly ? '' : ' ✎'} | ${first(t.description)} | ${args(t)} | ${where(t)} |\n`;
+    md += '\n';
   }
+  md += `Each tool's full description and argument schema is what an MCP client receives from \`tools/list\`.\n`;
   writeFileSync(join(OUT, 'mcp-tools.md'), md);
   return TOOL_SPECS.length;
 }

@@ -138,6 +138,24 @@ class EphemerisFit(Model):
     def dPdt_ms_per_year(self) -> Optional[float]:
         return None if self.dPdt is None else self.dPdt * 365.25 * 86400e3
 
+    def summary(self) -> str:
+        """The fit in a few readable lines (what ``print(fit)`` shows)."""
+        kind = "Quadratic" if self.order == 2 else "Linear"
+        lines = [f"{kind} ephemeris from {self.n} times",
+                 f"  T0 = {self.t0:.6f} +- {self.err.get('t0', float('nan')):.6f} BJD_TDB",
+                 f"  P  = {self.per:.8f} +- {self.err.get('per', float('nan')):.8f} d"]
+        if self.order == 2 and self.dPdt is not None:
+            lines.append(f"  dP/dt = {self.dPdt_ms_per_year:.2f} +- {(self.dPdtErr or 0) * 365.25 * 86400e3:.2f} ms per year")
+        lines.append(f"  chi2 = {self.chi2:.1f} for {self.dof} degrees of freedom (reduced {self.reduced_chi2:.2f}), BIC = {self.bic:.1f}")
+        if self.reduced_chi2 > 2:
+            lines.append("  reduced chi2 well above 1: the error bars are too small for this model, or the times vary in another way")
+        for p in self.predictions[:5]:
+            lines.append(f"  epoch {p.get('epoch')}: {p.get('t', float('nan')):.5f} +- {1440 * p.get('err', float('nan')):.1f} min")
+        return "\n".join(lines)
+
+    def __str__(self) -> str:
+        return self.summary()
+
 
 def fit_ephemeris(times: Any, errors: Any, epochs: Any = None, period: Optional[float] = None, t_ref: Optional[float] = None,
                   order: int = 1, predict: Optional[Sequence[int]] = None) -> EphemerisFit:
@@ -178,6 +196,18 @@ class TimingPeriodogram(Model):
     deltaBic: List[Optional[float]] = Field(default_factory=list)
     verdict: str = ""
     notes: List[str] = Field(default_factory=list)
+
+    def summary(self) -> str:
+        """The verdict in words, then the models compared (what ``print(pg)`` shows)."""
+        lines = [self.verdict] if self.verdict else []
+        for m in self.models:
+            if m:
+                lines.append(f"  {m.get('name', m.get('key')):<18s} chi2 = {m.get('chi2', float('nan')):.1f}  BIC = {m.get('bic', float('nan')):.1f}" +
+                             "".join(f"  [period {t['period']:.2f} epochs = {t['periodDays']:.1f} d, amplitude {1440 * t['amp']:.1f} min]" for t in m.get("terms", [])))
+        return "\n".join(lines + [f"  note: {n}" for n in self.notes])
+
+    def __str__(self) -> str:
+        return self.summary()
 
 
 def periodogram(times: Any, errors: Any, epochs: Any = None, period: Optional[float] = None, t_ref: Optional[float] = None, **options: Any) -> TimingPeriodogram:

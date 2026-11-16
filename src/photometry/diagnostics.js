@@ -2,7 +2,7 @@
 // is passed in, so the same code draws on screen, into an export canvas, or on the analyzer page for any light
 // curve with centroids. The numbers come from src/core/psd.js.
 //
-//   renderPsd        power spectral density of the residuals on log-log axes against the white level of the
+//   renderPsd        power spectral density of the residuals against timescale (log-log) and the white level of the
 //                    error bars and the photon-noise limit, with the fitted W + A f^-gamma and marked periods
 //   renderRmsBin     rms of the binned residuals against bin size, with the white-noise expectation and beta
 //   renderPixelMap   binned residual against the (x, y) centroid, the surface that is removed, and their difference
@@ -56,10 +56,16 @@ function logFrame(ctx, th, box, xr, yr, o = {}) {
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   for (const d of decades(ly0, ly1, h)) { const y = Math.round(Y(Math.pow(10, d.e))) + 0.5; ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(l, y); ctx.lineTo(l + w, y); ctx.stroke(); if (d.label) { ctx.fillStyle = th.text; ctx.fillText(pow10Label(d.e, plainY), l - 6, y); } }
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  for (const d of decades(lx0, lx1, w * 0.6)) { const x = Math.round(X(Math.pow(10, d.e))) + 0.5; ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(x, t); ctx.lineTo(x, t + h); ctx.stroke(); if (d.label) { ctx.fillStyle = th.text; ctx.fillText(pow10Label(d.e, plainX), x, t + h + 5); } }
+  if (o.xTicks) {
+    // named ticks (round durations): grid and label at each, skipping labels that would touch the previous one
+    let last = -Infinity;
+    for (const k of o.xTicks) { if (!(k.v >= xr[0] && k.v <= xr[1])) continue; const x = Math.round(X(k.v)) + 0.5, half = ctx.measureText(k.label).width / 2;
+      ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(x, t); ctx.lineTo(x, t + h); ctx.stroke();
+      if (x - half > last + 6 && x + half < l + w + 20) { ctx.fillStyle = th.text; ctx.fillText(k.label, x, t + h + 5); last = x + half; } }
+  } else for (const d of decades(lx0, lx1, w * 0.6)) { const x = Math.round(X(Math.pow(10, d.e))) + 0.5; ctx.strokeStyle = th.grid; ctx.beginPath(); ctx.moveTo(x, t); ctx.lineTo(x, t + h); ctx.stroke(); if (d.label) { ctx.fillStyle = th.text; ctx.fillText(pow10Label(d.e, plainX), x, t + h + 5); } }
   // minor ticks
   ctx.strokeStyle = th.frame; ctx.beginPath();
-  for (let e = Math.floor(lx0); e <= lx1; e++) for (let m = 2; m <= 9; m++) { const v = m * Math.pow(10, e); if (v > xr[0] && v < xr[1]) { const x = Math.round(X(v)) + 0.5; ctx.moveTo(x, t + h); ctx.lineTo(x, t + h - 3); } }
+  if (!o.xTicks) for (let e = Math.floor(lx0); e <= lx1; e++) for (let m = 2; m <= 9; m++) { const v = m * Math.pow(10, e); if (v > xr[0] && v < xr[1]) { const x = Math.round(X(v)) + 0.5; ctx.moveTo(x, t + h); ctx.lineTo(x, t + h - 3); } }
   if (ly1 - ly0 < 7) for (let e = Math.floor(ly0); e <= ly1; e++) for (let m = 2; m <= 9; m++) { const v = m * Math.pow(10, e); if (v > yr[0] && v < yr[1]) { const y = Math.round(Y(v)) + 0.5; ctx.moveTo(l, y); ctx.lineTo(l + 3, y); } }
   ctx.stroke(); ctx.strokeRect(l + 0.5, t + 0.5, w, h);
   ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
@@ -111,15 +117,18 @@ function legend(ctx, th, box, rows, corner = 'bl') {
  *            pScale = 1      factor applied to every power for display (1e12 turns relative-flux^2 into ppm^2)
  *            yLabel, title   yLabel defaults to "PSD (flux^2 per <fUnit>)"
  *            yRange          [lo, hi] to fix the vertical range (e.g. the same for "before" and "after") }
- * The top edge carries the same axis expressed as a period (one scale, two sets of labels).
+ * The horizontal axis is the timescale (period, 1 / f) in round durations, longer to the right.
  */
 export function renderPsd(ctx, W, H, d, th = PHOT_THEME) {
   ctx.fillStyle = th.bg; ctx.fillRect(0, 0, W, H);
-  const sc = d.pScale ?? 1, fUnit = d.fUnit || '1/d', box = { l: 64, t: 36, w: W - 64 - 12, h: H - 36 - 34 };
+  const sc = d.pScale ?? 1, fUnit = d.fUnit || '1/d', box = { l: 64, t: d.title ? 26 : 10, w: W - 64 - 12, h: H - (d.title ? 26 : 10) - 34 };
   const fs = [], ps = [];
   for (let i = 0; i < d.f.length; i++) if (d.f[i] > 0 && d.p[i] > 0 && Number.isFinite(d.p[i])) { fs.push(d.f[i]); ps.push(d.p[i] * sc); }
   if (fs.length < 2 || box.w < 40 || box.h < 40) { ctx.fillStyle = th.text; ctx.font = th.font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('no spectrum', W / 2, H / 2); return; }
   let f0 = Infinity, f1 = -Infinity; for (const v of fs) { if (v < f0) f0 = v; if (v > f1) f1 = v; }
+  // the horizontal axis is the timescale of the variation (the period, 1 / f) in minutes, growing to the right, so a
+  // feature reads directly against the transit duration or the cadence
+  const mpc = minutesPerCycle(fUnit), tOf = (f) => mpc / f;
   // vertical range: the raw periodogram has deep, meaningless minima: keep its upper 98%, and everything else that is drawn
   const sorted = Float64Array.from(ps).sort(); let y0 = sorted[Math.floor(0.02 * (sorted.length - 1))], y1 = sorted[sorted.length - 1];
   const levels = [d.white, d.photon, d.fit && d.fit.W].filter((v) => v > 0).map((v) => v * sc);
@@ -129,9 +138,9 @@ export function renderPsd(ctx, W, H, d, th = PHOT_THEME) {
   const nLegend = 1 + (d.binned ? 1 : 0) + (d.fit && d.fit.W > 0 ? 1 : 0) + (d.white > 0 ? 1 : 0) + (d.photon > 0 ? 1 : 0), room = Math.min(0.45, (nLegend * 15 + 18) / box.h);
   y0 = Math.pow(10, Math.log10(y1) - (Math.log10(y1) - Math.log10(y0)) / (1 - room));   // the legend sits below the spectrum, not on it
   if (d.yRange) [y0, y1] = d.yRange;
-  const xr = [f0 / 1.08, f1 * 1.08], { X, Y } = logFrame(ctx, th, box, xr, [y0, y1], { xLabel: `frequency (${fUnit})`, yLabel: d.yLabel || `PSD (flux² per ${fUnit})` });
-  const mpc = minutesPerCycle(fUnit);
-  durationAxis(ctx, th, box, (min) => X(mpc / min), 'period');
+  const xr = [tOf(f1) / 1.08, tOf(f0) * 1.08], ticks = DURATIONS.map((m) => ({ v: m, label: durationLabel(m) }));
+  const { X: XT, Y } = logFrame(ctx, th, box, xr, [y0, y1], { xTicks: ticks, xLabel: 'timescale of the variation (period = 1 / frequency)', yLabel: d.yLabel || `PSD (flux² per ${fUnit})` });
+  const X = (f) => XT(tOf(f));      // the rest of this function speaks in frequency
   if (d.title) { ctx.fillStyle = th.strong; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(fitText(ctx, d.title, W - box.l - 8), box.l, 4); }
   ctx.save(); ctx.beginPath(); ctx.rect(box.l, box.t, box.w, box.h); ctx.clip();
   // raw
@@ -140,7 +149,7 @@ export function renderPsd(ctx, W, H, d, th = PHOT_THEME) {
   ctx.stroke(); ctx.globalAlpha = 1;
   // marks
   for (const m of d.marks || []) {
-    if (!(m.f > xr[0] && m.f < xr[1])) continue; const x = Math.round(X(m.f)) + 0.5;
+    if (!(tOf(m.f) > xr[0] && tOf(m.f) < xr[1])) continue; const x = Math.round(X(m.f)) + 0.5;
     ctx.strokeStyle = th.post; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(x, box.t); ctx.lineTo(x, box.t + box.h); ctx.stroke(); ctx.setLineDash([]);
   }
   // levels
@@ -149,7 +158,7 @@ export function renderPsd(ctx, W, H, d, th = PHOT_THEME) {
   // fit
   if (d.fit && d.fit.W > 0) {
     ctx.strokeStyle = th.model; ctx.lineWidth = 2; ctx.beginPath();
-    for (let k = 0; k <= 120; k++) { const f = xr[0] * Math.pow(xr[1] / xr[0], k / 120), x = X(f), y = Y((d.fit.W + d.fit.A * Math.pow(f, -d.fit.gamma)) * sc); if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+    for (let k = 0; k <= 120; k++) { const f = mpc / (xr[0] * Math.pow(xr[1] / xr[0], k / 120)), x = X(f), y = Y((d.fit.W + d.fit.A * Math.pow(f, -d.fit.gamma)) * sc); if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
     ctx.stroke(); ctx.lineWidth = 1;
   }
   // binned
@@ -162,7 +171,7 @@ export function renderPsd(ctx, W, H, d, th = PHOT_THEME) {
   ctx.restore();
   const placed = [];
   for (const m of d.marks || []) {   // labels last, on a patch of background, so the spectrum does not strike through them
-    if (!(m.f > xr[0] && m.f < xr[1])) continue; const x = Math.round(X(m.f)), tw = ctx.measureText(m.label).width, left = x + 5 + tw > box.l + box.w - 2, tx = left ? x - 5 - tw : x + 5;
+    if (!(tOf(m.f) > xr[0] && tOf(m.f) < xr[1])) continue; const x = Math.round(X(m.f)), tw = ctx.measureText(m.label).width, left = x + 5 + tw > box.l + box.w - 2, tx = left ? x - 5 - tw : x + 5;
     let row = 0; while (placed.some((q) => q.row === row && tx < q.b + 6 && tx + tw > q.a - 6)) row++;   // a label that would run into another drops a line
     placed.push({ row, a: tx, b: tx + tw }); const ty = box.t + 4 + 15 * row;
     ctx.globalAlpha = 0.78; ctx.fillStyle = th.bg; ctx.fillRect(tx - 2, ty, tw + 4, 14); ctx.globalAlpha = 1;
@@ -172,7 +181,7 @@ export function renderPsd(ctx, W, H, d, th = PHOT_THEME) {
   legend(ctx, th, box, [
     { label: 'periodogram of the residuals', color: th.data, alpha: 0.5, width: 1 },
     d.binned && { label: 'log-binned', color: th.strong, width: 2 },
-    d.fit && d.fit.W > 0 && { label: d.fit.red !== false && d.fit.knee > f0 && Number.isFinite(kneeMin) ? `fit W + A f^−γ:  γ = ${d.fit.gamma.toFixed(2)}, knee ${sig(d.fit.knee)} ${fUnit} (${durationLabel(kneeMin)})` : `fit W + A f^−γ:  flat at W = ${sig(d.fit.W * sc)} (no power-law rise)`, color: th.model, width: 2 },
+    d.fit && d.fit.W > 0 && { label: d.fit.red !== false && d.fit.knee > f0 && Number.isFinite(kneeMin) ? `fit W + A f^−γ:  γ = ${d.fit.gamma.toFixed(2)}, red noise on timescales above ${durationLabel(kneeMin)}` : `fit W + A f^−γ:  flat at W = ${sig(d.fit.W * sc)} (no power-law rise)`, color: th.model, width: 2 },
     d.white > 0 && { label: `white level of the error bars  ${sig(d.white * sc)}`, color: th.ok, dash: [3, 3] },
     d.photon > 0 && { label: `photon-noise limit  ${sig(d.photon * sc)}`, color: th.star, dash: [7, 4] },
   ], 'bl');
@@ -291,4 +300,67 @@ export function renderPixelMap(ctx, W, H, d, th = PHOT_THEME) {
   ctx.fillStyle = th.text; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   for (const v of tk.ticks) { const y = Math.round(bt + bh * (1 - (v / us + vmax) / (2 * vmax))) + 0.5; ctx.beginPath(); ctx.moveTo(bx + bw, y); ctx.lineTo(bx + bw + 4, y); ctx.stroke(); ctx.fillText((v > 0 ? '+' : '') + fmtStep(v, tk.step), bx + bw + 7, y); }
   ctx.textBaseline = 'bottom'; ctx.fillText(units, bx, bt - 4);
+}
+
+// A perceptual blue → cyan → green → yellow → red ramp (the look of the Spitzer pixel maps), t in [0, 1]
+const JET = [[48, 64, 214], [52, 152, 230], [64, 214, 214], [120, 222, 120], [238, 226, 88], [246, 156, 64], [222, 62, 56]];
+export function responseColor(t, a = 1) {
+  t = Math.max(0, Math.min(1, t)) * (JET.length - 1); const i = Math.min(JET.length - 2, Math.floor(t)), f = t - i, c = JET[i].map((v, k) => Math.round(v + f * (JET[i + 1][k] - v)));
+  return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+}
+const pctl = (arr, p) => { const v = arr.filter(Number.isFinite).sort((a, b) => a - b); return v.length ? v[Math.min(v.length - 1, Math.max(0, Math.round(p * (v.length - 1))))] : NaN; };
+
+/**
+ * Pixel map in the manner of the Spitzer IRAC maps (github.com/pearsonkyle/Exoplanet-Mapping): every frame's
+ * centroid as a point, coloured by the relative pixel response there (1 + the fitted systematics: the kernel or
+ * polynomial surface in x and y), with a colour bar. The axes span the centroids (0.5–99.5 percentiles) at one
+ * scale in x and y, so the cloud keeps its true shape; a cloud more than 3 : 1 is drawn in a square box instead.
+ * Solid faint lines mark pixel edges (centres at integers).
+ * @param d { x, y          centroids (px)
+ *            response      relative pixel response per point (1 = mean); NaN points are skipped
+ *            label         colour-bar label (default "relative pixel response")
+ *            range         [lo, hi] of the colour scale (default the 2nd–98th percentiles, symmetric about 1)
+ *            title, xLabel, yLabel }
+ */
+export function renderPixelResponse(ctx, W, H, d, th = PHOT_THEME) {
+  ctx.fillStyle = th.bg; ctx.fillRect(0, 0, W, H); ctx.font = th.font;
+  const n = d.x.length, ok = []; for (let i = 0; i < n; i++) if (Number.isFinite(d.x[i]) && Number.isFinite(d.y[i]) && Number.isFinite(d.response[i])) ok.push(i);
+  if (ok.length < 3) { ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('too few centroids', W / 2, H / 2); return; }
+  const xs = ok.map((i) => d.x[i]), ys = ok.map((i) => d.y[i]), rs = ok.map((i) => d.response[i]);
+  let x0 = pctl(xs, 0.005), x1 = pctl(xs, 0.995), y0 = pctl(ys, 0.005), y1 = pctl(ys, 0.995);
+  if (!(x1 > x0)) { x0 -= 0.05; x1 += 0.05; } if (!(y1 > y0)) { y0 -= 0.05; y1 += 0.05; }
+  const px = 0.03 * (x1 - x0), py = 0.03 * (y1 - y0); x0 -= px; x1 += px; y0 -= py; y1 += py;
+  let lo, hi; if (d.range) [lo, hi] = d.range; else { const a = Math.max(Math.abs(pctl(rs, 0.02) - 1), Math.abs(pctl(rs, 0.98) - 1)) || 1e-4; lo = 1 - a; hi = 1 + a; }
+  const cbW = 92, mL = 64, mT = d.title ? 28 : 12, mB = 40, pw = W - mL - cbW, ph = H - mT - mB;
+  if (pw < 40 || ph < 40) return;
+  // one scale in x and y (the cloud's own aspect), unless it is so lopsided that a square box reads better
+  const xr = x1 - x0, yr = y1 - y0, s = Math.min(pw / xr, ph / yr), lopsided = Math.max(xr / yr, yr / xr) > 3;
+  const side = Math.min(pw, ph), dw = lopsided ? side : s * xr, dh = lopsided ? side : s * yr;
+  const l = Math.round(mL + (pw - dw) / 2), t = Math.round(mT + (ph - dh) / 2), X = (v) => l + (v - x0) / xr * dw, Y = (v) => t + dh - (v - y0) / yr * dh;
+  if (d.title) { ctx.fillStyle = th.strong; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(fitText(ctx, d.title, W - mL - 8), mL, 6); }
+  ctx.save(); ctx.beginPath(); ctx.rect(l, t, dw, dh); ctx.clip();
+  const r = ok.length > 20000 ? 1.1 : ok.length > 4000 ? 1.6 : ok.length > 800 ? 2.2 : 3, alpha = ok.length > 4000 ? 0.45 : 0.7;
+  // drawn in order of distance from 1, so the extremes sit on top and the structure shows through dense clouds
+  const ord = ok.map((_, k) => k).sort((a, b) => Math.abs(rs[a] - 1) - Math.abs(rs[b] - 1));
+  for (const k of ord) { ctx.fillStyle = responseColor((rs[k] - lo) / (hi - lo), alpha); ctx.beginPath(); ctx.arc(X(xs[k]), Y(ys[k]), r, 0, 6.2832); ctx.fill(); }
+  ctx.strokeStyle = th.strong; ctx.globalAlpha = 0.35; ctx.lineWidth = 1; ctx.beginPath();
+  for (let e = Math.ceil(x0 - 0.5) + 0.5; e < x1; e += 1) if (e > x0) { const x = Math.round(X(e)) + 0.5; ctx.moveTo(x, t); ctx.lineTo(x, t + dh); }
+  for (let e = Math.ceil(y0 - 0.5) + 0.5; e < y1; e += 1) if (e > y0) { const y = Math.round(Y(e)) + 0.5; ctx.moveTo(l, y); ctx.lineTo(l + dw, y); }
+  ctx.stroke(); ctx.globalAlpha = 1; ctx.restore();
+  ctx.strokeStyle = th.frame; ctx.strokeRect(l + 0.5, t + 0.5, dw, dh);
+  const tx = niceTicks(x0, x1, Math.max(2, Math.floor(dw / 70))), ty = niceTicks(y0, y1, Math.max(2, Math.floor(dh / 40)));
+  ctx.fillStyle = th.text; ctx.strokeStyle = th.frame; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const v of tx.ticks) { const x = Math.round(X(v)) + 0.5; ctx.beginPath(); ctx.moveTo(x, t + dh); ctx.lineTo(x, t + dh + 4); ctx.stroke(); ctx.fillText(fmtStep(v, tx.step), x, t + dh + 6); }
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (const v of ty.ticks) { const y = Math.round(Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(l, y); ctx.lineTo(l - 4, y); ctx.stroke(); ctx.fillText(fmtStep(v, ty.step), l - 6, y); }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(d.xLabel || 'x centroid (px)', l + dw / 2, t + dh + 34);
+  ctx.save(); ctx.translate(Math.max(14, l - 56), t + dh / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(d.yLabel || 'y centroid (px)', 0, 0); ctx.restore();
+  // colour bar
+  const bx = l + dw + 18, bw = 12, bt = t, bh = dh, steps = Math.min(200, Math.round(bh));
+  for (let k = 0; k < steps; k++) { const ya = Math.round(bt + k * bh / steps), yb = Math.round(bt + (k + 1) * bh / steps); ctx.fillStyle = responseColor(1 - (k + 0.5) / steps); ctx.fillRect(bx, ya, bw, yb - ya); }
+  ctx.strokeStyle = th.frame; ctx.strokeRect(bx + 0.5, bt + 0.5, bw, bh);
+  const tk = niceTicks(lo, hi, Math.max(2, Math.floor(bh / 34)));
+  ctx.fillStyle = th.text; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  for (const v of tk.ticks) { if (v < lo || v > hi) continue; const y = Math.round(bt + bh * (1 - (v - lo) / (hi - lo))) + 0.5; ctx.beginPath(); ctx.moveTo(bx + bw, y); ctx.lineTo(bx + bw + 4, y); ctx.stroke(); ctx.fillText(fmtStep(v, tk.step), bx + bw + 6, y); }
+  ctx.save(); ctx.translate(Math.min(W - 8, bx + bw + 62), bt + bh / 2); ctx.rotate(Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(d.label || 'relative pixel response', 0, 0); ctx.restore();
 }

@@ -35,12 +35,13 @@ Notation: $R_\star$, $M_\star$ stellar radius and mass; $k = R_p/R_\star$; $a/R_
 21. [Image photometry](#photometry)
 22. [TESS, Kepler and K2 light curves: quality, stitching, transit-aware detrending, K2 systematics](#spacelc)
 23. [Image inspection, focus and comparison stars](#imexam)
-24. [Noise diagnostics](#noise)
-25. [The session format and reproducibility](#session)
-26. [Validation](#validation)
-27. [Reproducibility table](#reproducibility)
-28. [How to cite and report](#cite)
-29. [References](#references)
+24. [Sky coordinates, the target by name, Gaia comparison stars and optimal apertures](#platesolve)
+25. [Noise diagnostics](#noise)
+26. [The session format and reproducibility](#session)
+27. [Validation](#validation)
+28. [Reproducibility table](#reproducibility)
+29. [How to cite and report](#cite)
+30. [References](#references)
 
 <a id="conventions"></a>
 
@@ -1065,7 +1066,7 @@ The photometry page has the inspection tools of IRAF's imexam [Tody 1986](#ref-t
 - **Saturation.** SATURATE, SATLEVEL, DATAMAX or MAXLIN from the header, else the largest value of the integer format (with BZERO and BSCALE).
 - **Elongation.** A Gaussian with free position angle fitted to a box of about 2 FWHM (the PSF fit of the photometry): ellipticity $1 - b/a$ and the direction of the major axis.
 - **Focus across the field.** Stars are detected, and saturated stars, stars with a neighbour brighter than 5% of their flux within 2.5 box half-widths, and failed fits are dropped. Each remaining star gets the rotated Gaussian fit (twice: the second with a box of 4σ of the median star). The field is cut into $n \times n$ cells, each with the median FWHM and ellipticity and the ellipticity-weighted mean of $e^{2i\theta}$. A quadratic surface in $x, y$ is fitted to the FWHM with one 3σ rejection; its minimum, when inside the frame, is marked as the sharpest point. The summary compares the corner cells with the centre cell (curvature), the corners with each other (tilt), and reports $|\langle e\,e^{2i\theta}\rangle| / \langle e\rangle$, near 1 when every star is stretched the same way (tracking, guiding, wind) and near 0 for optical patterns, and $\langle e \cos 2(\theta - \phi)\rangle / \langle e\rangle$ over stars away from the centre ($\phi$ the direction from the centre: +1 radial, −1 tangential).
-- **Ranking comparison stars.** For each detected star: $|\ln(F/F_\mathrm{target})|$, plus 3 when the flux ratio is outside 1/10 to 10, plus 10 when saturated, plus $1 + 2(4 - d)/4$ when a neighbour brighter than 10% of it lies within $d < 4$ FWHM, plus 2 within 4 FWHM of the edge, plus 1.5 when its FWHM exceeds the median by 30% (a blend or a galaxy), plus 1 when its ellipticity exceeds 0.3. Lower is better; the four best usable stars are proposed when only the target is chosen. The light-curve search still tries every comparison choice and keeps the one with the least scatter.
+- **Ranking comparison stars.** For each detected star: $|\ln(F/F_\mathrm{target})|$, plus 3 when the flux ratio is outside 1/10 to 10, plus 10 when saturated, plus $1 + 2(4 - d)/4$ when a neighbour brighter than 10% of it lies within $d < 4$ FWHM, plus 2 within 4 FWHM of the edge, plus 1.5 when its FWHM exceeds the median by 30% (a blend or a galaxy), plus 1 when its ellipticity exceeds both 0.3 and the median of the field by 0.15 (a field where every star is stretched the same way singles none out). Lower is better; the four best usable stars are proposed when only the target is chosen. The light-curve search still tries every comparison choice and keeps the one with the least scatter.
 - **FITS light-curve tables.** The analyzer reads TESS, Kepler and K2 light-curve files: the first binary table, TIME plus BJDREFI + BJDREFF (BTJD = BJD$_\mathrm{TDB}$ − 2457000, BKJD = BJD$_\mathrm{TDB}$ − 2454833), the first of PDCSAP_FLUX, KSPSAP_FLUX, DET_FLUX, FCOR, FLUX, SAP_FLUX (or a column chosen by name) with its error column, rows with a non-zero QUALITY flag or a blank time or flux left out, and flux and errors divided by the median.
 
 ### Accuracy and checks
@@ -1076,12 +1077,39 @@ The photometry page has the inspection tools of IRAF's imexam [Tody 1986](#ref-t
 
 - The FWHM fits assume a round profile; the elongation comes from a separate elliptical fit. Undersampled stars (FWHM below about 2 px) are fitted to pixel values without averaging the model over the pixel, which widens the FWHM by about $\sqrt{\sigma^2 + 1/12}/\sigma$ (2% at σ = 1.5 px).
 - The focus verdicts use fixed thresholds (15% for curvature and tilt, ellipticity 0.12 to 0.15, coherence 0.6) chosen on synthetic fields; they describe the frame, not its cause. Seeing and wind change from frame to frame, so a single frame can mislead.
-- Comparison stars are ranked on one frame. Variability, colour and the star's position in later frames are not considered, and no catalogue of variable stars is queried.
+- Comparison stars are ranked on one frame, and from the image alone variability and colour are not known; with sky coordinates the next section adds both from Gaia DR3 and VSX.
 - Saturation is read from the header or the data format only; a camera that saturates below its format limit (common for 16-bit CMOS) is not recognised without a SATURATE keyword.
+
+<a id="platesolve"></a>
+
+## 24. Sky coordinates, the target by name, Gaia comparison stars and optimal apertures
+
+Code: `src/core/platesolve.js`, `src/core/fieldstars.js`, `src/core/imexam.js`, `src/photometry/wcs.js`
+
+The photometry page gives the first frame a world coordinate system (WCS) without an account or a key: its stars are matched to Gaia DR3 [Gaia Collaboration, Prusti et al. 2016](#ref-gaia2016); [Gaia Collaboration, Vallenari et al. 2023](#ref-gaia2023), fetched from VizieR [Ochsenbein, Bauer & Marcout 2000](#ref-ochsenbein2000) by the page, and a gnomonic (TAN) projection [Calabretta & Greisen 2002](#ref-calabretta2002) is fitted to the pairs. A WCS already in the header is used as it is; one returned by astrometry.net [Lang et al. 2010](#ref-lang2010) can be loaded from its wcs.fits. The other frames get theirs through the frame-to-frame transform of the reduction (triangle matching of their stars to the first frame's).
+
+- **Pointing and scale.** The target's position from what the user types (coordinates, or a name looked up in the site's catalogue and then in CDS Sesame), else the header RA / DEC (OBJCTRA, OBJCTDEC, ...); the scale from the header (IM_SCALE, PIXSCALE, ..., the CD matrix, or $206.265\,p/f$ from XPIXSZ and FOCALLEN) within ±15%, else from 0.25 to 18″/px in six overlapping steps of ±42%. Gaia stars to $G < 19.5$ (the brightest 3000) are taken within one image diagonal of the target, or 0.75 of a diagonal of the header pointing, and moved to the frame's epoch with their proper motions.
+- **Stars.** Those of the frame's detection, each re-centred by a Gaussian fit (the box centroid is pulled by neighbours and the sky on undersampled frames). Only as many Gaia stars are used as about twice the number detected per field area, brightest first.
+- **Matching.** Triangles of the 22 brightest stars and of the brightest catalogue stars, sides between 6% and 80% of the short side of the frame, are compared by their side ratios $(r_1, r_2) = (a/c, b/c)$ within 0.008 [Groth 1986](#ref-groth1986); [Valdes et al. 1995](#ref-valdes1995); mirror images are allowed (orientations opposite), and the scale $c_\mathrm{sky}/c_\mathrm{pix}$ must lie in the allowed range. Each pair of similar triangles proposes a similarity transform (scale, rotation, parity, offset); the proposals are binned (0.02 in ln scale, 2° in rotation, a few pixels in offset), and the 60 best-supported are checked against every detected star: the transform bringing the most stars within 2.5 px of a catalogue star wins after five rounds of re-matching and refitting. It is accepted with at least $\max(6, 2\lambda + 3)$ pairs, $\lambda$ being the number expected by chance from the density of catalogue stars.
+- **Fit.** The standard coordinates $(\xi, \eta)$ of the catalogue stars about a tangent point are fitted by linear least squares as polynomials in the pixel offsets $(u, v)$ from CRPIX (the image centre): degree 1 gives the CD matrix, degree 2 is TAN-SIP [Shupe et al. 2005](#ref-shupe2005) with $A_{pq}, B_{pq} = \mathrm{CD}^{-1}$ times the quadratic coefficients. CRVAL is moved to where the constant terms vanish and the fit repeated until it stays put. All stars are re-matched within $\min(3, \max(1, 3\,\mathrm{rms}))$ px, stars beyond 3 rms are dropped, and SIP order 2 is kept when it lowers the corrected Akaike criterion $2n\ln\mathrm{rms}^2 + 2k + 2k(k+1)/(2n - k - 1)$ (6 against 12 parameters) by 2 or more, judged on the stars the SIP fit keeps. A solution needs at least $\max(8, 3\lambda + 5)$ matched stars and an rms under 1 px. Sky to pixel inverts the SIP polynomials by Newton's method; AP and BP are fitted on a grid for the header.
+- **The target.** Its catalogue position is projected with the WCS, re-centred on the star there, and offered as the target; its RA and Dec fill the BJD settings.
+- **Comparison stars with Gaia.** Each detected star takes the nearest Gaia star within 1.5 px. The image ranking of the previous section is extended: plus $0.3\,|\Delta G|$, plus $\min(4, |\Delta(G_\mathrm{BP} - G_\mathrm{RP})|/0.4)$ against the target's colour (noted above 0.5 mag; extinction and the band's response differ with colour, so a colour mismatch leaves an airmass trend in the ratio), plus 10 and not usable when Gaia flags it VARIABLE or a VSX [Watson, Henden & Price 2006](#ref-watson2006) entry lies within $\max(3'', 1.5\,\mathrm{px})$, plus $\min(4, 8D)$ for the light $D = \sum 10^{-0.4(G_i - G)}$ of other Gaia stars within 2 FWHM, too faint to be detected or not (not usable above 5%), plus 2 and not usable without a Gaia counterpart. The same $D$ is reported for the target, since it dilutes the transit depth.
+- **Optimal aperture.** From each star's curve of growth $S(r)$, the radius maximising $S/\sqrt{S/g + \pi r^2\sigma_\mathrm{sky}^2}$ [Howell 1989](#ref-howell1989); [Naylor 1998](#ref-naylor1998), interpolated by a parabola through the peak; for a Gaussian star with negligible photon noise the maximum is at $1.585\sigma = 0.673$ FWHM. Without a GAIN keyword, $g = \mathrm{sky}/\sigma_\mathrm{sky}^2$ (the 3σ-clipped σ corrected by 1.3%), a lower bound because read noise adds to the variance. The radii the reduction tries are set from half to twice the target's optimum in units of its PSF σ, and at least 2σ beyond it; the light curve's scatter still decides.
+
+### Accuracy and checks
+
+- The least-squares WCS against astropy's fit_wcs_from_points [Astropy Collaboration 2022](#ref-astropy2022) on the same star lists (TAN at Dec 2° and 78°, and TAN-SIP), round trips through the header and src/core/fits.js readWcs, 24 synthetic fields (random rotation, mirror, 3% scale error, pointing off by up to 40% of the field, 25% of the stars missing and 15% spurious, SIP in a quarter), an unrelated catalogue (no solution claimed), the optimal radius against the analytic maximum, the gain bound, and the real HAT-P-32 b frame against an independent solution (photutils detection, brute-force match, astropy fit), with the Gaia and VSX answers saved: `node test/platesolve.test.mjs`. The page against live VizieR: `test/platesolve_check.py`.
+
+### Assumptions and limits
+
+- The matcher needs about eight stars in common with Gaia and a pointing within about one image diagonal (the target's name or the header); astrometry.net solves blind and is the way out when both fail. Its API needs a key and sends no CORS headers (checked 2026-11-16), so the page cannot call it: the user uploads the frame there and loads the file it returns.
+- The scale must be known to ±15% or found in the six steps (up to six catalogue queries). Distortion beyond SIP order 2 (very wide fields, fisheye lenses) is not modelled.
+- Colour, magnitude and contamination use Gaia's G band, not the observer's filter. The VSX and Gaia variability flags list known variables only; a quiet star in both can still vary.
+- The optimal aperture is for one frame; seeing and guiding change during a night, which is why it only centres the search.
 
 <a id="noise"></a>
 
-## 24. Noise diagnostics
+## 25. Noise diagnostics
 
 Code: `src/core/psd.js`, `src/core/gp.js`, `src/photometry/diagnostics.js`
 
@@ -1097,6 +1125,10 @@ $$
 
 and the level expected from the error bars is $2\,\langle\sigma_i^2\rangle\,\Delta t$. A model $P(f) = W + A f^{-\gamma}$ can be fitted to the logarithm of the (bias-corrected) spectrum; red noise is flagged when it improves the fit significantly and the knee lies inside the sampled band.
 
+### Gaps, stitched data and changed exposure times
+
+On the photometry page the spectrum of the residuals is the Lomb-Scargle PSD of every unbroken stretch, each scaled with its own median cadence, averaged on one frequency grid with weights equal to the number of points; a stretch ends where a step exceeds five times the larger of the median steps just before and just after it, so a change of cadence (stitched 2-min and 30-min data, a longer exposure later in the night) is not a gap and a real gap is. The white and photon-noise levels are averaged over the stretches the same way. One Lomb-Scargle over a whole gapped series takes its cadence as span / (n − 1), which a gap inflates: 4% high for a TESS sector with its downlink gap, 22 times for three nights a week apart in the test.
+
 ### RMS against bin size
 
 The residuals are averaged in non-overlapping bins of $N$ points ($M$ bins) and the rms of the bin means is compared with the white-noise expectation [Pont, Zucker & Queloz 2006](#ref-pont2006); [Winn et al. 2008](#ref-winn2008), in the convention of [Cubillos et al. 2017](#ref-cubillos2017):
@@ -1105,7 +1137,7 @@ $$
 \sigma_N^\mathrm{expected} = \frac{\sigma_1}{\sqrt{N}}\sqrt{\frac{M}{M-1}}, \qquad \beta = \max_N \frac{\sigma_N}{\sigma_N^\mathrm{expected}}
 $$
 
-with an uncertainty $\sigma_N/\sqrt{2M}$ and the maximum taken over bin sizes with at least 10 bins. $\beta > 1$ indicates correlated noise.
+with an uncertainty $\sigma_N/\sqrt{2M}$ and the maximum taken over bin sizes with at least 10 bins. $\beta > 1$ indicates correlated noise. On the photometry page the bins have a fixed duration ($N$ times the median cadence, laid on the clock from the start of each stretch) and need at least half their nominal points; the expectation then uses each bin's own occupancy, $\sigma_1^2\langle 1/n_b\rangle M/(M-1)$, so lost frames and changed exposure times do not shorten or lengthen the bins.
 
 ### Photon and scintillation noise
 
@@ -1113,11 +1145,12 @@ For reference the page computes the CCD equation of [Merline & Howell 1995](#ref
 
 ### Pixel map
 
-Residuals binned against the centroid position, with a polynomial or Gaussian-process surface, show intrapixel sensitivity.
+Every frame's centroid drawn as a point coloured by the relative pixel response there (1 + the fitted systematics in x and y: the kernel, Gaussian-process or order-2 polynomial surface), as in the Spitzer IRAC maps of github.com/pearsonkyle/Exoplanet-Mapping; equal scale in x and y unless the centroid cloud is more than 3 : 1, then a square box.
 
 ### Accuracy and checks
 
 - `node test/psd.test.mjs` (references: scipy 1.13.1, astropy 6.0.1, MC3 3.2.1): periodogram density against `scipy.signal.periodogram` within 5.2e-14 of the highest peak; Welch against `scipy.signal.welch` within 1.0e-15; Lomb-Scargle density against astropy within 7.7e-15; rms against bin size, expectation and $\beta$ against `mc3.stats.time_avg` within 7.1e-15; red-noise fit against `scipy.optimize.least_squares` within 1.8e-8.
+- Gaps and cadences (same test, synthetic white noise): a TESS-like sector with a 1.2-day gap and 2% of cadences lost averages to 1.011 of $2\sigma^2\Delta t$ (one periodogram: 1.039); three nights a week apart 0.992 (one periodogram: 22 times too high); stitched 2-min and 30-min data 0.983 of the matching level; on a night whose exposure doubles halfway with 5% of frames lost, the mean of $(\sigma_N/\sigma_N^\mathrm{expected})^2$ over 966 bins from 60 nights is 0.996, and an added random walk gives $\beta = 3.3$.
 - Gaussian-process detrending: likelihood against scikit-learn: 1.1e-13. ([Validation: From images to a light curve](https://exoplanet.science/methods/#val-photometry); `test/gp.test.mjs`)
 
 ### Assumptions and limits
@@ -1129,7 +1162,7 @@ References: [Welch 1967](#ref-welch1967); [Pont, Zucker & Queloz 2006](#ref-pont
 
 <a id="session"></a>
 
-## 25. The session format and reproducibility
+## 26. The session format and reproducibility
 
 Code: `docs/FORMAT.md`, `src/core/session.js`, `src/core/exportScript.js`, `python/`, `tools/build_example_results.py`
 
@@ -1154,7 +1187,7 @@ The same document runs in the browser, headless in Node (`runSession`), in the P
 
 <a id="validation"></a>
 
-## 26. Validation
+## 27. Validation
 
 How the models compare with other codes, with independent references and with published results. On the site this is the Validation tab of the Methods page (https://exoplanet.science/methods/#validation), which recomputes this code's side of the first table in the browser, draws the comparisons and lists where this code is weaker; below are the numbers as the tests print them.
 
@@ -1190,7 +1223,7 @@ Each line is printed by the test named and stored in `public/validation/project.
 
 <a id="reproducibility"></a>
 
-## 27. Reproducibility table
+## 28. Reproducibility table
 
 For each bundled example: where the data come from and under what terms, what was reproduced, and the command that regenerates it. Values of this code are read from the stored result of each example (`public/examples/results/`, extracted from files dated up to 2026-11-16). **Rows marked "NOT REPRODUCED" are results this code does not match.** Published values are quoted as this repository records them; where it holds no uncertainty for a published value, none is shown. The validation topics, with the command that reruns each, are in the [Validation](#validation) section.
 
@@ -1477,7 +1510,7 @@ As far as the files in this repository state them. The project itself has no lic
 
 <a id="cite"></a>
 
-## 28. How to cite and report
+## 29. How to cite and report
 
 A result from this software can be reported like any other fit, provided the paper states: the software and its version; the model components and the limb-darkening law with the source of its coefficients; every free parameter with its prior, and what was held fixed (in particular $a/R_\star$ and the stellar mass and radius); the sampler settings and the outcome (convergence, likelihood calls, effective samples, $\ln Z$ with its uncertainty, any sampler warning); the time standard of the data; and where the session file with the posterior draws is archived.
 
@@ -1580,9 +1613,9 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 
 <a id="references"></a>
 
-## 29. References
+## 30. References
 
-109 entries: every work cited by the methods and by the validation (`src/validation/refs.js`). Each was checked against the Crossref record of its DOI, arXiv, or the Astrophysics Source Code Library on 15 November 2026; entries that could not be checked in full say so. The key in brackets is the BibTeX key in `docs/references.bib`.
+117 entries: every work cited by the methods and by the validation (`src/validation/refs.js`). Each was checked against the Crossref record of its DOI, arXiv, or the Astrophysics Source Code Library on 15 November 2026; entries that could not be checked in full say so. The key in brackets is the BibTeX key in `docs/references.bib`.
 
 - <a id="ref-agol2020"></a>Agol, E., Luger, R. & Foreman-Mackey, D. 2020. [Analytic Planetary Transit Light Curves and Derivatives for Stars with Polynomial Limb Darkening](https://doi.org/10.3847/1538-3881/ab4fee). AJ, 159, 123. doi:10.3847/1538-3881/ab4fee arXiv:1908.03222 [`agol2020`]
 - <a id="ref-agol2005"></a>Agol, E., Steffen, J., Sari, R. & Clarkson, W. 2005. [On detecting terrestrial planets with timing of giant planet transits](https://doi.org/10.1111/j.1365-2966.2005.08922.x). MNRAS, 359, 567. doi:10.1111/j.1365-2966.2005.08922.x [`agol2005`]
@@ -1602,6 +1635,7 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-buchner2019"></a>Buchner, J. 2019. [Collaborative Nested Sampling: Big Data versus Complex Physical Models](https://doi.org/10.1088/1538-3873/aae7fc). PASP, 131, 108005. doi:10.1088/1538-3873/aae7fc arXiv:1707.04476 [`buchner2019`]
 - <a id="ref-buchner2021"></a>Buchner, J. 2021. [UltraNest - a robust, general purpose Bayesian inference engine](https://doi.org/10.21105/joss.03001). JOSS, 6, 3001. doi:10.21105/joss.03001 arXiv:2101.09604 [`buchner2021`]
 - <a id="ref-buchner2023"></a>Buchner, J. 2023. [Nested sampling methods](https://doi.org/10.1214/23-SS144). Statistics Surveys, 17, 169. doi:10.1214/23-SS144 [`buchner2023`]
+- <a id="ref-calabretta2002"></a>Calabretta, M. R. & Greisen, E. W. 2002. [Representations of celestial coordinates in FITS](https://doi.org/10.1051/0004-6361:20021327). A&A, 395, 1077. doi:10.1051/0004-6361:20021327 [`calabretta2002`]
 - <a id="ref-chambers1996"></a>Chambers, J. E., Wetherill, G. W. & Boss, A. P. 1996. [The Stability of Multi-Planet Systems](https://doi.org/10.1006/icar.1996.0019). Icarus, 119, 261. doi:10.1006/icar.1996.0019 [`chambers1996`]
 - <a id="ref-chen2017"></a>Chen, J. & Kipping, D. 2017. [Probabilistic Forecasting of the Masses and Radii of Other Worlds](https://doi.org/10.3847/1538-4357/834/1/17). ApJ, 834, 17. doi:10.3847/1538-4357/834/1/17 [`chen2017`]
 - <a id="ref-cincotta2000"></a>Cincotta, P. M. & Simó, C. 2000. [Simple tools to study global dynamics in non-axisymmetric galactic potentials – I](https://doi.org/10.1051/aas:2000108). A&AS, 147, 205. doi:10.1051/aas:2000108 [`cincotta2000`]
@@ -1621,6 +1655,8 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-foremanmackey2021"></a>Foreman-Mackey, D., Luger, R., Agol, E., Barclay, T., et al. 2021. [exoplanet: Gradient-based probabilistic inference for exoplanet data & other astronomical time series](https://doi.org/10.21105/joss.03285). JOSS, 6, 3285. doi:10.21105/joss.03285 [`foremanmackey2021`]
 - <a id="ref-fowlie2021"></a>Fowlie, A., Handley, W. & Su, L. 2021. [Nested sampling with plateaus](https://doi.org/10.1093/mnras/stab590). MNRAS, 503, 1199. doi:10.1093/mnras/stab590 [`fowlie2021`]
 - <a id="ref-fulton2018"></a>Fulton, B. J., Petigura, E. A., Blunt, S. & Sinukoff, E. 2018. [RadVel: The Radial Velocity Modeling Toolkit](https://doi.org/10.1088/1538-3873/aaaaa8). PASP, 130, 044504. doi:10.1088/1538-3873/aaaaa8 arXiv:1801.01947 [`fulton2018`]
+- <a id="ref-gaia2016"></a>Gaia Collaboration, Prusti, T., de Bruijne, J. H. J., Brown, A. G. A., et al. 2016. [The Gaia mission](https://doi.org/10.1051/0004-6361/201629272). A&A, 595, A1. doi:10.1051/0004-6361/201629272 [`gaia2016`]
+- <a id="ref-gaia2023"></a>Gaia Collaboration, Vallenari, A., Brown, A. G. A., Prusti, T., et al. 2023. [Gaia Data Release 3: Summary of the content and survey properties](https://doi.org/10.1051/0004-6361/202243940). A&A, 674, A1. doi:10.1051/0004-6361/202243940 *Crossref lists the title as "Gaia Data Release 3"; the subtitle is the article's.* [`gaia2023`]
 - <a id="ref-gladman1993"></a>Gladman, B. 1993. [Dynamics of Systems of Two Close Planets](https://doi.org/10.1006/icar.1993.1169). Icarus, 106, 247. doi:10.1006/icar.1993.1169 [`gladman1993`]
 - <a id="ref-groth1986"></a>Groth, E. J. 1986. [A pattern-matching algorithm for two-dimensional coordinate lists](https://doi.org/10.1086/114099). AJ, 91, 1244. doi:10.1086/114099 [`groth1986`]
 - <a id="ref-guerrero2021"></a>Guerrero, N. M., Seager, S., Huang, C. X., Vanderburg, A., et al. 2021. [The TESS Objects of Interest Catalog from the TESS Prime Mission](https://doi.org/10.3847/1538-4365/abefe1). ApJS, 254, 39. doi:10.3847/1538-4365/abefe1 [`guerrero2021`]
@@ -1630,6 +1666,7 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-hippke2019"></a>Hippke, M., David, T. J., Mulders, G. D. & Heller, R. 2019. [Wōtan: Comprehensive Time-series Detrending in Python](https://doi.org/10.3847/1538-3881/ab3984). AJ, 158, 143. doi:10.3847/1538-3881/ab3984 arXiv:1906.00966 *Added 2026-11-16; not re-checked against Crossref.* [`hippke2019`]
 - <a id="ref-hirano2010"></a>Hirano, T., Suto, Y., Taruya, A., Narita, N., Sato, B., Johnson, J. A., et al. 2010. [Analytic Description of the Rossiter-McLaughlin Effect for Transiting Exoplanets: Cross-Correlation Method and Comparison with Simulated Data](https://doi.org/10.1088/0004-637X/709/1/458). ApJ, 709, 458. doi:10.1088/0004-637X/709/1/458 [`hirano2010`]
 - <a id="ref-holman2005"></a>Holman, M. J. & Murray, N. W. 2005. [The Use of Transit Timing to Detect Terrestrial-Mass Extrasolar Planets](https://doi.org/10.1126/science.1107822). Science, 307, 1288. doi:10.1126/science.1107822 [`holman2005`]
+- <a id="ref-howell1989"></a>Howell, S. B. 1989. [Two-dimensional aperture photometry: signal-to-noise ratio of point-source observations and optimal data-extraction techniques](https://doi.org/10.1086/132477). PASP, 101, 616. doi:10.1086/132477 [`howell1989`]
 - <a id="ref-husser2013"></a>Husser, T.-O., Wende-von Berg, S., Dreizler, S., Homeier, D., et al. 2013. [A new extensive library of PHOENIX stellar atmospheres and synthetic spectra](https://doi.org/10.1051/0004-6361/201219058). A&A, 553, A6. doi:10.1051/0004-6361/201219058 [`husser2013`]
 - <a id="ref-jensen2013"></a>Jensen, E. 2013. [Tapir: A web interface for transit/eclipse observability](https://ascl.net/1306.007). Astrophysics Source Code Library, ascl:1306.007. https://ascl.net/1306.007 [`jensen2013`]
 - <a id="ref-joye2003"></a>Joye, W. A. & Mandel, E. 2003. [New Features of SAOImage DS9](https://ui.adsabs.harvard.edu/abs/2003ASPC..295..489J). ASP Conference Series, 295, 489. https://ui.adsabs.harvard.edu/abs/2003ASPC..295..489J [`joye2003`]
@@ -1640,6 +1677,7 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-kopparapu2014"></a>Kopparapu, R. K., Ramirez, R. M., SchottelKotte, J., Kasting, J. F., et al. 2014. [Habitable Zones around Main-sequence Stars: Dependence on Planetary Mass](https://doi.org/10.1088/2041-8205/787/2/L29). ApJ, 787, L29. doi:10.1088/2041-8205/787/2/L29 [`kopparapu2014`]
 - <a id="ref-kopparapu2013"></a>Kopparapu, R. K., Ramirez, R., Kasting, J. F., Eymet, V., et al. 2013. [Habitable Zones around Main-sequence Stars: New Estimates](https://doi.org/10.1088/0004-637X/765/2/131). ApJ, 765, 131. doi:10.1088/0004-637X/765/2/131 [`kopparapu2013`]
 - <a id="ref-kreidberg2015"></a>Kreidberg, L. 2015. [batman: BAsic Transit Model cAlculatioN in Python](https://doi.org/10.1086/683602). PASP, 127, 1161. doi:10.1086/683602 arXiv:1507.08285 [`kreidberg2015`]
+- <a id="ref-lang2010"></a>Lang, D., Hogg, D. W., Mierle, K., Blanton, M. & Roweis, S. 2010. [Astrometry.net: Blind Astrometric Calibration of Arbitrary Astronomical Images](https://doi.org/10.1088/0004-6256/139/5/1782). AJ, 139, 1782. doi:10.1088/0004-6256/139/5/1782 arXiv:0910.2233 [`lang2010`]
 - <a id="ref-laskar2017"></a>Laskar, J. & Petit, A. C. 2017. [AMD-stability and the classification of planetary systems](https://doi.org/10.1051/0004-6361/201630022). A&A, 605, A72. doi:10.1051/0004-6361/201630022 [`laskar2017`]
 - <a id="ref-leonardi2024"></a>Leonardi, P., Nascimbeni, V., et al. 2024. [TASTE V. A new ground-based investigation of orbital decay in the ultra-hot Jupiter WASP-12b](https://arxiv.org/abs/2402.12120). arXiv:2402.12120. arXiv:2402.12120 *Checked against arXiv only; the journal reference was not looked up.* [`leonardi2024`]
 - <a id="ref-lightkurve2018"></a>Lightkurve Collaboration, Cardoso, J. V. de M., Hedges, C., Gully-Santiago, M., et al. 2018. [Lightkurve: Kepler and TESS time series analysis in Python](https://ascl.net/1812.013). Astrophysics Source Code Library, ascl:1812.013. https://ascl.net/1812.013 *Added 2026-11-16.* [`lightkurve2018`]
@@ -1656,6 +1694,7 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-morello2020"></a>Morello, G., Claret, A., Martin-Lagarde, M., Cossou, C., et al. 2020. [The ExoTETHyS Package: Tools for Exoplanetary Transits around Host Stars](https://doi.org/10.3847/1538-3881/ab63dc). AJ, 159, 75. doi:10.3847/1538-3881/ab63dc [`morello2020`]
 - <a id="ref-naylor1998"></a>Naylor, T. 1998. [An optimal extraction algorithm for imaging photometry](https://doi.org/10.1046/j.1365-8711.1998.01314.x). MNRAS, 296, 339. doi:10.1046/j.1365-8711.1998.01314.x [`naylor1998`]
 - <a id="ref-neal2003"></a>Neal, R. M. 2003. [Slice sampling](https://doi.org/10.1214/aos/1056562461). The Annals of Statistics, 31, 705. doi:10.1214/aos/1056562461 [`neal2003`]
+- <a id="ref-ochsenbein2000"></a>Ochsenbein, F., Bauer, P. & Marcout, J. 2000. [The VizieR database of astronomical catalogues](https://doi.org/10.1051/aas:2000169). A&AS, 143, 23. doi:10.1051/aas:2000169 [`ochsenbein2000`]
 - <a id="ref-ohta2005"></a>Ohta, Y., Taruya, A. & Suto, Y. 2005. [The Rossiter-McLaughlin Effect and Analytic Radial Velocity Curves for Transiting Extrasolar Planetary Systems](https://doi.org/10.1086/428344). ApJ, 622, 1118. doi:10.1086/428344 [`ohta2005`]
 - <a id="ref-otegi2020"></a>Otegi, J. F., Bouchy, F. & Helled, R. 2020. [Revisited mass-radius relations for exoplanets below 120 Earth masses](https://doi.org/10.1051/0004-6361/201936482). A&A, 634, A43. doi:10.1051/0004-6361/201936482 [`otegi2020`]
 - <a id="ref-parviainen2015"></a>Parviainen, H. 2015. [PyTransit: fast and easy exoplanet transit modelling in Python](https://doi.org/10.1093/mnras/stv894). MNRAS, 450, 3233. doi:10.1093/mnras/stv894 arXiv:1504.07433 [`parviainen2015`]
@@ -1671,6 +1710,7 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-schneider2011"></a>Schneider, J., Dedieu, C., Le Sidaner, P., Savalle, R. & Zolotukhin, I. 2011. [Defining and cataloging exoplanets: the exoplanet.eu database](https://doi.org/10.1051/0004-6361/201116713). A&A, 532, A79. doi:10.1051/0004-6361/201116713 [`schneider2011`]
 - <a id="ref-schwarz1978"></a>Schwarz, G. 1978. [Estimating the Dimension of a Model](https://doi.org/10.1214/aos/1176344136). The Annals of Statistics, 6, 461. doi:10.1214/aos/1176344136 [`schwarz1978`]
 - <a id="ref-seager2003"></a>Seager, S. & Mallén-Ornelas, G. 2003. [A Unique Solution of Planet and Star Parameters from an Extrasolar Planet Transit Light Curve](https://doi.org/10.1086/346105). ApJ, 585, 1038. doi:10.1086/346105 [`seager2003`]
+- <a id="ref-shupe2005"></a>Shupe, D. L., Moshir, M., Li, J., Makovoz, D., Narron, R. & Hook, R. N. 2005. [The SIP Convention for Representing Distortion in FITS Image Headers](https://ui.adsabs.harvard.edu/abs/2005ASPC..347..491S). ASP Conference Series, 347, 491. https://ui.adsabs.harvard.edu/abs/2005ASPC..347..491S *No DOI exists; not checked against Crossref.* [`shupe2005`]
 - <a id="ref-skilling2006"></a>Skilling, J. 2006. [Nested sampling for general Bayesian computation](https://doi.org/10.1214/06-BA127). Bayesian Analysis, 1, 833. doi:10.1214/06-BA127 [`skilling2006`]
 - <a id="ref-speagle2020"></a>Speagle, J. S. 2020. [dynesty: a dynamic nested sampling package for estimating Bayesian posteriors and evidences](https://doi.org/10.1093/mnras/staa278). MNRAS, 493, 3132. doi:10.1093/mnras/staa278 arXiv:1904.02180 [`speagle2020`]
 - <a id="ref-standish"></a>Standish, E. M. & Williams, J. G.. [Approximate Positions of the Planets (Keplerian elements)](https://ssd.jpl.nasa.gov/planets/approx_pos.html). Jet Propulsion Laboratory, Solar System Dynamics. https://ssd.jpl.nasa.gov/planets/approx_pos.html *A web document: the page was fetched on 2026-11-15 and names E. M. Standish and J. G. Williams; no year is printed because the page gives none for the document itself.* [`standish`]
@@ -1685,6 +1725,7 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-vanderburg2014"></a>Vanderburg, A. & Johnson, J. A. 2014. [A Technique for Extracting Highly Precise Photometry for the Two-Wheeled Kepler Mission](https://doi.org/10.1086/678764). PASP, 126, 948. doi:10.1086/678764 [`vanderburg2014`]
 - <a id="ref-vanderplas2018"></a>VanderPlas, J. T. 2018. [Understanding the Lomb–Scargle Periodogram](https://doi.org/10.3847/1538-4365/aab766). ApJS, 236, 16. doi:10.3847/1538-4365/aab766 [`vanderplas2018`]
 - <a id="ref-virtanen2020"></a>Virtanen, P., Gommers, R., Oliphant, T. E., Haberland, M., et al. 2020. [SciPy 1.0: fundamental algorithms for scientific computing in Python](https://doi.org/10.1038/s41592-019-0686-2). Nature Methods, 17, 261. doi:10.1038/s41592-019-0686-2 [`virtanen2020`]
+- <a id="ref-watson2006"></a>Watson, C. L., Henden, A. A. & Price, A. 2006. [The International Variable Star Index (VSX)](https://ui.adsabs.harvard.edu/abs/2006SASS...25...47W). Society for Astronomical Sciences Annual Symposium, 25, 47. https://ui.adsabs.harvard.edu/abs/2006SASS...25...47W *No DOI exists; not checked against Crossref.* [`watson2006`]
 - <a id="ref-welch1967"></a>Welch, P. 1967. [The use of fast Fourier transform for the estimation of power spectra: A method based on time averaging over short, modified periodograms](https://doi.org/10.1109/TAU.1967.1161901). IEEE Transactions on Audio and Electroacoustics, 15, 70. doi:10.1109/TAU.1967.1161901 [`welch1967`]
 - <a id="ref-winn2010"></a>Winn, J. N. 2010. [Transits and Occultations](https://arxiv.org/abs/1001.2010). chapter of Exoplanets, ed. S. Seager (Tucson: University of Arizona Press); arXiv:1001.2010. arXiv:1001.2010 *Title and book as given on arXiv; page numbers not checked.* [`winn2010`]
 - <a id="ref-winn2008"></a>Winn, J. N., Holman, M. J., Torres, G., McCullough, P., et al. 2008. [The Transit Light Curve Project. IX. Evidence for a Smaller Radius of the Exoplanet XO-3b](https://doi.org/10.1086/589737). ApJ, 683, 1076. doi:10.1086/589737 [`winn2008`]

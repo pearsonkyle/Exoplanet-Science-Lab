@@ -15,17 +15,29 @@
     <h1>Exoplanet Science Lab</h1>
     <p class="lead">Scientific modeling and uncertainty quantification in your browser. Plan an observation, look at your sky, reduce and fit the data, and check the models against other codes. Everything runs on your computer: nothing you load is sent anywhere.</p>
   </section>
-  <div class="cards" id="sections"></div>
+  <div class="cards art" id="sections"></div>
   <h2>Where to start</h2>
-  <p class="note">New here? Open <a href="./analyze/">Analyze</a> and pick a worked example: a single transit, radial velocities of HD 80606 b, or three planets fitted together.</p>
+  <p class="note">New here? Open <a href="./analyze/">Analyze</a> and pick a worked example: a single transit, the radial velocities of HD 80606 b, three planets of TOI-1873, or a hidden planet found from transit timing.</p>
+  <h2>Docs and APIs</h2>
+  <div class="cards docs">
+    <a class="card" href="./docs/guide/getting-started.html"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><b>Getting started</b><span>Use it online, run it on your computer, install the Python package.</span></a>
+    <a class="card" href="./docs/labs/"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M7.5 15h9"/></svg><b>Python labs</b><span>Six notebooks with real data: from a first transit fit to a hidden planet weighed by its pull.</span></a>
+    <a class="card" href="./docs/reference/browser-api.html"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6l-6 6 6 6M16 6l6 6-6 6"/></svg><b>API references</b><span>The browser API with a live playground, the Python package, the MCP tools, the JavaScript core.</span></a>
+    <a class="card" href="./docs/guide/mcp.html"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/></svg><b>MCP and your own LLM</b><span>Connect Claude Desktop, Claude Code or another agent; set up a local model for the assistant.</span></a>
+  </div>
 </main>
-<footer class="sitefoot">Exoplanet Science Lab · models validated against EXOTIC, pylightcurve and published results (see <a href="./methods/#validation">Methods › Validation</a>)</footer>
+<footer class="sitefoot">Exoplanet Science Lab · models validated against EXOTIC, pylightcurve and published results (see <a href="./methods/#validation">Methods › Validation</a>) · <a href="./docs/">Documentation</a> · <a href="https://github.com/pearsonkyle/Exoplanet-Science-Lab">GitHub</a><br><span class="credit">Card art: NASA/JPL-Caltech and NASA Ames illustrations (TRAPPIST-1, Kepler, Kepler-16, 55 Cancri e), from <a href="https://images.nasa.gov">images.nasa.gov</a>.</span></footer>
 <script type="module">
 import { SECTIONS, siteRoot } from './src/site/nav.js';
+// card art: NASA illustrations (public domain / NASA media guidelines), credited in the footer
+const ART = { plan: 'TRAPPIST-1 transit, NASA/JPL-Caltech', observe: 'Kepler and the stars, NASA Ames', analyze: 'Kepler-16 eclipse, NASA/JPL-Caltech',
+  search: 'TRAPPIST-1 planets, NASA/JPL-Caltech', methods: '55 Cancri e, NASA/JPL-Caltech', docs: 'A hot Jupiter, NASA/JPL-Caltech' };
 const box = document.getElementById('sections'), root = siteRoot();
 for (const s of SECTIONS) {
   const a = document.createElement('a'); a.className = 'card'; a.href = new URL(s.href, root).href;
-  a.innerHTML = `<b>${s.label}</b><span>${s.blurb}</span>`;
+  const img = ART[s.id];
+  a.innerHTML = (img ? `<img class="banner" src="${new URL('home/' + s.id + '.webp', root).href}" alt="" loading="lazy" title="${img}">` : '')
+    + `<div class="body"><b>${s.label}</b><span>${s.blurb}</span></div>`;
   box.append(a);
 }
 </script>

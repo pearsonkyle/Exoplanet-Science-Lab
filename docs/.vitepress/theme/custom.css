@@ -25,3 +25,8 @@
 .try .st { font-size: 13px; color: var(--vp-c-text-2); }
 .try .st.ok { color: var(--vp-c-tip-1); } .try .st.bad { color: #ff6b7a; }
 .try iframe { width: 100%; height: 460px; border: 1px solid var(--vp-c-border); border-radius: 8px; background: #05070c; margin-top: 8px; }
+
+/* the labs: a small bar under the title with the notebook links */
+.labbar { font-size: 13px; color: var(--vp-c-text-2); margin: -4px 0 18px; }
+.labbar a { color: var(--vp-c-brand-1); }
+.vp-doc img[alt*="figure"] { border-radius: 8px; background: #fff; padding: 4px; max-width: min(100%, 760px); }
