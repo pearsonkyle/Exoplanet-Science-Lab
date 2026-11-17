@@ -249,3 +249,22 @@ footer.sitefoot { border-top: 1px solid var(--line); color: var(--faint); font-s
 .cards.art .body { flex: 1; }
 /* Night theme: the home-page pictures in red, to keep dark adaptation */
 :root[data-theme=night] .cards.art .banner, :root[data-theme=night] .cards.art a.card:hover .banner, :root[data-theme=night] .cards.art a.card:focus-visible .banner { filter: grayscale(1) sepia(1) hue-rotate(-35deg) saturate(3) brightness(.65); }
+
+/* long jobs (src/site/jobs.js): a pill at the bottom left of every page */
+.esl-jobs { position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); z-index: 80; display: flex; flex-direction: column; gap: 6px; max-width: min(380px, calc(100vw - 84px)); padding: 8px 10px; border: 1px solid var(--line2); border-radius: 12px; background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(6px); box-shadow: 0 10px 30px var(--shadow, #0008); font-size: 12.5px; color: var(--text); }
+.esl-jobs[hidden] { display: none; }
+.esl-jobs .ej { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+.esl-jobs .ej svg { color: var(--model); }
+.esl-jobs .ej-mark { width: 26px; text-align: center; font-size: 16px; color: var(--ok); } .esl-jobs .failed .ej-mark { color: var(--bad); }
+.esl-jobs .ej-txt { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.esl-jobs .ej-head { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.esl-jobs .ej-txt b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.esl-jobs .ej-txt small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.esl-jobs .ej-pc { font-family: var(--mono, ui-monospace, monospace); color: var(--model); }
+.esl-jobs small { color: var(--dim); } .esl-jobs .ej-keep { color: var(--warn); }
+.esl-jobs .ej-act { display: flex; gap: 6px; }
+.esl-jobs button { min-height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel2); color: var(--text); font: inherit; cursor: pointer; }
+.esl-jobs button:hover { border-color: var(--model); }
+.esl-jobs .ej-notify { align-self: flex-start; color: var(--model); }
+@media (pointer: coarse) { .esl-jobs button { min-height: 40px; } }
+@media (max-width: 560px) { .esl-jobs { left: 8px; right: 60px; max-width: none; bottom: calc(8px + env(safe-area-inset-bottom)); } }

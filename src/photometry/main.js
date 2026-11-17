@@ -1,5 +1,6 @@
 // Photometry page: files -> image viewer -> stars -> worker -> light curve, tried-apertures table, export.
 // Science lives in src/core (fits.js, photometry.js, gp.js) and src/photometry/pipeline.js; this file is the UI.
+import { startJob } from '../site/jobs.js';
 import { siteRoot } from '../site/nav.js';
 import { openFits, readTargetPixelFile, framePointing, frameTime, pixelScale } from '../core/fits.js';
 import { centroidIter, detectSources, fitPsf, lightCurveFor, tpfLightCurve, pipelineMask, tpfMedianImage, medianOf, runningMedian, METHOD_LABEL } from '../core/photometry.js';
@@ -429,12 +430,14 @@ function planetFromForm() {
   return pl;
 }
 
+let runJob = null;   // the reduction on the site's progress pill (src/site/jobs.js)
 async function run() {
   if (P.busy) return;
   if (P.mode === 'stack' && !P.stars.length) { setStatus('stRun', 'Click the target star on the first frame.', 'err'); return; }
   if (playT) togglePlay(); stopBlink();
   P.busy = true; $('bRun').disabled = true; $('bStop').hidden = P.mode !== 'stack'; $('prog').hidden = false; $('prog').value = 0; setStatus('stRun', 'Working…');
   const t0 = performance.now();
+  runJob = startJob({ label: `Photometry · ${P.name || 'frames'}`, stop: P.mode === 'stack' ? () => $('bStop').click() : null, show: () => $('bRun').scrollIntoView({ block: 'center' }) });
   try {
     if (P.mode === 'tpf') {
       const cfg = { x: P.tpfTarget?.x, y: P.tpfTarget?.y, customMask: P.customMask.some((x) => x) ? P.customMask : null };
@@ -465,7 +468,9 @@ async function run() {
     }
     $('live').hidden = true; P.live = null;
     renderResults(); viewer.draw();
-  } catch (err) { setStatus('stRun', String(err.message || err), 'err'); if (P.live) P.live.failed = true; }
+    runJob.finish('Light curve ready');
+  } catch (err) { setStatus('stRun', String(err.message || err), 'err'); if (P.live) P.live.failed = true; runJob.fail('Reduction stopped'); }
+  runJob = null;
   P.busy = false; $('bRun').disabled = false; $('bStop').hidden = true; $('prog').hidden = true;
 }
 
@@ -489,7 +494,7 @@ function onLive(p) {
   const L = P.live; if (!L) return;
   const now = performance.now();
   if (p.stage === 'frames') {
-    $('prog').value = p.done / p.total;
+    $('prog').value = p.done / p.total; if (runJob) runJob.update({ fraction: p.done / p.total, detail: `frame ${p.done} of ${p.total}` });
     L.k = p.done; L.t.push(p.jd); L.ratio.push(p.live); L.x.push(p.x); L.y.push(p.y); L.sky.push(p.sky); L.fwhm.push(p.fwhm); L.am.push(p.airmass); L.rot.push(p.rot); L.pos.set(p.file, p.pos); L.msg = p; if (p.relocated) L.reloc++;
     setStatus('stRun', `Frame ${p.done} / ${p.total}   ${p.name}`);
     if (now - L.lastShow > 220 || p.done === p.total) { L.lastShow = now; showFrame(p.file); }

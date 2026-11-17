@@ -6,6 +6,8 @@
 //   ecc, omega, inc, mplanet }], star() -> { mstar, rstar }, setNbody(null | { epoch }), addCompanion({...}), theme }
 // Times here are days relative to S.data.tRef, like every parameter of the analyzer.
 
+import { startJob } from '../site/jobs.js';
+import { buildCompanionExplorer } from './companionExplorer.js';
 import { nbody, dynamicalModel, stabilityReport, ttvGridPrepare, ttvGridCell, ttvGridAssemble, ttvGridRefine } from '../core/nbody.js';
 import { renderNbodyOC, renderGridMap } from './nbodyplot.js';
 
@@ -210,11 +212,18 @@ export function buildDynamics(el, app) {
     }
   } else if (pls.length === 1) el.append(h('p', { class: 'note' }, 'A search for an unseen companion needs at least eight mid-transit times of this planet.'));
 
+  // ---- the companion explorer: the search's map and/or the posterior of an N-body fit, with the orbits and the timing
+  if (rows.length >= 4 && (cache.grid || (S.nbody && pls.length > 1 && S.fit))) {
+    try { buildCompanionExplorer(el, { app, ctx, grid: cache.grid, refined: cache.refined, onAdopt: (sel) => app.addCompanion(companionCell(ctx, { mass: sel.mass, period: sel.planet.per, phase: sel.phase })) }); }
+    catch (err) { el.append(h('p', { class: 'note callout warn' }, 'The companion explorer could not be drawn: ' + (err.message || err))); }
+  }
+
   async function search() {
     if (cache.busy) return;
-    const done = companionSearch(app, { onProgress: (f) => { const m = document.getElementById('dynmsg'); if (m) m.textContent = `Simulating… ${Math.round(100 * f)}%`; } });
+    const job = startJob({ label: 'Search for an unseen companion', show: () => { const m = document.getElementById('dynmsg'); if (m) m.scrollIntoView({ block: 'center' }); } });
+    const done = companionSearch(app, { onProgress: (f) => { job.update({ fraction: f }); const m = document.getElementById('dynmsg'); if (m) m.textContent = `Simulating… ${Math.round(100 * f)}%`; } });
     app.rebuild();   // shows "Simulating…" and disables the button while the grid runs
-    try { await done; } catch { /* the reason is in cache.msg, shown beside the button */ }
+    try { await done; job.finish('Search finished'); } catch { job.fail('Search failed'); /* the reason is in cache.msg, shown beside the button */ }
     app.rebuild();
   }
 }

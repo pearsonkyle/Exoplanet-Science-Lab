@@ -157,6 +157,9 @@ export function createSiteTools({ page, root, analyzer = null, analyzerApi = nul
     try {
       if (name === 'navigate') {
         if (args.page === page && !(args.params && Object.keys(args.params).length)) throw new Error(`you are already on the ${page} page: use its tools (${specs.filter((t) => t.group === page).map((t) => t.name).slice(0, 8).join(', ') || 'see the tool list'})`);
+        // a long run on this page (a fit, a search, a reduction) dies with the page: wait for it, or stop it first
+        const J = typeof window !== 'undefined' && window.__eslJobs;
+        if (J && J.running()) { const j = J.list()[0]; throw new Error(`"${j.label}" is running on this page (${Math.round(100 * j.fraction)}% done${Number.isFinite(j.eta_s) ? `, about ${Math.max(1, Math.round(j.eta_s / 60))} min left` : ''}): leaving the page would stop it. Tell the user it is running and what is left to do; continue when it has finished.`); }
         const bad = Object.keys(args.params || {}).filter((k) => !PAGES[args.page].params.includes(k));
         if (bad.length) throw new Error(`the ${args.page} page has no address parameter ${bad.join(', ')}. It takes: ${PAGES[args.page].params.join(', ') || 'none'}. Go there without it and use the page's tools.`);
         const g = goTo(args.page, args.params); record(spec, args, g.data, null);

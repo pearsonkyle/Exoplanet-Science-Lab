@@ -36,6 +36,7 @@ import { renderOC } from './ui/ocplot.js';
 import { buildDynamics } from './ui/dynamics.js';
 import { createAPI } from './ui/api.js';
 import { mountNav } from './site/nav.js';
+import { startJob } from './site/jobs.js';
 import { startTour } from './ui/tour.js';
 import { FORMAT, FORMAT_VERSION, validateSession } from './core/session.js';
 import { saveExperiment, listExperiments, getExperiment, deleteExperiment } from './ui/store.js';
@@ -1983,7 +1984,13 @@ function setNbody(o) { S.nbody = o; S.fit = null; S.range = 'full'; if (o) { S.u
 /** What the Dynamics block and the companion search (src/ui/dynamics.js) work with. */
 function dynamicsApp() {
   return { S, h, pushUndo, flash, rebuild: buildTiming, label: planetLabel, get theme() { return LC_THEMES.screen; }, star: starNow,
-    planets: () => S.planets.map((p) => ({ ...p, ...planetValues(S.values, p.sfx) })), setNbody, addCompanion };
+    planets: () => S.planets.map((p) => ({ ...p, ...planetValues(S.values, p.sfx) })), setNbody, addCompanion,
+    /** n equal-weight draws of the current fit's posterior as { mstar, planets } (each planet's values, e and ω included), or null with no fit. */
+    posterior(n = 60) {
+      const F = S.fit, r = F && F.res; if (!r || !r.samples || !r.weights || !F.free) return null;
+      const d = r.ndim, idx = resampleIndices(r.weights, n, makeRng(11)), st = starNow();
+      return Array.from(idx, (i) => { const v = { ...S.values }; F.free.forEach((f, k) => (v[f.key] = r.samples[i * d + k])); return { mstar: v.mstar > 0 ? v.mstar : st.mstar, rstar: v.rstar > 0 ? v.rstar : st.rstar, planets: S.planets.map((p) => ({ ...p, ...planetValues(v, p.sfx) })) }; });
+    } };
 }
 /** Put the companion found by the perturber search into the model as a planet, with the N-body model on and its mass, period and phase free. */
 function addCompanion({ mass, period, tmid, inc, epoch, host, chi2 }) {
@@ -2039,17 +2046,20 @@ function startFit() {
   const tieFn = tie ? makeLDTie(tie) : null;
   const withLD = (v) => { if (tieFn) { const o = [0, 0, 0, 0]; tieFn(v.teff ?? S.star.teff, v.feh ?? S.star.feh, o); for (let i = 0; i < 4; i++) v['ld' + i] = o[i] || 0; } return v; };
   lastProgress = null;
+  // the run on every page's progress pill: time left, Stop, and a guard against leaving the page while it runs
+  const job = startJob({ label: `Fit · ${S.name || 'analysis'}`, stop: () => stopFit(), show: () => showTab('fit') });
   const onProgress = (p) => {
     const fr = S.sampler.fracRemain, prem = Math.min(1, Math.max(0, 1 - Math.log(p.remFrac / fr) / Math.log(1 / fr)));
     const frac = 0.55 * (1 - Math.exp(-p.it / (6 * S.sampler.nlive))) + 0.45 * prem;
     lastProgress = { calls: p.ncalls, logZ: p.logZ, fraction: frac, iterations: p.it, efficiency: p.eff, elapsed_s: p.elapsed };
     $('#pbar').style.width = (100 * frac).toFixed(1) + '%'; $('#pbar').parentElement.setAttribute('aria-valuenow', Math.round(100 * frac));
+    job.update({ fraction: frac, detail: `${p.ncalls.toLocaleString('en')} calls · ln Z ${p.logZ.toFixed(1)}` });
     stat.textContent = `iter ${p.it}  ·  calls ${p.ncalls}${p.maxCalls ? ' of ' + Number(p.maxCalls).toExponential(0).replace('e+', 'e') : ''}  ·  eff ${(p.eff * 100).toFixed(1)}%  ·  lnZ ${p.logZ.toFixed(2)}  ·  remainder ${(p.remFrac * 100).toFixed(p.remFrac < 0.1 ? 2 : 0)}%  ·  ${p.elapsed.toFixed(1)} s` + (p.mode === 'slice' ? '  ·  slice sampling' : '');
     S.live = { ...S.values }; p.keys.forEach((k, i) => (S.live[k] = p.best[i])); withLD(S.live);
     refresh();
   };
-  const onDone = (res) => { finishFit(res, free, withLD, tie); };
-  const onError = (m) => { S.running = false; S.live = null; $('#runbtn').disabled = false; $('#stopbtn').disabled = true; stat.textContent = 'Fit failed: ' + m; refresh(); };
+  const onDone = (res) => { job.finish(res && res.stopReason && res.stopReason !== 'converged' ? 'Stopped (not converged)' : 'Fit finished'); finishFit(res, free, withLD, tie); };
+  const onError = (m) => { job.fail('Fit failed'); S.running = false; S.live = null; $('#runbtn').disabled = false; $('#stopbtn').disabled = true; stat.textContent = 'Fit failed: ' + m; refresh(); };
 
   let worker = null, gotMessage = false, stopFlag = false;
   const runOnMain = () => { $('#runmode').textContent = 'running on the main thread'; runner = { stop: () => (stopFlag = true) }; runFit(spec, onProgress, () => stopFlag).then(onDone, (e) => onError(e.message)); };

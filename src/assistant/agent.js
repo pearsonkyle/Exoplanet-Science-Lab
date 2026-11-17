@@ -462,7 +462,7 @@ export function createAgent(config) {
             }
           }
           // a corrected answer that announces itself ("Here's the corrected answer:"): the announcement goes, the answer stays
-          if (turn.numFixAsked) content = content.replace(/^\s*(?:\*\*)?(?:(?:ok(?:ay)?|sure|done)[,.!]?\s*)?(?:here(?:'s| is) (?:the |my |your )?(?:corrected|revised|updated|fixed)[^\n:]*:?|corrected answer:?)(?:\*\*)?\s*(?:---\s*)?/i, '');
+          if (turn.numFixAsked) content = content.replace(/^\s*(?:\*\*)?(?:(?:ok(?:ay)?|sure|done)[,.!]?\s*)?(?:here(?:'s| is) (?:the |my |your )?(?:corrected|revised|updated|fixed|rewritten|amended)[^\n:]*:?|corrected answer:?)(?:\*\*)?\s*(?:---\s*)?/i, '');
           turn.modelFinal = content.trim();   // the model's own words, before the app adds its table (export)
           const extra = content.trim() && cfg.checkNumbers !== false ? numberCheck(content, turn) : '';
           if (extra) { content = content.trim() + extra; emit({ type: 'note', text: 'The answer quoted numbers that differ from the tool results (or dropped an uncertainty): the app\'s own table was added under it.' }); }

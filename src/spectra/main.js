@@ -1,6 +1,7 @@
 // Spectroscopy page: spectra over time (files or a simulation) -> cleaning and binning -> white-light fit ->
 // one fit per channel in a pool of workers -> spectrum, diagnostics, exports.
 // The science is src/core/spectroscopy.js (tested in test/spectroscopy.test.mjs); this file is the UI.
+import { startJob } from '../site/jobs.js';
 import { siteRoot } from '../site/nav.js';
 import { openFits } from '../core/fits.js';
 import { loadIndex, lookupHost, systemFromRows, searchNames } from '../core/catalog.js';
@@ -337,6 +338,7 @@ async function fitChannels(o = {}) {
   if (!P.whiteFit) await fitWhite();
   if (P.busy) throw new Error('A fit is running.');
   P.busy = true; stopFlag = false; $('bChan').disabled = true; $('bStop').hidden = false; $('pgChan').hidden = false; $('pgChan').value = 0;
+  const job = startJob({ label: 'Spectroscopy · channel fits', stop: () => { stopFlag = true; }, show: () => $('bChan').scrollIntoView({ block: 'center' }) });
   try {
     await table();
     const wf = P.whiteFit; let chans = P.channels;
@@ -350,16 +352,16 @@ async function fitChannels(o = {}) {
         const k = next++; if (k >= n) break;
         try { out[k] = await runOn(w, { type: 'channel', ch: chans[k], geo: wf.values, opts: { ...base, ld: lds[k].coeffs, ldLaw: lds[k].law } }); out[k].ldExtrapolated = !!lds[k].extrapolated; }
         catch (err) { if (stopFlag) break; failed++; out[k] = null; console.warn('channel', k, err.message); }
-        done++; $('pgChan').value = done / n; setStatus('stChan', `Channel ${done} of ${n} on ${nw} worker${nw > 1 ? 's' : ''} …`); if (o.onProgress) o.onProgress({ done, n });
+        done++; $('pgChan').value = done / n; job.update({ fraction: done / n, detail: `channel ${done} of ${n}` }); setStatus('stChan', `Channel ${done} of ${n} on ${nw} worker${nw > 1 ? 's' : ''} …`); if (o.onProgress) o.onProgress({ done, n });
       }
     }));
     killPool();
     P.results = out; P.spectrum = SP.spectrumTable(out.filter(Boolean));
     const sp = P.spectrum, er = sp.map((r) => r.err);
     setStatus('stChan', stopFlag ? `Stopped after ${done} of ${n} channels.` : `${sp.length} channels in ${((performance.now() - t0) / 1000).toFixed(1)} s on ${nw} worker${nw > 1 ? 's' : ''}${failed ? `; ${failed} could not be fitted` : ''}. Depth errors ${ppm(Math.min(...er))} to ${ppm(Math.max(...er))} ppm.`, failed ? 'err' : 'ok');
-    redraw();
+    redraw(); job.finish(stopFlag ? 'Stopped' : 'Spectrum ready');
     return sp;
-  } catch (err) { setStatus('stChan', err.message, 'err'); throw err; } finally { P.busy = false; $('bChan').disabled = false; $('bStop').hidden = true; $('pgChan').hidden = true; }
+  } catch (err) { setStatus('stChan', err.message, 'err'); job.fail('Channel fits failed'); throw err; } finally { P.busy = false; $('bChan').disabled = false; $('bStop').hidden = true; $('pgChan').hidden = true; }
 }
 
 // ------------------------------------------------------------------------------------------- drawing

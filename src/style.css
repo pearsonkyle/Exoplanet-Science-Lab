@@ -500,3 +500,15 @@ table.res tr:focus-visible { outline-offset: -2px; }
 .ex-more summary { cursor: pointer; color: var(--model); font-size: 12px; margin-top: 2px; }
 .ex-more p { margin: 6px 0; } .ex-more ul { margin: 4px 0 6px; padding-left: 18px; } .ex-more a { color: var(--model); font-size: 12px; }
 @media (max-width: 760px) { .ex-float { position: static; width: auto; max-height: none; margin: 8px; } .ex-x { min-width: 40px; min-height: 40px; } .ex-try .chip { min-height: 40px; } }
+
+/* companion explorer (src/ui/companionExplorer.js): map and orbits side by side when there is room, timing below */
+.cx { margin: 10px 0 4px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); }
+.cx h4 { margin: 0 0 4px; font-size: 13px; letter-spacing: .04em; }
+.cx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; margin: 6px 0; }
+.cx canvas { width: 100%; display: block; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); touch-action: manipulation; }
+.cx-map { height: 270px; } .cx-orbit { height: 270px; } .cx-oc { height: 230px; margin-top: 8px; }
+.cx-ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 4px; }
+.cx-ctl .chk { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.cx-read { font-size: 12px; line-height: 1.5; color: var(--dim); }
+.cx-read b { color: var(--text); font-weight: 600; }
+@media (pointer: coarse) { .cx-ctl button, .cx-ctl select { min-height: 40px; } }

@@ -881,6 +881,26 @@ at eight phases for i = 90° and 83.5° (error below 10⁻⁶°), and the subste
 Page checks without the interactive browser: `.venv/bin/python tools/shot.py '<path>' out.png [w h] --wait ms
 --eval "<js>"` takes a headless screenshot and prints console errors.
 
+### Long runs and the companion explorer
+
+Long computations (an analyzer fit, the search for an unseen companion, a photometry reduction, the spectroscopy
+channel fits) report to `src/site/jobs.js`: a pill on every page with the fraction, elapsed time and an estimate of the
+time left from the last two minutes' rate, Stop, and an optional desktop notification; the tab title carries the
+percentage; leaving or reloading the page asks first while a job runs (checked in Chromium: the browser's
+`beforeunload` dialog appears during a fit), and the screen is kept awake where the browser allows it. The assistant's
+`navigate` refuses to leave a page with a job running. For scale: the fresh N-body fit of the Kepler-88 example took
+35 minutes in Node. `node test/companion.test.mjs` (9): the explorer's orbit positions (transit on the line of sight,
+the conic radius at transit for e = 0.6, Kepler's second law to 7e-9), Kepler's third law in AU, the map's axes, and
+the time-left estimate (a steady rate gives 60.0 s; after a speed-up it follows the recent rate, 118 s against 101 s,
+where the whole-run average would say 881 s).
+
+The companion explorer (Timing tab, Dynamics) draws what a companion search or an N-body fit found: Δχ² over period
+ratio and mass with the posterior's companions on it, the system from above (animated; the posterior's orbits as a
+cloud), and the O − C of the selected companion integrated with `src/core/nbody.js` together with curves from
+posterior draws. On the Kepler-88 example it shows planet c at 0.672 +0.007 −0.006 M Jup and period ratio 2.0396; on
+the simulated unseen-companion example, with planet c removed and the search run (7 s, 14 masses × 126 periods), the
+best cell is 0.077 M Jup at 5.341 d against the injected 0.10 M Jup at 5.3436 d. It samples nothing itself.
+
 ### Observe: the sky
 
 41,411 stars to V = 8 (XHIP through the d3-celestial data, BSD 3-Clause), constellation lines, Sun, Moon and

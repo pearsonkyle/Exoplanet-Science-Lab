@@ -276,11 +276,11 @@ export function residualPeriodogramOf(doc, { data = 'auto', min_period, max_peri
   const which = data === 'auto' ? (haveRV ? 'rv' : 'lc') : data;
   let t = [], y = [], dy = [], grp = [], unit;
   if (which === 'rv') {
-    if (!haveRV) throw new Error('no radial velocities are loaded (or they are not used in the fit): load them first');
+    if (!haveRV) throw new Error((doc.data.timing || []).length && !haveLC ? 'only mid-transit times are loaded: their residuals are searched with timing_periodogram' : 'no radial velocities are loaded (or they are not used in the fit): load them first');
     spec.rv.forEach((D, k) => { const X = det.rv[k], jit = X.jitter || 0; for (let i = 0; i < D.t.length; i++) { t.push(D.t[i]); y.push(D.v[i] - X.gamma - X.model[i]); dy.push(Math.hypot(D.e[i], jit)); grp.push(k); } });
     unit = 'm/s';
   } else {
-    if (!haveLC) throw new Error('no light curve is loaded: load one first');
+    if (!haveLC) throw new Error((doc.data.timing || []).length ? 'only mid-transit times are loaded: their residuals are searched with timing_periodogram' : 'no light curve is loaded: load one first');
     const L = spec.data; for (let i = 0; i < L.t.length; i++) { const full = det.base && det.transit ? det.base[i] * det.transit[i] : det.model[i]; t.push(L.t[i]); y.push((L.f[i] - full) * 1e6); dy.push(L.e[i] * 1e6); grp.push(0); }
     unit = 'ppm';
   }
