@@ -575,25 +575,40 @@ export function findObservableEvents(targets, site, opts) {
 }
 
 /**
- * A 0 to 100 figure of merit for how well a transit can be observed. It is a ranking aid, not a prediction of
- * photometric precision (it knows nothing about the telescope, the depth or the star's brightness):
- *   50  x fraction of the transit that is observable
- *   20  x fraction of the wanted baseline available, averaged over the two sides (full marks if none is wanted)
- *   20  x altitude: 0 at the limit, 1 at 60 deg or higher, taken at the lowest of ingress / mid / egress that is observable
- *   10  x Moon: 1 if it is down or farther than 40 deg, falling with proximity in proportion to its illuminated fraction
- * Returns { total, coverage, baseline, altitude, moon } with the four parts in points.
+ * A 0 to 100 figure of merit for how well an event can be observed and measured, for ranking (not a prediction of a
+ * particular telescope's precision):
+ *   40  x fraction of the event that is observable
+ *   15  x fraction of the wanted baseline available, averaged over the two sides (full marks if none is wanted)
+ *   20  x altitude, continuous: the mean airmass X over the observable ingress, mid and egress, from the airmass at
+ *         the altitude limit (0) to the zenith (1), so a transit overhead outranks one that only clears 60 degrees
+ *   20  x signal: the expected signal-to-noise of the transit, S/N = depth / sigma(m) x sqrt(T14 in minutes), with a
+ *         noise per minute sigma(m) = hypot(2000 ppm x 10^(0.2 (m - 12)), 400 ppm): photon noise of a small (0.3-0.4 m)
+ *         telescope and a floor for scintillation and systematics. Scored on a log scale, 0 at S/N 5 and full at
+ *         S/N 200. Without a depth or a magnitude (an eclipse, a phase window, a missing value) it gets half marks.
+ *    5  x Moon: 1 if it is down or farther than 40 deg, falling with proximity in proportion to its illuminated fraction
+ * Returns { total, coverage, baseline, altitude, signal, moon, snr } with the parts in points (snr null when unknown).
  */
+export const SCORE_WEIGHTS = { coverage: 40, baseline: 15, altitude: 20, signal: 20, moon: 5 };
+/** Expected S/N of a transit from its depth (fraction), the host's magnitude and the duration (days); null when unknown. */
+export function transitSnr(depth, mag, t14) {
+  if (!(depth > 0) || !fin(mag) || !(t14 > 0)) return null;
+  const sigma = Math.hypot(2000 * Math.pow(10, 0.2 * (mag - 12)), 400) * 1e-6;
+  return (depth / sigma) * Math.sqrt(t14 * 1440);
+}
 export function scoreTransit(ev, { minAlt = 30, baseline = 1 / 24 } = {}) {
-  const clamp = (x) => Math.max(0, Math.min(1, x));
+  const W = SCORE_WEIGHTS, clamp = (x) => Math.max(0, Math.min(1, x));
   const alts = [ev.ingressObs ? ev.altIngress : NaN, ev.altMid, ev.egressObs ? ev.altEgress : NaN].filter((x) => fin(x) && x >= minAlt - 1e-9);
-  const low = alts.length ? Math.min(...alts) : minAlt;
+  const X = (h) => 1 / Math.sin(Math.max(1, h) * Math.PI / 180), xLim = X(minAlt);
+  const xMean = alts.length ? alts.reduce((a, h) => a + X(h), 0) / alts.length : xLim;
+  const tg = ev.target || {}, snr = ev.kind && ev.kind !== 'transit' ? null : transitSnr(tg.depth, tg.mag, tg.t14);
   const parts = {
-    coverage: 50 * clamp(ev.coverage),
-    baseline: 20 * (baseline > 0 ? (clamp(ev.before / baseline) + clamp(ev.after / baseline)) / 2 : 1),
-    altitude: 20 * clamp((low - minAlt) / Math.max(1, 60 - minAlt)),
-    moon: 10 * (ev.moon.alt <= 0 ? 1 : 1 - ev.moon.illum * clamp((40 - ev.moon.sep) / 40)),
+    coverage: W.coverage * clamp(ev.coverage),
+    baseline: W.baseline * (baseline > 0 ? (clamp(ev.before / baseline) + clamp(ev.after / baseline)) / 2 : 1),
+    altitude: W.altitude * clamp((xLim - xMean) / Math.max(1e-9, xLim - 1)),
+    signal: W.signal * (snr === null ? 0.5 : clamp(Math.log10(snr / 5) / Math.log10(200 / 5))),
+    moon: W.moon * (ev.moon.alt <= 0 ? 1 : 1 - ev.moon.illum * clamp((40 - ev.moon.sep) / 40)),
   };
-  return { total: parts.coverage + parts.baseline + parts.altitude + parts.moon, ...parts };
+  return { total: parts.coverage + parts.baseline + parts.altitude + parts.signal + parts.moon, ...parts, snr };
 }
 
 export const _internals = { nutation, roemer, mod };

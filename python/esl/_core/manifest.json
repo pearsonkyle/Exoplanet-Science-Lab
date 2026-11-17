@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "84a035bf3c252028",
+ "sourceHash": "4c1c7a64dd45bbde",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1333134,
-   "sha256": "e0de0f667b54e1fc9bbd8327e7fb5bce53419f0ea513651fc4d378ba5880da24"
+   "bytes": 1333934,
+   "sha256": "7d7c408a0d88a8b1084943db36514309851308a25b92dcbd6741b07160c20ac5"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -583,6 +583,7 @@
    "C_KM_S",
    "EARTH_RADIUS_KM",
    "EVENT_KINDS",
+   "SCORE_WEIGHTS",
    "SIDEREAL_DEG_PER_DAY",
    "_internals",
    "airmass",
@@ -619,6 +620,7 @@
    "sunAltAz",
    "sunCrossings",
    "sunPosition",
+   "transitSnr",
    "transitsBetween",
    "ttMinusUtc",
    "twilight",

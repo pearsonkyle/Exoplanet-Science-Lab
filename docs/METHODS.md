@@ -962,6 +962,16 @@ $$
 
 which assumes $T_0$ and $P$ uncorrelated. A transit is listed as observable in full when the whole region of interest, from one hour before ingress to one hour after egress, has the target above 30° altitude with the Sun below −18°; complete transits with a shorter baseline, and partial ones, are listed as such. All three limits are settings. Rise, set and twilight times are found by sampling every 10 minutes and bisecting.
 
+### Ranking score
+
+Events that pass the limits are ranked by a score of 0 to 100 (`scoreTransit`): 40 × the observable fraction of the event; 15 × the fraction of the wanted baseline that is dark, averaged over the two sides; 20 × an altitude term, the mean airmass $\bar X$ of the observable ingress, mid and egress scaled from the airmass at the altitude limit (0) to the zenith (1); 20 × a signal term; and 5 × a Moon term (1 when it is down or more than 40° away, otherwise reduced in proportion to its illuminated fraction and proximity). The signal term is the expected transit signal-to-noise for a small telescope,
+
+$$
+\mathrm{S/N} = \frac{\delta}{\sigma_1}\sqrt{T_{14}/1\,\mathrm{min}}, \qquad \sigma_1 = \sqrt{\left(2000\,\mathrm{ppm}\times10^{0.2(m-12)}\right)^2 + (400\,\mathrm{ppm})^2}
+$$
+
+with $\delta$ the depth and $m$ the catalogued magnitude of the host ($V$, or TESS $T$ when that is all there is): photon noise of a 0.3–0.4 m telescope per minute and a floor for scintillation and systematics. It scores 0 at S/N 5 and full marks at S/N 200 on a logarithmic scale; an event without a depth or a magnitude, and every eclipse or phase window, gets half marks. The score is a ranking aid: the noise model is not a given telescope's.
+
 ### Bright asteroids and paths
 
 The sky view draws eight bright asteroids (Ceres, Pallas, Juno, Vesta, Hebe, Iris, Hygiea, Eunomia) from osculating elements of the JPL Small-Body Database bundled in `asteroids.js` (epoch JD 2461200.5 TDB, ecliptic J2000), propagated as two-body orbits about the Sun (Kepler's equation as for the planets), with light-time iteration and the Earth of `astro.js`; magnitudes are the IAU $H, G$ system of Bowell et al. (1989) with $H$ and $G$ from the same database. A card's "Show path" draws where a satellite (SGP4), the Moon, a planet or an asteroid goes: across the sky tonight, or among the stars over ±3 days to ±6 months (drawn in J2000, so it turns with the stars), with time or date ticks.

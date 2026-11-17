@@ -192,10 +192,22 @@ check('intersectIntervals', JSON.stringify(O.intersectIntervals([[0, 2], [3, 6]]
     O.findObservableTransits(targets, site, { ...opts, partial: true }).length === part.length, `${onlyPart.length} partial`);
   check('planner: sorted by time, uncertainty propagated, UTC differs from BJD by the light time', full.every((e, i) => i === 0 || e.mid >= full[i - 1].mid) && full.every((e) => Math.abs(e.sigma - Math.hypot(2e-4, e.epoch * 1e-6)) < 1e-12 && Math.abs(e.mid - e.bjd) < 0.0065 && Math.abs((e.bjd - e.mid) * 86400 - 69.184) < 500));
   const sc = tran.map((e) => e.score), best = full.reduce((a, b) => (b.score.total > a.score.total ? b : a));
-  check('score: parts add up, stay in range, and a full transit with baseline high in a moonless sky gets top marks', sc.every((s) => Math.abs(s.total - (s.coverage + s.baseline + s.altitude + s.moon)) < 1e-9 && s.total >= 50 && s.total <= 100) && full.every((e) => e.score.baseline === 20) &&
-    Math.abs(O.scoreTransit({ coverage: 1, before: 0.1, after: 0.1, ingressObs: true, egressObs: true, altIngress: 70, altMid: 80, altEgress: 65, moon: { alt: -5, sep: 10, illum: 1 } }).total - 100) < 1e-9 &&
-    Math.abs(O.scoreTransit({ coverage: 0.5, before: 0, after: 1, ingressObs: false, egressObs: true, altIngress: 10, altMid: 30, altEgress: 45, moon: { alt: 20, sep: 20, illum: 0.5 } }).total - (25 + 10 + 0 + 7.5)) < 1e-9,
+  const X = (h) => 1 / Math.sin(h * Math.PI / 180), altPts = (hs, lim = 30) => 20 * (X(lim) - hs.reduce((a, h) => a + X(h), 0) / hs.length) / (X(lim) - 1);
+  const snrRef = (d, m, t) => d / (Math.hypot(2000 * 10 ** (0.2 * (m - 12)), 400) * 1e-6) * Math.sqrt(t * 1440), sigPts = (r) => 20 * Math.max(0, Math.min(1, Math.log10(r / 5) / Math.log10(40)));
+  const evA = { coverage: 1, before: 0.1, after: 0.1, ingressObs: true, egressObs: true, altIngress: 70, altMid: 80, altEgress: 65, moon: { alt: -5, sep: 10, illum: 1 } };
+  const evB = { coverage: 0.5, before: 0, after: 1, ingressObs: false, egressObs: true, altIngress: 10, altMid: 30, altEgress: 45, moon: { alt: 20, sep: 20, illum: 0.5 } };
+  const hj = { depth: 0.015, mag: 10, t14: 0.125 }, sA = O.scoreTransit({ ...evA, kind: 'transit', target: hj });
+  check('score: parts add up, stay in range, full baseline on every full transit', sc.every((s) => Math.abs(s.total - (s.coverage + s.baseline + s.altitude + s.signal + s.moon)) < 1e-9 && s.total >= 0 && s.total <= 100) && full.every((e) => e.score.baseline === 15),
     `best of the run: ${best.target.name} ${best.score.total.toFixed(0)}`);
+  check('score: two events against the weights worked by hand (altitude by mean airmass, signal from S/N on a log scale)',
+    Math.abs(sA.total - (40 + 15 + altPts([70, 80, 65]) + sigPts(snrRef(0.015, 10, 0.125)) + 5)) < 1e-9 && Math.abs(sA.snr - snrRef(0.015, 10, 0.125)) < 1e-9 &&
+    Math.abs(O.scoreTransit(evB).total - (20 + 7.5 + altPts([30, 45]) + 10 + 3.75)) < 1e-9, `hot Jupiter V 10: S/N ${sA.snr.toFixed(0)}, ${sA.total.toFixed(1)} of 100`);
+  const sc0 = (o) => O.scoreTransit({ ...evA, kind: 'transit', target: hj, ...o });
+  check('score: higher altitude, a deeper transit and a brighter host each rank higher; no depth or an eclipse gets half the signal points',
+    sc0({ altIngress: 80, altMid: 88, altEgress: 75 }).total > sA.total && sc0({ target: { ...hj, depth: 0.004 } }).total < sA.total && sc0({ target: { ...hj, mag: 13 } }).total < sA.total &&
+    sc0({ altIngress: 90, altMid: 90, altEgress: 90 }).altitude === 20 && O.scoreTransit({ ...evA, kind: 'transit', target: { mag: 10, t14: 0.1 } }).signal === 10 && O.scoreTransit({ ...evA, kind: 'eclipse', target: hj }).signal === 10 &&
+    sc0({ target: { depth: 0.001, mag: 14, t14: 0.05 } }).signal === 0 && sc0({ target: { depth: 0.03, mag: 8, t14: 0.2 } }).signal === 20,
+    `2 ppt V 12 2 h: S/N ${O.transitSnr(0.002, 12, 1 / 12).toFixed(1)}`);
   check('planner: a target that never rises high enough is skipped', O.findObservableTransits([{ ra: 10, dec: -85, per: 1, tmid: 2459000, t14: 0.1 }], site, opts).length === 0);
   check('planner: with no baseline wanted the region of interest is the transit', O.findObservableTransits(targets, site, { ...opts, baseline: 0 }).length === O.findObservableTransits(targets, site, { ...opts, baseline: 0, include: 'transit' }).length);
 }

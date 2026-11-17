@@ -123,7 +123,7 @@ h2.night span { color: var(--lab); font-weight: 400; font-size: 11.5px; }
 .ev .c-name { display: block; white-space: normal; }
 .ev .nm { font-size: 13.5px; color: var(--soft); }
 .ev .c-name small { display: block; font-family: var(--mono); margin-top: 1px; }
-.ev.full .nm, .ev.full .c-time .v, .ev.full .c-roi .v b, .tile.full .nm { font-weight: 700; color: var(--strong); }
+.ev.full .nm, .ev.full .c-time .v, .tile.full .nm { font-weight: 700; color: var(--strong); }
 .ev .c-time .v { gap: 0; } .ev .c-time i { color: var(--lab); font-style: normal; padding: 0 4px; }
 .c-time .off, .d-times tr.off td { color: var(--lab); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--lab) 53.3%, transparent); }
 /* kinds of event: a badge in the colour the charts use for its window */
@@ -136,7 +136,7 @@ h2.night span { color: var(--lab); font-weight: 400; font-size: 11.5px; }
 .ev-score.s-hi b { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 53.3%, transparent); background: color-mix(in srgb, var(--ok) 10.2%, transparent); } .ev-score.s-mid b { color: color-mix(in srgb, var(--model) 60%, var(--text)); border-color: color-mix(in srgb, var(--model) 46.7%, transparent); background: color-mix(in srgb, var(--model) 7.8%, transparent); } .ev-score.s-lo b { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 46.7%, transparent); background: color-mix(in srgb, var(--warn) 7.1%, transparent); }
 .sbar { display: flex; width: 38px; height: 4px; border-radius: 2px; overflow: hidden; background: var(--track); }
 .sbar i { display: block; height: 100%; flex: none; }
-.sbar .p-cov { background: var(--ok); } .sbar .p-base { background: var(--model); } .sbar .p-alt { background: var(--data); } .sbar .p-moon { background: var(--moon); }
+.sbar .p-cov { background: var(--ok); } .sbar .p-base { background: var(--model); } .sbar .p-alt { background: var(--data); } .sbar .p-sig { background: var(--warn); } .sbar .p-moon { background: var(--moon); }
 /* altitude over the region of interest */
 .spark { display: block; width: 100%; height: 28px; border-radius: 3px; background: var(--well); overflow: hidden; }
 .sp-tw { fill: var(--post); opacity: .22; } .sp-ev { opacity: .28; } .sp-lim { stroke: var(--warn); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
@@ -144,7 +144,7 @@ h2.night span { color: var(--lab); font-weight: 400; font-size: 11.5px; }
 .ev .c-alt small { font-family: var(--mono); margin-top: 2px; }
 .c-base.shortb .v { color: var(--warn); }
 .c-go a { font-size: 11.5px; white-space: nowrap; }
-.ev .c-roi small b { font-weight: 600; } .ev.full .c-roi small b { color: var(--okc); } .ev.short .c-roi small b { color: var(--warn); } .ev.part .c-roi small b { color: var(--twi); }
+.ev .c-base small { display: block; } .ev .c-base small b { font-weight: 600; } .ev.full .c-base small b { color: var(--okc); } .ev.short .c-base small b { color: var(--warn); } .ev.part .c-base small b { color: var(--twi); }
 /* the region of interest as a bar: green = observable, violet = lost to twilight, amber = too low; the event is outlined */
 .roi-bar { position: relative; display: inline-block; flex: 1 1 60px; max-width: 120px; min-width: 48px; height: 9px; border-radius: 3px; background: var(--okc); overflow: hidden; }
 .roi-bar i { position: absolute; top: 0; bottom: 0; }
@@ -315,33 +315,46 @@ table.eph { border-collapse: collapse; width: 100%; font: 12px var(--mono); font
 
 /* the site's controls at the top of "Site and globe" (they were a second "Site" section in the Plan panel): one row
    on a wide screen, wrapping on a narrow one */
-.s-form { --fh: 32px; display: grid; grid-template-columns: minmax(220px, 2.2fr) repeat(3, minmax(84px, 1fr)) minmax(120px, 1.2fr) auto; gap: 8px; align-items: end; padding: 4px 14px 10px; }
+/* as many on a line as fit (the panel is narrower with a transit's details open), the observatory widest */
+.s-form { --fh: 32px; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding: 4px 14px 10px; min-width: 0; }
+.s-form > label.row { flex: 2 1 220px; }
+.s-form .row3 > label, .s-form .row2 > label { flex: 1 1 90px; }
+.s-form .row2 > label { flex-basis: 140px; }
+.s-form > .hint, .s-form .row2 + .hint { flex-basis: 100%; }
 .s-form .row3, .s-form .row2 { display: contents; }
 .s-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--lab); min-width: 0; margin: 0; }
 .s-form input, .s-form select { width: 100%; height: var(--fh, 34px); padding: 0 7px; color: var(--text); font-size: 13px; min-width: 0; background: var(--panel2); border: 1px solid var(--line2); border-radius: 6px; }
 .s-form > .btn, .s-form .btn { height: var(--fh, 34px); white-space: nowrap; align-self: end; }
 .s-form .hint { grid-column: 1 / -1; }
 .s-form .hint:empty { display: none; }
-@media (max-width: 900px) { .s-form { grid-template-columns: repeat(3, minmax(0, 1fr)); } .s-form > label.row { grid-column: 1 / -1; } }
+@media (max-width: 900px) { .s-form > label.row { flex-basis: 100%; } }
 @media (max-width: 560px) { .s-form input, .s-form select { font-size: 16px; } }
 
 /* ---- the list's row, rebalanced: the start-mid-end times and the coverage narrower, the altitude chart wider ---- */
-@container (min-width: 1001px) { .ev, .ev-head { grid-template-columns: 46px minmax(130px, 0.9fr) 150px minmax(110px, 0.75fr) minmax(170px, 1.6fr) 78px 56px 30px; } }   /* wide lists only: the narrow layouts above set their own columns */
+@container (min-width: 1001px) { .ev, .ev-head { grid-template-columns: 46px minmax(150px, 1fr) 150px minmax(200px, 2fr) 120px 56px 30px; } }   /* wide lists only: the narrow layouts above set their own columns */
 .spark { height: 34px; }
 /* under the score: a miniature of the coverage timeline in place of the score's breakdown (which the score's title
-   gives); shown where the large coverage column is not */
+   gives); there is no coverage column, the dark time before and after says how much baseline there is */
 .ev-score .sbar { display: none; }
-.ev-score .roi-bar.mini { display: none; flex: none; width: 38px; min-width: 0; max-width: none; height: 6px; border-radius: 2px; }
+.ev-score .roi-bar.mini { display: block; flex: none; width: 38px; min-width: 0; max-width: none; height: 6px; border-radius: 2px; }
 .ev-score .roi-bar.mini .tr { border-left-width: 1px; border-right-width: 1px; }
 /* portrait and narrow lists: the miniature only, and the altitude chart takes the coverage column's room */
 @container (max-width: 1000px) {
-  .ev-score .roi-bar.mini { display: block; }
-  .ev .c-roi { display: none; }
-  .ev { grid-template-areas: "score name time time tog" "score alt alt base go"; }
+  /* the altitude chart on the right, the height of the card; name, times and dark time stacked on the left: no line
+     of the card is left with one short item and empty room beside it */
+  .ev { grid-template-columns: 46px minmax(150px, 0.85fr) minmax(0, 1.5fr) max-content; grid-template-areas: "score name alt tog" "score time alt tog" "score base alt go"; gap: 3px 14px; align-items: start; }
+  .ev .c-alt { align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
+  .ev .c-alt .spark { height: 46px; }
+  .ev .c-go { align-self: end; justify-self: end; }
 }
+/* a narrow list (a phone held sideways, or beside the details): the chart beside the times and the dark time */
 @container (max-width: 560px) {
-  .ev { grid-template-areas: "score name name tog" "time time time time" "alt alt alt alt" "base base go go"; }
+  .ev { grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1.25fr) 40px; grid-template-areas: "score name go tog" "time time alt alt" "base base alt alt"; gap: 4px 10px; }
+  .ev .c-alt .spark { height: 40px; }
+  .ev .c-go { align-self: center; justify-self: end; }
 }
-@media (orientation: portrait) and (max-width: 1100px) {
-  .ev-score .roi-bar.mini { display: block; }
+/* the narrowest phones: one thing per line */
+@container (max-width: 400px) {
+  .ev { grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1fr) 40px; grid-template-areas: "score name name tog" "time time time time" "alt alt alt alt" "base base go go"; }
+  .ev .c-go { justify-self: end; }
 }

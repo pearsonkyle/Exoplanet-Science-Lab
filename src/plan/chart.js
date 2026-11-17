@@ -144,13 +144,14 @@ export function renderAltitude(ctx, w, h, D, fmt, theme = THEME, o = {}) {
   let pen = false, lastMoon = null;
   for (const s of S) { if (s.moonAlt > -2) { pen ? ctx.lineTo(x(s.t), y(s.moonAlt)) : ctx.moveTo(x(s.t), y(s.moonAlt)); pen = true; if (s.moonAlt > 3) lastMoon = s; } else pen = false; }
   ctx.stroke(); ctx.setLineDash([]);
-  // target: thin everywhere, bold (with a dark edge so that it stands off the twilight bands) where it can be observed
+  // target: thin everywhere, bold (with a dark edge so that it stands off the twilight bands) inside the observing window
+  // (the region of interest); what is lost inside it shows on the strip along the bottom
   const path = (test, width, colour, alpha = 1) => {
     ctx.strokeStyle = colour; ctx.lineWidth = width; ctx.globalAlpha = alpha; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.beginPath(); let on = false;
     for (let i = 0; i < S.length; i++) { const s = S[i]; if (s.alt > -1 && test(s)) { on ? ctx.lineTo(x(s.t), y(s.alt)) : ctx.moveTo(x(s.t), y(s.alt)); on = true; } else on = false; }
     ctx.stroke(); ctx.globalAlpha = 1;
   };
-  const obs = (s) => s.sun <= D.sunLimit && s.alt >= D.minAlt && s.clear !== false;
+  const obs = (s) => s.t >= ev.roiStart && s.t <= ev.roiEnd;
   path(() => true, c ? 1.5 : 1.75, theme.target, 0.8);
   path(obs, c ? 5 : 6.5, '#03060c', 0.9);
   path(obs, c ? 3 : 4, theme.target);

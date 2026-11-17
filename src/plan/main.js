@@ -219,12 +219,12 @@ const criteria = () => `the whole region of interest, <b>${P.base ? P.base + ' h
 const kindBadge = (k) => `<span class="kb k-${k}">${KIND[k].badge}</span>`;
 /** The catalogue of a target as a tag; a TESS candidate says so (it is not a confirmed planet). */
 const srcTag = (t) => (t.candidate ? `<span class="tag toi" title="${esc(`TESS Object of Interest, TFOPWG ${t.row.recs.toi.info.disposition || 'no disposition'}: a candidate, not a confirmed planet`)}">TOI candidate</span>` : `<span class="tag ${t.cat}">${SOURCES.find((s) => s.id === t.cat).short}</span>`);
-const scoreTip = (s) => `Score ${s.total.toFixed(0)} of 100 = coverage of the event ${s.coverage.toFixed(0)}/50 + dark baseline ${s.baseline.toFixed(0)}/20 + altitude ${s.altitude.toFixed(0)}/20 (0 at the limit, full at 60°) + Moon ${s.moon.toFixed(0)}/10 (full when it is down or more than 40° away, less the brighter and closer it is). A ranking aid: it knows nothing about the telescope or the star.`;
+const scoreTip = (s) => `Score ${s.total.toFixed(0)} of 100 = coverage of the event ${s.coverage.toFixed(0)}/40 + dark baseline ${s.baseline.toFixed(0)}/15 + altitude ${s.altitude.toFixed(0)}/20 (by the mean airmass: 0 at your limit, full overhead) + signal ${s.signal.toFixed(0)}/20 (${s.snr === null ? 'half marks: no depth or magnitude to estimate it from' : `expected S/N ${s.snr < 100 ? s.snr.toFixed(0) : '100+'} for a small telescope, from the depth, the star's magnitude and the duration; 0 at S/N 5, full at 200`}) + Moon ${s.moon.toFixed(0)}/5 (full when it is down or more than 40° away). A ranking aid, not a prediction of your precision.`;
 /** The score as a number on a badge coloured by tier, with the four parts as a stacked bar under it. */
 function scoreHtml(s, ev) {
   const tier = s.total >= 85 ? 'hi' : s.total >= 65 ? 'mid' : 'lo';
-  // under the score: a miniature of the coverage timeline (the large one has its own column on a wide screen)
-  return `<span class="ev-score s-${tier}" title="${esc(scoreTip(s))}"><b>${s.total.toFixed(0)}</b>${ev ? roiBar(ev).replace('class="roi-bar"', 'class="roi-bar mini"') : ''}<span class="sbar" aria-hidden="true"><i class="p-cov" style="width:${s.coverage.toFixed(1)}%"></i><i class="p-base" style="width:${s.baseline.toFixed(1)}%"></i><i class="p-alt" style="width:${s.altitude.toFixed(1)}%"></i><i class="p-moon" style="width:${s.moon.toFixed(1)}%"></i></span></span>`;
+  // under the score: a miniature of the coverage timeline (green observable, violet twilight, amber too low)
+  return `<span class="ev-score s-${tier}" title="${esc(scoreTip(s))}"><b>${s.total.toFixed(0)}</b>${ev ? roiBar(ev).replace('class="roi-bar"', 'class="roi-bar mini"') : ''}<span class="sbar" aria-hidden="true"><i class="p-cov" style="width:${s.coverage.toFixed(1)}%"></i><i class="p-base" style="width:${s.baseline.toFixed(1)}%"></i><i class="p-alt" style="width:${s.altitude.toFixed(1)}%"></i><i class="p-sig" style="width:${s.signal.toFixed(1)}%"></i><i class="p-moon" style="width:${s.moon.toFixed(1)}%"></i></span></span>`;
 }
 /**
  * Altitude of the star over the region of interest (and half an hour each side) as a small SVG: twilight shaded,
@@ -253,7 +253,7 @@ function sparkline(ev) {
 // ------------------------------------------------------------------------------------------------ the list
 
 const rowKey = (ev) => `${ev.target.name}|${ev.kind}|${ev.epoch}`;
-const HEAD = () => `<div class="ev-head" aria-hidden="true"><span title="${esc('0 to 100: coverage 50, baseline 20, altitude 20, Moon 10. Hover a score for its parts.')}">Score</span><span>Planet</span><span>Start – mid – end <b>${esc(F.tzShort)}</b></span><span title="${esc('The region of interest: green observable, violet lost to twilight, amber too low; the event is outlined')}">Coverage</span><span title="Altitude over the region of interest; the event is tinted, the dashed line is your limit">Altitude</span><span title="Dark time adjoining the start and the end, above the altitude limit; ${P.base} h wanted for transits and eclipses">Dark before / after</span><span></span><span></span></div>`;
+const HEAD = () => `<div class="ev-head" aria-hidden="true"><span title="${esc('0 to 100: coverage 40, baseline 15, altitude 20, signal (depth and brightness) 20, Moon 5. The bar under it is the coverage. Hover a score for its parts.')}">Score</span><span>Planet</span><span>Start – mid – end <b>${esc(F.tzShort)}</b></span><span title="Altitude over the region of interest; the event is tinted, the dashed line is your limit">Altitude</span><span title="Dark time adjoining the start and the end, above the altitude limit; ${P.base} h wanted for transits and eclipses">Dark before / after</span><span></span><span></span></div>`;
 function row(ev, i) {
   const t = ev.target, r = t.row, c = cls(ev), B = ev.baselineWanted, open = A.open.has(rowKey(ev));
   const tm = (jd, ok) => `<span class="${ok ? '' : 'off'}">${F.local(jd)}</span>`;
@@ -265,9 +265,8 @@ function row(ev, i) {
     `<span class="c c-name"><span class="nm">${esc(t.name)}</span> ${kindBadge(ev.kind)}${ev.assumed ? '<span class="as" title="' + esc(ev.assumed) + '">e?</span>' : ''}` +
     `<small>${fin(t.mag) ? `${t.band} ${t.mag.toFixed(1)}` : ''}${fin(t.depth) ? `${fin(t.mag) ? ' · ' : ''}<span class="${estD ? 'est' : ''}">${estD ? '~' : ''}${(t.depth * 1000).toFixed(1)} ppt</span>` : ''} ${srcTag(t)}</small></span>` +
     `<span class="c c-time" data-l="Start – mid – end (${esc(F.tzShort)})"><span class="v">${tm(ev.ingress, ev.ingressObs)}<i>–</i>${F.local(ev.mid)}<i>–</i>${tm(ev.egress, ev.egressObs)}</span><small><span class="${estT ? 'est' : ''}">${estT ? '~' : ''}${hours(ev.egress - ev.ingress)}</span>${ev.kind === 'eclipse' ? ` · phase ${ev.phase.toFixed(3)}` : ''}</small></span>` +
-    `<span class="c c-roi" data-l="Coverage" title="${esc(`Region of interest ${F.local(ev.roiStart)}–${F.local(ev.roiEnd)}: ${pct(ev.roiCoverage)}% observable` + (ev.lost.length ? '. Lost: ' + lostText(ev, true) : ''))}"><span class="v">${roiBar(ev)}<b>${pct(ev.roiCoverage)}%</b></span><small><b>${word}</b></small></span>` +
     `<span class="c c-alt" data-l="Altitude">${sparkline(ev)}<small>${deg(ev.altIngress)}→${deg(ev.altMid)}→${deg(ev.altEgress)} · ${compass(ev.azIngress)}→${compass(ev.azEgress)}</small></span>` +
-    `<span class="c c-base${short ? ' shortb' : ''}" data-l="Dark before / after" title="${B > 0 ? `${P.base} h wanted each side` : 'no baseline wanted for a phase window'}"><span class="v">${hours(ev.before).replace(' h', '')} / ${hours(ev.after)}</span></span>` +
+    `<span class="c c-base${short ? ' shortb' : ''}" data-l="Dark before / after" title="${B > 0 ? `${P.base} h wanted each side` : 'no baseline wanted for a phase window'}"><span class="v">${hours(ev.before).replace(' h', '')} / ${hours(ev.after)}</span><small title="${esc(`Region of interest ${F.local(ev.roiStart)}–${F.local(ev.roiEnd)}: ${pct(ev.roiCoverage)}% observable` + (ev.lost.length ? '. Lost: ' + lostText(ev, true) : ''))}"><b>${word}</b></small></span>` +
     `<span class="c c-go"><a href="${esc(skyUrl(ev))}" title="Open the sky view at mid-${esc(KIND[ev.kind].word)} from this site">Sky view</a></span>` +
     `<button type="button" class="ev-tog" aria-expanded="${open}" aria-label="More about this ${esc(KIND[ev.kind].word)}" title="More"><i></i></button>` +
     (open ? rowMore(ev) : '') + '</div>';
@@ -326,8 +325,9 @@ function watchTiles() {
 const GRID_LEGEND = () => `<div class="d-legend g-legend">${legendHtml(true)}<span class="lg-note">Every chart of a night has the same axes: altitude 0–90°, half an hour before sunset to half an hour after sunrise (${esc(F.tzShort)}). Compass: zenith at the centre, north up, east left.</span></div>`;
 const kindKey = () => kindsOn().map((k) => `<span><i class="k-ev" style="background:${KIND_COLOUR[k]}66;border-color:${KIND_COLOUR[k]}"></i>${KIND[k].word}</span>`).join('');
 function legendHtml(short) {
-  return `<span><i class="k-sky" style="background:${THEME.sky[0]}"></i>day</span><span><i class="k-sky" style="background:${THEME.sky[1]}"></i>civil</span><span><i class="k-sky" style="background:${THEME.sky[2]}"></i>nautical</span><span><i class="k-sky" style="background:${THEME.sky[3]}"></i>astronomical</span><span><i class="k-sky" style="background:${THEME.sky[4]}"></i>night</span>` +
-    '<span><i class="k-line"></i>target (bold: observable)</span>' + kindKey() + '<span><i class="k-roi"></i>region of interest</span><span><i class="k-in"></i>start, end</span><span><i class="k-mid"></i>mid</span><span><i class="k-lim"></i>altitude limit</span><span><i class="k-moon"></i>Moon</span>' +
+  // the sky's shades in two words: day, and twilight (the three twilights shade from one to the other); night is the dark
+  return `<span><i class="k-sky" style="background:${THEME.sky[0]}"></i>day</span><span><i class="k-sky" style="background:linear-gradient(90deg, ${THEME.sky[1]}, ${THEME.sky[3]})"></i>twilight</span>` +
+    kindKey() + '<span><i class="k-roi"></i>region of interest</span><span><i class="k-in"></i>start, end</span><span><i class="k-mid"></i>mid</span><span><i class="k-lim"></i>altitude limit</span><span><i class="k-moon"></i>Moon</span>' +
     '<span><i class="k-ok"></i>observable</span><span><i class="k-tw"></i>lost to twilight</span><span><i class="k-lo"></i>lost to altitude</span>' + (A.info && A.info.opts.horizon ? '<span><i class="k-terrain"></i>terrain</span>' : '') + (short ? '' : '<span><i class="k-sig"></i>± 1σ timing</span>');
 }
 
@@ -477,7 +477,7 @@ function drawSite() {
   $('p-sinfo').innerHTML = `<h2>${esc(c ? c.name : 'Your site')}</h2>` +
     `<div class="s-sub">${c ? `${esc(KIND_LABEL[c.kind] || '')}${c.nets && c.nets.length ? ' · ' + c.nets.map(esc).join(', ') : ''}` : 'coordinates typed by hand or from this device'}</div>` +
     '<dl class="s-facts">' +
-    `<dt>Position</dt><dd>${Math.abs(P.lat).toFixed(4)}° ${P.lat >= 0 ? 'N' : 'S'}, ${Math.abs(P.lon).toFixed(4)}° ${P.lon >= 0 ? 'E' : 'W'}, ${Math.round(P.elev || 0)} m</dd>` +
+    `<dt>Position</dt><dd>latitude ${Math.abs(P.lat).toFixed(4)}° ${P.lat >= 0 ? 'N' : 'S'}<br>longitude ${Math.abs(P.lon).toFixed(4)}° ${P.lon >= 0 ? 'E' : 'W'}<br>altitude ${Math.round(P.elev || 0)} m</dd>` +
     `<dt>Time zone</dt><dd>${esc(F.tzLabel)}</dd>` +
     (tw ? `<dt>First night</dt><dd>${d ? `${sunName()} <b>${F.local(Math.max(d[0], I.jd0))} – ${F.local(Math.min(d[1], I.jd0 + 1))}</b> (${hours(Math.min(d[1], I.jd0 + 1) - Math.max(d[0], I.jd0))})` : 'the Sun does not get that low'}${tw.sun.evening ? `, sunset ${F.local(tw.sun.evening)}` : ''}${tw.sun.morning ? `, sunrise ${F.local(tw.sun.morning)}` : ''}</dd>` : '') +
     (c ? `<dt>Coordinates from</dt><dd>${c.src === 'mpc' ? `Minor Planet Center observatory code ${esc(c.key)} (“${esc(c.listed)}”)` : `astropy site registry, “${esc(c.listed)}”`}${src && M.date ? `, read ${esc(M.date)}` : ''}${c.tzNote ? `; time zone from the coordinates (${esc(c.tzNote)})` : ''}</dd>` : '') +
@@ -520,7 +520,7 @@ function drawDetail() {
     `<dt>Star</dt><dd>${fin(t.mag) ? `${t.band} = ${t.mag.toFixed(2)} · ` : ''}${hms(t.ra)} ${dms(t.dec)}</dd>` +
     `<dt>Dark baseline</dt><dd>${hours(ev.before)} before, ${hours(ev.after)} after${base > 0 ? ` (wanted ${P.base} h)` : ''}</dd>` +
     `<dt>Moon</dt><dd>${Math.round(100 * ev.moon.illum)}% lit, ${ev.moon.sep.toFixed(0)}° from the target, ${ev.moon.alt > 0 ? `${ev.moon.alt.toFixed(0)}° up` : 'below the horizon'} at mid-${esc(K.word)}</dd>` +
-    `<dt>Score</dt><dd>${ev.score.total.toFixed(0)} / 100 = coverage ${ev.score.coverage.toFixed(0)}/50 + baseline ${ev.score.baseline.toFixed(0)}/20 + altitude ${ev.score.altitude.toFixed(0)}/20 + Moon ${ev.score.moon.toFixed(0)}/10</dd>` +
+    `<dt>Score</dt><dd>${esc(scoreTip(ev.score).split('. A ranking')[0].replace(/^Score /, ''))}</dd>` +
     '</dl></div>';
   el.querySelector('.d-close').addEventListener('click', () => select(null));
   paintCharts();
@@ -715,7 +715,7 @@ start().catch((err) => { status('Could not load the catalogues: ' + err.message)
   const evRow = (ev) => ({ index: A.shown.indexOf(ev) + 1, planet: ev.target.name, ...(ev.target.candidate ? { tess_candidate: 'not a confirmed planet' } : {}), event: ev.kind, event_label: KIND[ev.kind].badge, ...(ev.assumed ? { assumed: ev.assumed } : {}), night_of: F.day(O.noonBefore(ev.mid, P.lon)), ingress_utc: isoMin(ev.ingress), mid_utc: isoMin(ev.mid), egress_utc: isoMin(ev.egress),
     local_times: `${F.local(ev.ingress)} – ${F.local(ev.mid)} – ${F.local(ev.egress)} ${F.tzShort}`, observable: ev.full ? 'yes' : ev.transitFull ? `${KIND[ev.kind].word} complete, ${ev.baselineWanted > 0 ? 'baseline' : 'timing margin'} cut short` : `partial: ${pct(ev.coverage)}% of the ${KIND[ev.kind].word}`, region_observable_pct: +pct(ev.roiCoverage),
     timing_1sigma: ev.target.hasErr ? '± ' + minutes(ev.sigma * 1440) : 'unknown', altitude: `${deg(ev.altIngress)} → ${deg(ev.altMid)} → ${deg(ev.altEgress)}`, moon: `${Math.round(100 * ev.moon.illum)}% lit, ${deg(ev.moon.sep)} away`,
-    depth_ppt: fin(ev.target.depth) ? (ev.target.depth * 1000).toFixed(1) : null, magnitude: fin(ev.target.mag) ? `${ev.target.band} ${ev.target.mag.toFixed(1)}` : null, conditions_of_100: ev.score.total.toFixed(0) });
+    depth_ppt: fin(ev.target.depth) ? (ev.target.depth * 1000).toFixed(1) : null, magnitude: fin(ev.target.mag) ? `${ev.target.band} ${ev.target.mag.toFixed(1)}` : null, conditions_of_100: ev.score.total.toFixed(0), expected_snr: ev.score.snr === null ? null : +ev.score.snr.toFixed(0) });
   const counts = () => { const full = A.events.filter((e) => e.full).length, short = A.events.filter((e) => !e.full && e.transitFull).length; return { events: kindsOn(), observable: full, observable_tess_candidates: A.events.filter((e) => e.full && e.target.candidate).length, short_baseline: short, partial: A.events.length - full - short, observable_by_event: Object.fromEntries(kindsOn().map((k) => [k, A.events.filter((e) => e.full && e.kind === k).length])), targets_searched: A.info ? A.info.ntargets : 0 }; };
   const pickEvent = (index) => { const ev = A.shown[Math.round(index) - 1]; if (!ev) throw new Error(`there is no event number ${index}: the list has ${A.shown.length} (plan_list_transits)`); return ev; };
   /** Why a named planet gives no transit in the list: unknown, or left out by a limit. */

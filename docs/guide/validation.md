@@ -1260,9 +1260,9 @@ priors for 8,556 of them; 2.0 MB gzipped, with checksums and licences in its man
 the `--no-download` path has been run.
 
 The planner lists transits, secondary eclipses, phase-curve windows and custom phase windows for a site and
-date range, scored and sorted together: score with its breakdown, planet with an event badge, start–mid–end (the
-time zone named once), coverage of the region of interest, an altitude sparkline with the window shaded, dark
-time before and after, and a sky-view link; timing uncertainty, the Moon and the orbit are in the expanded row.
+date range, scored and sorted together: score with a miniature of the region of interest's coverage, planet with
+an event badge, start–mid–end (the time zone named once), an altitude sparkline bold over the window, dark time
+before and after with the verdict (observable, short baseline, partial), and a sky-view link; timing uncertainty, the Moon and the orbit are in the expanded row.
 "Observable" means the whole region of interest (1 h of baseline, widened by 1σ of the predicted time) is above
 30° with the Sun below −18° and, optionally, above the terrain horizon. Eclipse times use e and ω (against
 batman's `get_t_secondary` for 240 orbits up to e = 0.9: 0.00002 s; durations within 0.28% for e ≤ 0.3); without
@@ -1280,6 +1280,14 @@ hosts is the owner's call. Tabs give the ephemeris behind every row (with a CSV)
 twilight times 6 s, BJD conversion 4 s. Against the Swarthmore transit finder for Kitt Peak and one week: all
 32 of its events are found, mid-times within 0.7 min, elevations within 0.5°; with the finder's limits 14 are
 observable over the whole region of interest, 17 are complete with a short baseline and 1 is partial.
+
+The score (`scoreTransit`): coverage 40, baseline 15, altitude 20 by mean airmass from the limit to the zenith,
+signal 20 from the expected S/N (depth, host magnitude and duration, a small-telescope noise model, log scale from
+S/N 5 to 200; half marks without a depth or magnitude and for eclipses and phase windows), Moon 5. Checked against
+the weights worked by hand for two events, and for its ordering: a higher path, a deeper transit and a brighter host
+each score higher (`test/observability.test.mjs`). A hot Jupiter of 15 ppt on a V 10 star lasting 3 h has S/N 226
+(full signal marks); 2 ppt on V 12 for 2 h has S/N 10.7. The noise model has not been compared with any telescope's
+measured precision.
 
 In 61 planets the archive's best-timed ephemeris has another planet's period (rows from ExoFOP attached to a
 sibling: HD 106315 c 1221 d instead of 21.06 d); a paired ephemeris more than 1% from the composite period is now
