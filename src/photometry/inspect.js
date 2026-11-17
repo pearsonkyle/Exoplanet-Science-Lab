@@ -170,7 +170,7 @@ export function createInspector(ctx) {
     const r = I.prof;
     if (!r) { card.append(h('p', { class: 'hint' }, 'Click or tap a star. Its centre is refined, the sky is taken from the dashed annulus, and Gaussian and Moffat profiles are fitted to every pixel.')); return; }
     const cv = h('canvas', { class: 'iplot', 'aria-label': 'Radial profile: pixel values against distance from the centre, with the Gaussian and Moffat fits' }), cg = h('canvas', { class: 'iplot', 'aria-label': 'Curve of growth' });
-    const cs = h('canvas', { class: 'iplot', 'aria-label': 'The star in two dimensions: its pixels, contours at 50, 25, 10 and 5% of the peak, the moment ellipse at the FWHM and the coma arrow' });
+    const cs = h('canvas', { class: 'iplot', 'aria-label': 'The star in two dimensions: its pixels, contours at 50 and 5% of the peak, the moment ellipse at the FWHM and the coma arrow' });
     card.append(h('div', { class: 'iplots2' }, cv, cs));
     requestAnimationFrame(() => {
       if (!cv.isConnected) return;     // the panel was rebuilt before this frame
@@ -206,7 +206,7 @@ export function createInspector(ctx) {
       I.growth ? cg : null,
       h('details', { class: 'ptab' }, h('summary', {}, 'Pixel values around the centre'), h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'y \\ x'), r.table.xs.map((x) => h('th', {}, String(x))))), h('tbody', {}, r.table.rows.map((row, j) => h('tr', {}, h('th', {}, String(r.table.ys[j])), row.map((v, i) => h('td', { class: i === 2 && j === 2 ? 'mid' : null }, big(v))))))))].filter(Boolean));
   }
-  /** The star in two dimensions: its sky-subtracted pixels (asinh stretch), contours at 50, 25, 10 and 5% of the peak,
+  /** The star in two dimensions: its sky-subtracted pixels (asinh stretch), contours at 50 and 5% of the peak,
    *  the moment ellipse at the FWHM (dashed), the centroid and the coma arrow. y up, as on the image. */
   function renderShape(c, W, Hh, r) {
     c.fillStyle = PHOT_THEME.bg; c.fillRect(0, 0, W, Hh);
@@ -219,7 +219,7 @@ export function createInspector(ctx) {
     const st = (v) => Math.max(0, Math.min(1, Math.asinh(Math.max(0, v) / pk * 30) / Math.asinh(30)));
     for (let j = 0; j < S.ny; j++) for (let i = 0; i < S.nx; i++) { const g = Math.round(255 * st(S.v[j * S.nx + i])); c.fillStyle = `rgb(${g},${g},${g})`; c.fillRect(ox + i * px, oy + (S.ny - 1 - j) * px, Math.ceil(px), Math.ceil(px)); }
     // contours by marching squares on the pixel-centre grid
-    const lv = [[0.5, '#6fe3a5'], [0.25, '#5fd4ff'], [0.1, '#ffc56b'], [0.05, '#ff6b7a']];
+    const lv = [[0.5, '#6fe3a5'], [0.05, '#ff6b7a']];
     c.lineWidth = 1.3;
     for (const [f, col] of lv) {
       const L = f * pk; c.strokeStyle = col; c.beginPath();
