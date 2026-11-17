@@ -1,4 +1,4 @@
-// Plan page: which transits, secondary eclipses and phase windows can be observed from a site in a range of nights.
+// Plan page: which transits, eclipses and phase windows can be observed from a site in a range of nights.
 // Settings live in P (kept in localStorage); everything on screen is recomputed from P, the catalogue and the
 // observatory list.
 //
@@ -744,7 +744,7 @@ start().catch((err) => { status('Could not load the catalogues: ' + err.message)
     return { events: eventsText(), transits: counts() };
   }
   const tools = [
-    { name: 'plan_set_events', core: true, description: 'Choose what to plan: transits (default), secondary eclipses, phase-curve windows (a span of the orbit around the eclipse or the transit, for short-period planets) and custom windows between two orbital phases. Several can be on together; they are listed and scored together.',
+    { name: 'plan_set_events', core: true, description: 'Choose what to plan: transits (default), eclipses, phase-curve windows (a span of the orbit around the eclipse or the transit, for short-period planets) and custom windows between two orbital phases. Several can be on together; they are listed and scored together.',
       parameters: obj({ events: { type: 'array', items: { type: 'string', enum: KINDS }, description: 'Kinds of event to list, e.g. ["transit", "eclipse"].' }, phase_span: N('Phase-curve window length as a fraction of the orbit (0.25, 0.5, 0.75 or 1).', { minimum: 0.05, maximum: 1 }),
         phase_center: T('Centre of a phase-curve window.', { enum: ['eclipse', 'transit'] }), phase_max_period: N('Only planets with a period up to this many days get phase-curve windows (default 3).', { minimum: 0.2, maximum: 30 }),
         custom_from: N('Custom window start, orbital phase (0 = mid-transit).', { minimum: 0, maximum: 1 }), custom_to: N('Custom window end, orbital phase.', { minimum: 0, maximum: 1 }) }),

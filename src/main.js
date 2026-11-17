@@ -1275,7 +1275,7 @@ function buildSystemTab() {
       + (sm.negative ? ' <b>The planet’s flux goes negative at some phases</b>: such a point is outside the prior in a fit.' : sm.negativeMap ? ' Part of the map has negative brightness, which the disc-integrated curve cannot rule out on its own.' : '') }));
     el.append(h('p', { class: 'note' }, 'Fp/F★ is the dayside surface brightness over the star’s, so the eclipse depth is Fp/F★ × (Rp/R★)². The plot’s Phase view folds the data on the orbit; the Map view shows the temperature map and what the observer sees at each phase.'));
   } else {
-    el.append(h('div', { class: 'btnrow' }, h('button', { class: 'chip small', title: 'Model this planet’s own light: the secondary eclipse, the phase curve over the orbit and, with enough precision, a map', onclick: addPhase }, '+ eclipse & phase curve')));
+    el.append(h('div', { class: 'btnrow' }, h('button', { class: 'chip small', title: 'Model this planet’s own light: the eclipse, the phase curve over the orbit and, with enough precision, a map', onclick: addPhase }, '+ eclipse & phase curve')));
   }
   // ---- a moon of the planet on show
   if (hasMoon()) {

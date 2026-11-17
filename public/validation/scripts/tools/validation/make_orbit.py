@@ -48,7 +48,7 @@ for a_in, nu_t in zip(an_in, kep['nu']):           # one eccentricity per proces
 kep['codes']['batman']['note'] = 'true anomaly from TransitModel.get_true_anomaly()'
 kep['codes']['PyTransit (Newton)']['note'] = 'orbits_py.ta_newton_v, the solver its eccentric models can use'
 
-# ---------------- 2. event times: periastron and secondary eclipse relative to mid-transit
+# ---------------- 2. event times: periastron and eclipse relative to mid-transit
 ev = []
 for e in (0.1, 0.3, 0.6, 0.93):
     for w in (0.0, 60.0, 135.0, 200.0, 301.301):

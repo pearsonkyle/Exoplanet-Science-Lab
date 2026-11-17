@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plan · Exoplanet Science Lab</title>
-<meta name="description" content="Plan exoplanet transits, secondary eclipses and phase-curve windows from your site: times, altitude, darkness and coverage of each event.">
+<meta name="description" content="Plan exoplanet transits, eclipses and phase-curve windows from your site: times, altitude, darkness and coverage of each event.">
 <meta name="esl-root" content="../">
 <!-- the site theme before first paint (src/site/theme.js) -->
 <script>try{var t=localStorage.getItem('esl.theme');if(t&&t!=='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
@@ -25,7 +25,7 @@
       <fieldset class="p-what" id="p-g-events">
         <legend>Plan</legend>
         <div class="p-kinds tabset" id="p-kinds" role="group" aria-label="Events to plan (several can be on)">
-          <button type="button" data-kind="transit" aria-pressed="true" title="Primary transits: the planet in front of the star">Transits</button><button type="button" data-kind="eclipse" aria-pressed="false" title="Secondary eclipses: the planet behind the star. Timed from the orbit (e, ω); a circular orbit is assumed when the catalogue has no eccentricity">Eclipses</button><button type="button" data-kind="phase" aria-pressed="false" title="A stretch of the orbit around the eclipse or the transit, for phase curves of short-period planets">Phase curve</button><button type="button" data-kind="custom" aria-pressed="false" title="Any window between two orbital phases (0 = mid-transit, measured in time)">Custom</button>
+          <button type="button" data-kind="transit" aria-pressed="true" title="Transits: the planet in front of the star">Transits</button><button type="button" data-kind="eclipse" aria-pressed="false" title="Eclipses: the planet behind the star. Timed from the orbit (e, ω); a circular orbit is assumed when the catalogue has no eccentricity">Eclipses</button><button type="button" data-kind="phase" aria-pressed="false" title="A stretch of the orbit around the eclipse or the transit, for phase curves of short-period planets">Phase curve</button><button type="button" data-kind="custom" aria-pressed="false" title="Any window between two orbital phases (0 = mid-transit, measured in time)">Custom</button>
         </div>
         <div class="row3" id="p-phase-opts" hidden>
           <label title="How much of the orbit the window covers">Span<select id="p-phspan"><option value="0.25">¼ orbit</option><option value="0.5">½ orbit</option><option value="0.75">¾ orbit</option><option value="1">full orbit</option></select></label>

@@ -2,7 +2,7 @@
 
 | Page | What it does | What it needs |
 | --- | --- | --- |
-| **Plan** | Transits, secondary eclipses and phase-curve windows you can observe from a site over a range of nights, scored by altitude, darkness, Moon and timing uncertainty; a sky chart and altitude track for each; CSV export. | A site (89 observatories, or your coordinates). |
+| **Plan** | Transits, eclipses and phase-curve windows you can observe from a site over a range of nights, scored by altitude, darkness, Moon and timing uncertainty; a sky chart and altitude track for each; CSV export. | A site (89 observatories, or your coordinates). |
 | **Observe** | Your sky at any time and place: planet hosts coloured by discovery method, TESS candidates, the Moon and planets, a terrain horizon, and a WebXR mode for headsets. | Nothing. |
 | **Analyze → Processed Data** | Model and fit light curves, radial velocities and mid-transit times with nested sampling: several planets, eclipses and phase curves, eclipse maps, moons, Rossiter–McLaughlin, N-body dynamics, detrending, jitter and dilution. Results, model comparison, a methods paragraph with BibTeX, LaTeX tables, the session file. | Light curves (CSV, AAVSO, EXOTIC, TESS/Kepler FITS), velocities, or times; or a worked example. |
 | **Analyze → Photometry** | Images to a light curve: calibration, star detection, a search over apertures, annuli and comparison stars; DS9-style tools (radial profile, focus map, line cut, region statistics, header); TESS/Kepler/K2 pixels with sector and cadence choice, transit-aware detrending and K2 PLD; the AAVSO Exoplanet Watch report. | FITS frames (a folder or a zip) or a target pixel file. |

@@ -121,7 +121,7 @@ export function methodsParagraph(session, opts = {}) {
     }
     if (phase) {
       const ph = s.phase || {}, map = ph.mode === 'map';
-      out.push(`The planet's own light was modelled together with the transit: the secondary eclipse of a disc of surface brightness F_p/F_star relative to the star (eclipse depth F_p/F_star times (R_p/R_star)^2) and ${map ? `a brightness map in real spherical harmonics up to degree ${Math.min(3, Math.max(1, ph.lmax || 1))} with the normalisation of ${cite('luger2019')}, whose partial occultation during eclipse ingress and egress is integrated exactly` : 'a phase curve phased to mid-eclipse, described by a day-night contrast and a hot-spot offset'}${ph.ltt ? ', delayed by the light-travel time across the orbit' : ''}.`);
+      out.push(`The planet's own light was modelled together with the transit: the eclipse of a disc of surface brightness F_p/F_star relative to the star (eclipse depth F_p/F_star times (R_p/R_star)^2) and ${map ? `a brightness map in real spherical harmonics up to degree ${Math.min(3, Math.max(1, ph.lmax || 1))} with the normalisation of ${cite('luger2019')}, whose partial occultation during eclipse ingress and egress is integrated exactly` : 'a phase curve phased to mid-eclipse, described by a day-night contrast and a hot-spot offset'}${ph.ltt ? ', delayed by the light-travel time across the orbit' : ''}.`);
     }
     if (moon) out.push('The planet has a moon in the model: the two bodies orbit their barycentre (the moon on a circular orbit), and the blocked flux is that of the union of the two discs on the limb-darkened star.');
     // baseline and exposure

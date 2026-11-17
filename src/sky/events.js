@@ -5,7 +5,7 @@
 // beside them, so they are not confused with the discovery-method colours of the host rings (src/sky/discovery.js).
 export const EVENT_KINDS = {
   transit: { title: 'Transit', word: 'transit', marks: ['Ingress', 'Mid-transit', 'Egress'], rows: ['Ingress', 'Mid', 'Egress'], color: '#5fd4ff', planColor: '#6fdcff' },
-  eclipse: { title: 'Secondary eclipse', word: 'secondary eclipse', marks: ['Eclipse ingress', 'Mid-eclipse', 'Eclipse egress'], rows: ['Ingress', 'Mid', 'Egress'], color: '#ffc56b' },
+  eclipse: { title: 'Eclipse', word: 'eclipse', marks: ['Eclipse ingress', 'Mid-eclipse', 'Eclipse egress'], rows: ['Ingress', 'Mid', 'Egress'], color: '#ffc56b' },
   phase: { title: 'Phase-curve window', word: 'phase-curve window', marks: ['Window start', 'Window middle', 'Window end'], rows: ['Start', 'Middle', 'End'], color: '#f39bd6' },
   custom: { title: 'Custom window', word: 'custom window', marks: ['Window start', 'Window middle', 'Window end'], rows: ['Start', 'Middle', 'End'], color: '#c9d3e6' },
 };

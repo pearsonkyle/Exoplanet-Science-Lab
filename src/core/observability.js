@@ -332,7 +332,7 @@ export function transitsBetween(eph, t0, t1) {
 
 // ------------------------------------------------------------------------------------------------ other events of the orbit
 //
-// Secondary eclipses (superior conjunction), phase-curve windows and windows between two orbital phases, for the
+// Eclipses (superior conjunction), phase-curve windows and windows between two orbital phases, for the
 // same planner. Convention as batman and Winn (2010): mid-transit at true anomaly f = 90 deg - omega, mid-eclipse
 // at f = 270 deg - omega, omega in degrees as catalogued. Orbital phase is measured in time (mean anomaly) from
 // mid-transit: phase 0 = transit; the eclipse is at phase 0.5 only for a circular orbit.
@@ -521,7 +521,7 @@ export function findObservableTransits(targets, site, opts) {
 }
 
 /**
- * Transits, secondary eclipses, phase-curve windows and custom phase windows, with the rules of
+ * Transits, eclipses, phase-curve windows and custom phase windows, with the rules of
  * findObservableTransits (the same opts, plus):
  *   kinds      which events, any of EVENT_KINDS (default ['transit'])
  *   phase      { span, center, maxPer } and custom { from, to }: see eventGeometry

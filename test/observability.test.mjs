@@ -212,7 +212,7 @@ check('intersectIntervals', JSON.stringify(O.intersectIntervals([[0, 2], [3, 6]]
   check('planner: with no baseline wanted the region of interest is the transit', O.findObservableTransits(targets, site, { ...opts, baseline: 0 }).length === O.findObservableTransits(targets, site, { ...opts, baseline: 0, include: 'transit' }).length);
 }
 
-// --- secondary eclipses and phase windows. Reference: test/eclipse_reference.json from test/make_eclipse_reference.py:
+// --- eclipses and phase windows. Reference: test/eclipse_reference.json from test/make_eclipse_reference.py:
 // 240 random orbits (e up to 0.9), mid-eclipse from batman's get_t_secondary, transit and eclipse durations from a
 // brute-force contact search on a scipy Kepler solve.
 {

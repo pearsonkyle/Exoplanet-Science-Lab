@@ -74,7 +74,7 @@ export function mountNav(el, active) {
   window.addEventListener('esl-theme', sync);
   sync();
   nav.append(trow);
-  el.append(tbtn, tmenu, menu, nav);
+  el.append(menu, nav, tbtn, tmenu);   // the theme at the far right, after the links (Docs)
   compactNav(el, menu, nav);
   if (window.__eslNet) mountNet();   // a rebuilt bar keeps its network indicator
 }

@@ -187,7 +187,7 @@ def part_batman():
         m = batman.TransitModel(pm, t, transittype='secondary')
         out.append(dict(system=name, params=s, depth=pm.fp, t=t.tolist(), flux=m.light_curve(pm).tolist(), t_secondary=float(te)))
         print('batman', name, 't_sec', te, 'min', m.light_curve(pm).min())
-    return dict(version=batman.__version__, cases=out, note='batman secondary eclipse, uniform planet disc: 1 + fp outside, 1 in totality')
+    return dict(version=batman.__version__, cases=out, note='batman eclipse, uniform planet disc: 1 + fp outside, 1 in totality')
 
 
 def part_planck():

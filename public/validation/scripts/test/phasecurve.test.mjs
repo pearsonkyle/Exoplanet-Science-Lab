@@ -1,4 +1,4 @@
-// Secondary eclipses, phase curves and eclipse maps (src/core/phasecurve.js) against independent references
+// Eclipses, phase curves and eclipse maps (src/core/phasecurve.js) against independent references
 // (test/make_phasecurve_reference.py -> phasecurve_reference.json): direct integration of the visible disc, batman,
 // starry 1.2.0, jaxoplanet 0.2.0, EXOTIC's own functions, scipy for the Planck integrals; then analytic limits,
 // the linear solve, the temperature formulas, the bundled examples and speed. Every tolerance is stated in its check.

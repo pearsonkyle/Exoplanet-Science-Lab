@@ -43,7 +43,9 @@ export function mapLayout(W, H, d, opt = {}) {
   if (d.best) take(d.best.ratio, d.best.mass);
   if (!(x1 > x0)) { x0 = (x0 > 0 ? x0 : 2) * 0.8; x1 = x0 * 1.6; }
   if (!(y1 > y0)) { y0 = (y0 > 0 ? y0 : 0.1) / 2; y1 = y0 * 4; }
-  if (!d.grid) { const px = 0.15 * (x1 - x0); x0 -= px; x1 += px; y0 /= 1.6; y1 *= 1.6; }
+  // samples only: a margin of 15% of the spread on both axes (the mass axis in log), at least 2% in mass, so a well
+  // constrained mass fills the panel instead of sitting in a thin band
+  if (!d.grid) { const px = 0.15 * (x1 - x0); x0 -= px; x1 += px; const f = Math.max(Math.log10(1.02), 0.15 * Math.log10(y1 / y0)); y0 /= 10 ** f; y1 *= 10 ** f; }
   const ly0 = Math.log10(y0), ly1 = Math.log10(y1), px0 = L, px1 = W - R, py0 = T, py1 = H - B;
   const X = (r) => px0 + ((r - x0) / (x1 - x0)) * (px1 - px0), Y = (m) => py1 - ((Math.log10(m) - ly0) / (ly1 - ly0)) * (py1 - py0);
   return { px0, px1, py0, py1, x0, x1, y0, y1, X, Y, ratioAt: (x) => x0 + ((x - px0) / (px1 - px0)) * (x1 - x0), massAt: (y) => Math.pow(10, ly0 + ((py1 - y) / (py1 - py0)) * (ly1 - ly0)) };
@@ -94,7 +96,10 @@ export function renderCompanionMap(ctx, W, H, d, th, opt = {}) {
   for (const v of xt.out) { const x = X(v); ctx.fillRect(x, py1, 1, 4); ctx.fillText(v.toFixed(dec(xt.s)), x, py1 + 6); }
   ctx.fillText(`period of the companion / period of ${d.letter || 'b'}`, (px0 + px1) / 2, py1 + 8 + 13 * k);
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-  for (let e = Math.floor(Math.log10(Lo.y0)); e <= Math.ceil(Math.log10(Lo.y1)); e++) for (const m of [1, 2, 5]) { const v = m * 10 ** e; if (v < Lo.y0 || v > Lo.y1) continue; const y = Y(v); ctx.fillRect(px0 - 4, y, 4, 1); ctx.fillText(v >= 1 ? String(v) : v.toPrecision(1), px0 - 6, y); }
+  // 1, 2, 5 per decade on a wide axis; on a narrow one (less than a factor of 2.5) evenly spaced round values instead
+  const yl = []; for (let e = Math.floor(Math.log10(Lo.y0)); e <= Math.ceil(Math.log10(Lo.y1)); e++) for (const m of [1, 2, 5]) { const v = m * 10 ** e; if (v >= Lo.y0 && v <= Lo.y1) yl.push([v, v >= 1 ? String(v) : v.toPrecision(1)]); }
+  if (yl.length < 2) { const yt = ticks(Lo.y0, Lo.y1, Math.max(3, Math.floor((py1 - py0) / 40))); yl.length = 0; for (const v of yt.out) if (v > 0) yl.push([v, v.toFixed(dec(yt.s))]); }
+  for (const [v, txt] of yl) { const y = Y(v); ctx.fillRect(px0 - 4, y, 4, 1); ctx.fillText(txt, px0 - 6, y); }
   ctx.save(); ctx.translate(13, (py0 + py1) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText('companion mass (M Jup)', 0, 0); ctx.restore();
   if (d.grid) {   // the colour scale
     const cx = px1 + 14, w = 10; for (let i = 0; i < 60; i++) { ctx.fillStyle = ramp(1 - i / 59); ctx.fillRect(cx, py0 + ((py1 - py0) * i) / 60, w, (py1 - py0) / 60 + 1); }

@@ -1,4 +1,4 @@
-// Secondary eclipses, phase curves and eclipse mapping.
+// Eclipses, phase curves and eclipse mapping.
 //
 // ============================== INTEGRATION ==================================
 // For the owner of src/core/model.js. Nothing here edits model.js; three small changes there

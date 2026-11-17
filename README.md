@@ -35,7 +35,7 @@ Files you open never leave your browser: every science routine (transit and RV m
 
 ![Plan: observable transits from Kitt Peak, ranked by a score, with the night of WASP-33 b open: altitude chart, contact times and sky chart](docs/screens/plan.webp)
 
-- Transits, secondary eclipses, phase-curve and custom windows for your site and nights, with timing uncertainty propagated from the ephemeris.
+- Transits, eclipses, phase-curve and custom windows for your site and nights, with timing uncertainty propagated from the ephemeris.
 - Each event gets a 0–100 score from its coverage, dark baseline, altitude (airmass) and expected signal-to-noise (depth, host magnitude and duration for a small telescope).
 - Pick a site on the globe (89 observatories with links to their weather and all-sky cameras), use a terrain horizon, filter by magnitude, depth and discovery method, and include TESS candidates.
 - Click an event for its night (WASP-33 b here): altitude and airmass against twilight, the Moon and the ±1σ timing window, the contact times, and a sky chart of its path; from there it opens in the sky view or the analyzer. The ephemerides download as CSV.

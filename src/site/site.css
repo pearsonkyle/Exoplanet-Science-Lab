@@ -105,7 +105,7 @@ a { color: var(--model); }
 .sitebar.compact .sitelink.on .sl-name { color: var(--on); }
 @media (max-width: 380px) { .sitebar.compact .sitebrand b { letter-spacing: .08em; font-size: 12px; } }
 /* the theme control (nav.js): an icon button and its menu on a wide bar; a row of choices at the foot of the folded menu */
-.sitetheme { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: calc(var(--bar-h) - 6px); margin-left: -6px; padding: 0; background: none; border: 1px solid transparent; border-radius: 6px; color: var(--dim); cursor: pointer; }
+.sitetheme { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: calc(var(--bar-h) - 6px); margin-left: 6px; padding: 0; background: none; border: 1px solid transparent; border-radius: 6px; color: var(--dim); cursor: pointer; }
 .sitetheme:hover, .sitebar.themes-open .sitetheme { color: var(--strong); background: color-mix(in srgb, var(--strong) 5.1%, transparent); border-color: var(--line2); }
 .sitetheme:focus-visible, .sitethemes button:focus-visible, .sitethemerow button:focus-visible { outline: 2px solid var(--model); outline-offset: -2px; }
 .sitebar.compact .sitetheme, .sitebar.compact .sitethemes { display: none; }

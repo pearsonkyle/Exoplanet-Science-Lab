@@ -511,7 +511,7 @@ were driven by hand; the Playwright scripts do not cover them.
 
 ## The planet's own light: eclipses, phase curves and maps
 
-`src/core/phasecurve.js` adds the planet's flux to the transit model: the secondary eclipse, a phase curve
+`src/core/phasecurve.js` adds the planet's flux to the transit model: the eclipse, a phase curve
 phased to mid-eclipse, and a brightness map in spherical harmonics to degree 3 whose odd terms show only in
 eclipse ingress and egress (eclipse mapping, after github.com/pearsonkyle/Exoplanet-Mapping). A planet has it
 when its `fpfs` is set (System tab, "+ eclipse & phase curve"); the likelihood is still `buildProblem`.
@@ -1259,7 +1259,7 @@ equilibrium temperature and K. No mass is estimated above 11.3 R⊕, where the r
 priors for 8,556 of them; 2.0 MB gzipped, with checksums and licences in its manifest. TOIs are left out. Only
 the `--no-download` path has been run.
 
-The planner lists transits, secondary eclipses, phase-curve windows and custom phase windows for a site and
+The planner lists transits, eclipses, phase-curve windows and custom phase windows for a site and
 date range, scored and sorted together: score with a miniature of the region of interest's coverage, planet with
 an event badge, start–mid–end (the time zone named once), an altitude sparkline bold over the window, dark time
 before and after with the verdict (observable, short baseline, partial), and a sky-view link; timing uncertainty, the Moon and the orbit are in the expanded row.

@@ -1,4 +1,4 @@
-# Reference for the planner's secondary-eclipse windows (eclipseOffset, eclipseDurationRatio in src/core/observability.js).
+# Reference for the planner's eclipse windows (eclipseOffset, eclipseDurationRatio in src/core/observability.js).
 #   .venv-validation/bin/python test/make_eclipse_reference.py   ->  test/eclipse_reference.json
 # For random orbits (e up to 0.9, any omega, inclination near edge-on):
 #   offset   time from mid-transit to mid-eclipse, from batman's TransitModel.get_t_secondary (batman's own

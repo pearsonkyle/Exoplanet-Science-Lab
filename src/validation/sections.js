@@ -137,7 +137,7 @@ export function orbitBlock(ctx) {
   const wNu = Math.max(...mine.map((m) => m.dNu)), wRes = Math.max(...mine.map((m) => m.resid)), i93 = K.ecc.indexOf(0.93), i99 = K.ecc.indexOf(0.99), last = K.ecc.length - 1;
   const okK = ctx.check('orbit', `Kepler’s equation, e = ${K.ecc[0]} to ${K.ecc[last]}`, wNu < TOL.keplerNu && wRes < TOL.keplerE, `largest error of the orbital angle ${e1(wNu)} rad (tolerance ${e1(TOL.keplerNu)}); residual of the equation ${e1(wRes)} (tolerance ${e1(TOL.keplerE)})`);
   const ev = C.eventErrors(O), wP = Math.max(...ev.map((x) => Math.abs(x.dPeri))), wE = Math.max(...ev.map((x) => Math.abs(x.dEcl)));
-  const okE = ctx.check('orbit', `Times of periastron and secondary eclipse, ${ev.length} orbits`, wP < TOL.eventSeconds && wE < TOL.eventSeconds, `largest error ${e1(wP)} s and ${e1(wE)} s; tolerance ${e1(TOL.eventSeconds)} s`);
+  const okE = ctx.check('orbit', `Times of periastron and eclipse, ${ev.length} orbits`, wP < TOL.eventSeconds && wE < TOL.eventSeconds, `largest error ${e1(wP)} s and ${e1(wE)} s; tolerance ${e1(TOL.eventSeconds)} s`);
   const D = C.durationRows(O); let wD = 0; for (const d of D) for (const k of ['t14', 't23', 'e14', 'e23']) wD = Math.max(wD, Math.abs(d.exact[k] - d.c.truth[k]) * 86400);
   const okD = ctx.check('orbit', `Transit and eclipse durations, ${D.length} orbits`, wD < TOL.durationSeconds, `largest error ${e1(wD)} s; tolerance ${e1(TOL.durationSeconds)} s`);
   const W = 'Winn (2010) eqs. 14-16', winnShort = Math.max(...D.map((d) => Math.abs(d.c.codes[W].t14 - d.c.truth.t14) * 86400)), hdr = D.find((d) => d.c.label.startsWith('HD 80606')), pub = O.published;
