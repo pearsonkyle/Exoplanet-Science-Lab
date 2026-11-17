@@ -758,7 +758,9 @@ export function quickFit(t, f, opts = {}) {
  */
 export function optimise(M, opts = {}) {
   const { ensemble = true, psf = true, metric = 'scatter', methods = METHODS } = opts, nF = M.count, nC = M.nS - 1;
-  const time = M.time.subarray(0, nF), amOK = M.airmass.subarray(0, nF).every(Number.isFinite), fitOpts = { ...(opts.fit || {}), airmass: amOK ? M.airmass.subarray(0, nF) : null };
+  // the airmass goes to the fits unless the detrending asked for is a polynomial in time (opts.fit.detrend 'linear' / 'quadratic')
+  const poly = opts.fit && (opts.fit.detrend === 'linear' || opts.fit.detrend === 'quadratic');
+  const time = M.time.subarray(0, nF), amOK = !poly && M.airmass.subarray(0, nF).every(Number.isFinite), fitOpts = { ...(opts.fit || {}), airmass: amOK ? M.airmass.subarray(0, nF) : null };
   const fitter = opts.fitter || null, onRow = opts.onRow || null;
   const T = new Float64Array(nF), C = new Float64Array(nF), R = new Float64Array(nF), tmp = new Float64Array(nF);
   // -1 none, j star j, 0 all summed, 'w' the inverse-variance weighted ensemble (detrend.js ensembleWeights)

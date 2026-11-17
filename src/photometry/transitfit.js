@@ -169,7 +169,10 @@ export function fitTransitLsq(t, f, e, airmass, planet, opts = {}) {
  * does: sort by time, clip outliers about a Savitzky-Golay smooth (window: the odd number of points nearest 50
  * minutes, at least 5), photon-noise weights sqrt(flux) propagated to the ratio, then fitTransitLsq; the score is
  * std(residuals) / median(flux).
- * @param planet see fitTransitLsq; opts { loss, weights: 'photon' (EXOTIC) | 'equal' }
+ * Detrending: with an airmass (ctx.airmass) the baseline is a1 exp(a2 airmass), EXOTIC's; without one, or with
+ * opts.detrend 'linear' / 'quadratic', a polynomial in time of that degree fitted with the transit (buildProblem's
+ * regressors), so 'airmass' on a night with no airmass falls back to a line in time.
+ * @param planet see fitTransitLsq; opts { loss, weights: 'photon' (EXOTIC) | 'equal', detrend: 'airmass' | 'linear' | 'quadratic' }
  */
 export function makeTransitFitter(planet, opts = {}) {
   return (time, R, ctx = {}) => {
@@ -186,9 +189,10 @@ export function makeTransitFitter(planet, opts = {}) {
       else if (ctx.noComp) e[i] = Math.sqrt(T[i]);
       else e[i] = Math.sqrt(T[i] / (C[i] * C[i]) + T[i] * T[i] / (C[i] * C[i] * C[i]));
     }
-    const fit = fitTransitLsq(time, R, e, ctx.airmass || null, planet, { keep, loss: opts.loss });
+    const poly = opts.detrend === 'quadratic' ? 2 : 1, useAm = !!ctx.airmass && opts.detrend !== 'linear' && opts.detrend !== 'quadratic';
+    const fit = fitTransitLsq(time, R, e, useAm ? ctx.airmass : null, planet, { keep, loss: opts.loss, detrend: useAm ? null : { columns: {}, spec: { columns: [], poly } } });
     if (!fit) return empty;
     let nIn = 0, cad = dt; for (let i = 0; i < n; i++) if (fit.keep[i] && fit.transit[i] < 1) nIn++;
-    return { model: fit.model, baseline: fit.baseline, resid: fit.resid, keep: fit.keep, scatter: fit.scatter, robust: fit.robust, depth: fit.depth, tmid: fit.params.tmid, duration: nIn * cad, hasTransit: true, coef: [], n: fit.n, usedAirmass: !!ctx.airmass, params: fit.params, errors: fit.errors, atBound: fit.atBound, transit: fit.transit, chi2: fit.chi2, kind: 'transit' };
+    return { model: fit.model, baseline: fit.baseline, resid: fit.resid, keep: fit.keep, scatter: fit.scatter, robust: fit.robust, depth: fit.depth, tmid: fit.params.tmid, duration: nIn * cad, hasTransit: true, coef: [], n: fit.n, usedAirmass: useAm, detrend: useAm ? 'airmass' : poly === 2 ? 'quadratic' : 'linear', params: fit.params, errors: fit.errors, atBound: fit.atBound, transit: fit.transit, chi2: fit.chi2, kind: 'transit' };
   };
 }

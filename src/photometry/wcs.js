@@ -239,7 +239,7 @@ export function createFieldTools(ctx) {
       gainNote = Number.isFinite(g) ? `unknown: at least ${g.toPrecision(3)} e⁻/ADU from the sky (${sky.toFixed(0)} ± ${sd.toPrecision(3)} ADU), used as is` : 'unknown and the sky is subtracted: photon noise of the stars left out (sky-limited)';
     }
     const rows = P.stars.map((s, i) => {
-      const prof = radialProfile(c.data, c.width, c.height, s.x, s.y, { rmax, gain: Number.isFinite(g) ? g : 1, growthStep: 0.1 });
+      const prof = radialProfile(c.data, c.width, c.height, s.x, s.y, { rmax, gain: g, growthStep: 0.1 });   // an unknown gain stays unknown
       const o = optimalAperture(prof, { gain: g });     // gain Infinity: no photon noise from the star
       return { name: i ? 'C' + i : 'T', radius: o ? o.radius : NaN, sigmas: o ? o.radius / sigma : NaN, fwhm: o ? o.radius / (2.3548 * sigma) : NaN, snr: o ? o.snr : NaN, fraction: o ? o.fraction : NaN };
     });
@@ -304,17 +304,17 @@ export function createFieldTools(ctx) {
     // 2. target
     const t = F.target;
     const tsec = h('div', { class: 'fsec' }, h('h3', {}, 'Target'));
-    if (!F.wcs) tsec.append(h('p', { class: 'hint' }, 'Without sky coordinates, click the target on the image (Stars tool). With them, the target is found by its name or coordinates.'));
+    if (!F.wcs) { /* nothing to show without sky coordinates: the target is clicked with the Stars tool */ }
     else if (!t || t.unknown) tsec.append(h('p', { class: 'hint' }, t && t.unknown ? (t.unreachable ? `“${t.name}” is not in the site's catalogue, and SIMBAD (CDS Sesame) is not reachable right now: type its coordinates above.` : `“${t.name}” is not in the site's catalogue and Sesame did not know it: type its coordinates above.`) : 'Type the target\'s name or coordinates above and press Solve, or click it on the image.'));
     else {
       const isT = P.stars[0] && t.px && Math.hypot(P.stars[0].x - (t.star || t.px)[0], P.stars[0].y - (t.star || t.px)[1]) < 3;
       tsec.append(kv([['Name', `${t.name} (from ${t.from})`], ['RA, Dec', sexagesimal(t.ra, t.dec)], ['On the frame', t.px ? (t.inside ? `pixel ${fx(t.px[0], 1)}, ${fx(t.px[1], 1)}${t.star ? '' : ' (no star found there)'}` : `outside the frame (pixel ${fx(t.px[0], 0)}, ${fx(t.px[1], 0)})`) : '–'], t.gaia ? ['Gaia DR3', `G ${fx(t.gaia.g)}, BP−RP ${fx(t.gaia.bprp)}${t.gaia.variable ? ', flagged VARIABLE' : ''}`] : null]),
         t.inside ? h('div', { class: 'frow' }, isT ? h('span', { class: 'okline' }, 'This is the target (T).') : h('button', { class: 'btn primary', onclick: async () => { const [x, y] = t.star || t.px; await ctx.addStarAt(x, y, true); render(); } }, 'Use as target')) : null);
     }
-    card.append(tsec);
+    if (F.wcs) card.append(tsec);
     // 3. comparisons
     const csec = h('div', { class: 'fsec' }, h('h3', {}, 'Comparison stars'));
-    if (!F.wcs) csec.append(h('p', { class: 'hint' }, '“Suggest comparisons” in the Stars card ranks them from the image alone. With sky coordinates they are also ranked with Gaia: G magnitude and BP−RP colour against the target, known variables (Gaia DR3, VSX) set aside, and faint neighbours inside the aperture counted.'));
+    if (!F.wcs) { /* Gaia ranking needs sky coordinates; "Suggest comparisons" in the Stars card works from the image */ }
     else {
       csec.append(h('div', { class: 'frow' }, h('button', { class: 'btn', id: 'bRankGaia', onclick: () => rank().catch((e) => say(String(e.message || e), 'err')) }, F.ranked ? 'Rank again' : 'Rank with Gaia'),
         F.ranked && F.ranked.some((q) => q.usable) ? h('span', { class: 'frow' }, h('button', { class: 'btn', id: 'bAddTop', onclick: () => addRanked(F.ranked.filter((q) => q.usable).slice(0, F.nTop)) }, 'Add the best'), h('select', { 'aria-label': 'How many comparison stars to add', onchange: (e) => { F.nTop = +e.target.value; } }, [1, 2, 3, 4, 5, 6, 8].map((n) => h('option', { value: n, selected: n === F.nTop }, String(n))))) : null));
@@ -328,7 +328,7 @@ export function createFieldTools(ctx) {
         h('p', { class: 'hint' }, 'Best first. Grey: not recommended (variable, crowded, saturated, near the edge, no Gaia counterpart, or far in brightness). The numbers on the image are these ranks; diamonds are Gaia stars (red: flagged variable).'));
       }
     }
-    card.append(csec);
+    if (F.wcs) card.append(csec);
     // 4. apertures
     const asec = h('div', { class: 'fsec' }, h('h3', {}, 'Aperture size'));
     asec.append(h('div', { class: 'frow' }, h('button', { class: 'btn', id: 'bOptAp', onclick: () => apertures(true).catch((e) => say(String(e.message || e), 'err')) }, 'Set apertures from the stars')));

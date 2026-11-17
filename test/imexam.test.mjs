@@ -135,6 +135,16 @@ const cellTruth = (F, c) => { const v = F.truth.filter((t) => t.x >= c.x0 && t.x
   const G = field(() => ({ sx: 1.9 }), { seed: 5 }), gm = focusMap(G.img, G.w, G.h);
   check('focus map: an even field is called even', gm.summary.verdict.length === 1 && /even/.test(gm.summary.verdict[0]), `curvature ${(100 * gm.summary.curvature).toFixed(1)}%, tilt ${(100 * gm.summary.tilt).toFixed(1)}%, ellipticity ${gm.summary.ellipticity.toFixed(3)}`);
 }
+// --- signal to noise without a gain: only the measured sky noise (no 1 e-/count guessed); with a gain, the photon term
+// of exactly F / gain is added: 1/snr_gain^2 - 1/snr_sky^2 = 1 / (F gain)
+{
+  const F = field(() => ({ sx: 1.9 }), { seed: 5 }), t = F.truth[0];
+  const sky = radialProfile(F.img, F.w, F.h, t.x, t.y, { rmax: 12 }), g = radialProfile(F.img, F.w, F.h, t.x, t.y, { rmax: 12, gain: 2.5 });
+  const lhs = 1 / g.snr ** 2 - 1 / sky.snr ** 2, rhs = 1 / (g.flux * 2.5);
+  check('signal to noise: sky noise only without a gain, the photon term F/gain added with one', sky.snrNoise === 'sky' && g.snrNoise === 'photon+sky' && Math.abs(lhs / rhs - 1) < 1e-9 && sky.snr > g.snr && focusMap(F.img, F.w, F.h).summary.snrNoise === 'sky',
+    `S/N ${sky.snr.toFixed(0)} from the sky noise alone, ${g.snr.toFixed(0)} with a gain of 2.5 e-/count; identity to ${Math.abs(lhs / rhs - 1).toExponential(1)}`);
+}
+
 // --- tip/tilt plane, the signal-to-noise cutoff, saturation without a header level, and the coma pattern
 {
   // FWHM growing linearly to the right: the plane must give the change across the frame and point to +x

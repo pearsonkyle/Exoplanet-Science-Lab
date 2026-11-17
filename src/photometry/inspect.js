@@ -34,6 +34,8 @@ export function createInspector(ctx) {
   const H = () => (cur() && cur().header) || {};
   const sat = () => saturationLevel(H());
   const scale = () => { const s = pixelScale(H()); return s.scale > 0 ? s.scale : NaN; };
+  // the gain in e-/count from Settings or the header (GAIN, EGAIN); NaN when unknown: S/N then uses the sky noise only
+  const gainKnown = () => { const g = Number(ctx.gain && ctx.gain()); if (g > 0) return g; const hg = Number(H().GAIN ?? H().EGAIN); return hg > 0 ? hg : NaN; };
   const arc = (px) => (Number.isFinite(scale()) && Number.isFinite(px) ? ` (${(px * scale()).toFixed(2)}″)` : '');
 
   // ---- tool bar
@@ -60,7 +62,7 @@ export function createInspector(ctx) {
   // ---- profile
   function examine(x, y) {
     const c = cur(); if (!c) return;
-    const g = Number(ctx.gain && ctx.gain()) || Number(H().GAIN ?? H().EGAIN) || 1;
+    const g = gainKnown();
     const guess = I.prof ? I.prof.rmax : 12;
     let r = radialProfile(c.data, c.width, c.height, x, y, { rmax: guess, gain: g, saturation: sat().level });
     // size the radius to the star: about 3 FWHM, between 6 and 30 px
@@ -81,7 +83,7 @@ export function createInspector(ctx) {
   function measureFocus() {
     const c = cur(); if (!c || P.mode !== 'stack') return;
     const t0 = performance.now();
-    const g = Number(ctx.gain && ctx.gain()) || Number(H().GAIN ?? H().EGAIN) || 1;
+    const g = gainKnown();
     I.focus = focusMap(c.data, c.width, c.height, { nx: I.grid, ny: I.grid, saturation: sat().level, pixelScale: scale(), minSnr: I.minSnr, gain: g });
     I.focus.ms = performance.now() - t0; I.focusFrame = P.frame;
     if (ctx.note) { const S = I.focus.summary; ctx.note(`${S.n} stars · median FWHM ${fx(S.fwhm)} px · ${S.verdict[0]}`); }
@@ -197,7 +199,7 @@ export function createInspector(ctx) {
         ['Sky', `${big(r.background)} ± ${big(r.backgroundSigma)} per px`, 'Sigma-clipped median and standard deviation of the dashed annulus'],
         ['Flux inside ' + fx(r.rmax, 0) + ' px', big(r.flux)],
         ['80% of the flux within', `${fx(r.r80)} px`],
-        ['Signal to noise', fx(r.snr, 0), 'Flux / √(flux/gain + area × sky σ²) for the outer circle, with the gain from Settings or the header (1 when unknown)'],
+        ['Signal to noise', r.snrNoise === 'sky' ? `${fx(r.snr, 0)} (sky noise only)` : fx(r.snr, 0), r.snrNoise === 'sky' ? 'Flux / √(area × sky σ²) for the outer circle. No gain is known (none in Settings or the header), so the star\'s own photon noise cannot be counted: this is an upper limit. Enter the gain in Settings for the full Flux / √(flux/gain + area × sky σ²).' : 'Flux / √(flux/gain + area × sky σ²) for the outer circle, with the gain from Settings or the header'],
       ]),
       h('div', { class: 'row', style: 'margin-top:8px' },
         h('button', { class: 'btn sm primary', onclick: () => ctx.addStar(r.x, r.y, true) }, 'Use as target'),
@@ -292,7 +294,7 @@ export function createInspector(ctx) {
     const RJ = S.rejected || {}, rj = [['saturated', 'saturated'], ['crowded', 'crowded'], ['faint', `S/N < ${S.minSnr}`], ['edge', 'at the edge'], ['fit', 'fit failed']].filter(([k]) => RJ[k]).map(([k, t]) => `${RJ[k]} ${t}`);
     const compass = (a) => ['right', 'upper right', 'up', 'upper left', 'left', 'lower left', 'down', 'lower right'][Math.round(a / 45) % 8], Pl = S.plane;
     card.append(kv([
-      ['Stars measured', `${S.n} (S/N ≥ ${S.minSnr}, unsaturated, isolated)${F.ms ? `, ${F.ms.toFixed(0)} ms` : ''}`],
+      ['Stars measured', `${S.n} (S/N ≥ ${S.minSnr}${S.snrNoise === 'sky' ? ' from the sky noise, no gain known' : ''}, unsaturated, isolated)${F.ms ? `, ${F.ms.toFixed(0)} ms` : ''}`],
       rj.length ? ['Skipped', rj.join(', '), 'Every detected star that was not measured, by reason. Saturated and crowded ones are marked on the image'] : null,
       ['Median FWHM', `${fx(S.fwhm)} px${arc(S.fwhm)}`],
       ['Centre / corners', `${fx(S.fwhmCentre)} / ${S.fwhmCorners.map((v) => fx(v)).join(', ')} px`, 'Centre cell, then the lower-left, lower-right, upper-left and upper-right cells'],

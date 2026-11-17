@@ -651,7 +651,9 @@ and their coefficients. Checks (`test/detrend.test.mjs`, `test/lcdetrend.test.mj
 numpy to 2.8e-8 in χ²; PLD against Deming's regression on all pixel fractions 964.488 = 964.488; kernel weights
 against EXOTIC's `gaussian_weights` to 2.2e-16 and a fit against EXOTIC's `lc_fitter` with the same Rp/R★
 (0.10018) and T mid within 0.6 s; an injected 3000 ppm centroid systematic recovered as 2958 ppm; TESS WASP-18 with
-6 PLD components: 1-hour scatter 186.6 → 150.7 ppm. A fit with the kernel has an evidence that is not comparable
+6 PLD components: 1-hour scatter 186.6 → 150.7 ppm. The photometry page's Detrend choice, on the closed-form
+transit times a quadratic in time with 250 ppm of noise: 'quadratic' recovers Rp/R★ 0.10011 ± 0.00012 (injected
+0.1) at 247 ppm scatter, 'linear' leaves 834 ppm, and 'airmass' without an airmass is the linear fit. A fit with the kernel has an evidence that is not comparable
 with one without it, and the comparison says so.
 
 **Detrending in sessions and Python.** A session stores the detector columns (`light_curve.columns`, `null` where a
@@ -1077,7 +1079,7 @@ ratios), and the page offers detrending regressors, PLD and kernel regression fo
 for the analyzer"), and writes the AAVSO Exoplanet Watch report in EXOTIC's format (three reports identical to
 EXOTIC 4.3.1's, character for character, apart from the software line; `test/aavso.test.mjs`).
 
-Checks (`fits` 89, `photometry` 53, `imexam` 26, `lcfits` 10, `gp` 9, `psd` 36, `exotic_photometry` 26, `detrend` 25, `aavso` 8): tile-compressed files
+Checks (`fits` 89, `photometry` 53, `imexam` 37, `lcfits` 10, `gp` 9, `psd` 36, `exotic_photometry` 26, `detrend` 26, `aavso` 8): tile-compressed files
 bit-identical to astropy; aperture sums 4e-16 and elliptical apertures 1e-15 against photutils; centroids
 1.4e-14 px; UTC to BJD_TDB 0.05 s; GP 1e-13; periodogram and Welch PSD 1e-13 against scipy; rms-vs-bin 7e-15
 against mc3.
@@ -1116,7 +1118,7 @@ the others or elongated) and lists the runners-up with their reasons. Once frame
 into one line. The assistant has `photometry_examine_star` and `photometry_focus_map`. The analyzer also opens FITS
 light-curve tables (TESS, Kepler, K2: PDCSAP or the first corrected flux, quality-flagged cadences left out).
 
-Checks (`imexam` 36, `lcfits` 10): binned profiles and curves of growth equal photutils `RadialProfile` /
+Checks (`imexam` 37, `lcfits` 10): binned profiles and curves of growth equal photutils `RadialProfile` /
 `CurveOfGrowth` to 6e-15 on six stars of the HAT-P-32 b frame; the binned Gaussian FWHM equals photutils'
 `gaussian_fwhm` (0.000%), the Moffat FWHM scipy `curve_fit` (0.33%); region statistics equal astropy
 `sigma_clipped_stats` to 1e-14. On synthetic stars: the Gaussian FWHM of a pixel-integrated Gaussian 0.00% from
@@ -1136,7 +1138,9 @@ without SATURATE rejected as saturated; tails toward 210° on every star found a
 cut to the field around the three stars) the map measures 13 of 68 detected stars at S/N ≥ 30 (54 fainter, 1
 crowded): median FWHM 2.38 px, elongation 43.6%, 87% in one direction, which is the trailing the frames show by eye;
 their coma (0.50) is far above the 0.04 of round stars, as uneven trailing gives. The noise floors (0.04 coma, 0.03
-asymmetry) and the verdict thresholds come from synthetic fields only; no measured optical system has been compared. FITS tables written by astropy
+asymmetry) and the verdict thresholds come from synthetic fields only; no measured optical system has been compared.
+Without a gain the signal to noise is the sky-limited F / sqrt(n σ²), labelled so, instead of assuming 1 e⁻/count;
+with one the photon term is exactly F / g (1/S/N² − 1/S/N_sky² = 1/(F g) to 7e-16). FITS tables written by astropy
 in the SPOC and Kepler layouts (one gzipped) are read to 1e-6 d and 1e-9 in relative error with the flagged and
 blank rows left out.
 

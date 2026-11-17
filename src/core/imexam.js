@@ -86,14 +86,17 @@ const moffat1 = (p, r) => p[0] * Math.pow(1 + r * r / (p[1] * p[1]), -p[2]);
  * radii every growthStep px (photutils CurveOfGrowth). A Gaussian a exp(-r^2 / 2 s^2) and a Moffat a (1 + r^2/g^2)^-beta
  * are fitted by least squares to every pixel inside rmax (`gaussian`, `moffat`) and to the binned profile (`binned`,
  * as photutils' gaussian_fit does).
- * @param opts { rmax = 12, bin = 1, growthStep = 0.25, recentre = true, background, skyWidth = 6, gain = 1, saturation = Infinity, half }
+ * Signal to noise: F / sqrt(F / gain + n sigma_sky^2) with the gain in e-/count; without a gain (none given) the star's
+ * own photon noise cannot be known and only the measured sky noise is used, F / sqrt(n sigma_sky^2) (`snrNoise` 'sky'),
+ * an upper limit, rather than assuming 1 e-/count.
+ * @param opts { rmax = 12, bin = 1, growthStep = 0.25, recentre = true, background, skyWidth = 6, gain (e-/count; unknown when absent), saturation = Infinity, half }
  * @returns { x, y, background, backgroundSigma, pixels: { r, v } (every pixel inside rmax, sky subtracted),
  *            profile: { r (bin centres), edges, v, area }, growth: { r, flux },
  *            gaussian: { amp, sigma, fwhm }, moffat: { amp, gamma, beta, fwhm }, binned: { gaussian, moffat }, hfd, r50, r80, flux, peak,
  *            saturated, snr, ok }
  */
 export function radialProfile(data, w, h, x0, y0, opts = {}) {
-  const { rmax = 12, bin = 1, recentre = true, skyWidth = 6, gain = 1, saturation = Infinity } = opts;
+  const { rmax = 12, bin = 1, recentre = true, skyWidth = 6, saturation = Infinity } = opts, gain = opts.gain > 0 ? opts.gain : NaN;
   let x = x0, y = y0;
   if (recentre) { const c = centroidIter(data, w, h, x0, y0, opts.half ?? Math.max(4, Math.round(rmax / 2))); if (c[2] > 0 && Math.hypot(c[0] - x0, c[1] - y0) < rmax) { x = c[0]; y = c[1]; } }
   let bg = opts.background, bgs = NaN;
@@ -131,11 +134,11 @@ export function radialProfile(data, w, h, x0, y0, opts = {}) {
   const total = gf[ng], at = (frac) => { const t = frac * total; for (let i = 1; i <= ng; i++) if (gf[i] >= t) { const g0 = gf[i - 1], g1 = gf[i]; return gr[i - 1] + (t - g0) / (g1 - g0 || 1) * (gr[i] - gr[i - 1]); } return NaN; };
   const r50 = total > 0 ? at(0.5) : NaN, r80 = total > 0 ? at(0.8) : NaN;
   const nArea = A[nb], sky = Number.isFinite(bgs) ? bgs : frameStats(data, w, h).sigma;
-  const snr = total > 0 ? total / Math.sqrt(total / gain + nArea * sky * sky) : NaN;
+  const snr = total > 0 ? total / Math.sqrt((Number.isFinite(gain) ? total / gain : 0) + nArea * sky * sky) : NaN;
   return {
     x, y, background: bg, backgroundSigma: bgs, pixels: { r: Float64Array.from(pr), v: Float64Array.from(pv) },
     profile: { r: rc, edges, v: prof, area }, growth: { r: gr, flux: gf }, gaussian, moffat, binned: { gaussian: binnedG, moffat: binnedM },
-    hfd: 2 * r50, r50, r80, flux: total, peak, saturated: peak >= saturation, snr, ok: gaussian.ok && total > 0,
+    hfd: 2 * r50, r50, r80, flux: total, peak, saturated: peak >= saturation, snr, snrNoise: Number.isFinite(gain) ? 'photon+sky' : 'sky', ok: gaussian.ok && total > 0,
   };
 }
 
@@ -291,7 +294,8 @@ const median = (arr) => { const a = Float64Array.from(arr).sort(), n = a.length;
  *   'edge'       the fitting box leaves the frame
  *   'faint'      signal to noise below minSnr, S/N = F / sqrt(F / gain + N sigma^2) with F the fitted flux (the
  *                detection's flux when the fit failed) and N the pixels of a circle of radius 1.5 FWHM: a faint star's
- *                width is mostly noise (and reads as soft)
+ *                width is mostly noise (and reads as soft); without a gain the F / gain term is left out (sky
+ *                noise only), as in radialProfile
  *   'fit'        the rotated-Gaussian fit failed or wandered
  *   'crowded'    a neighbour brighter than 5% of the star within the fitting box's half-width + 3 sigma, or a blend: an
  *                elongation above 0.3 and above the field's median by 0.2 (two stars too close to be separated)
@@ -310,7 +314,7 @@ const median = (arr) => { const a = Float64Array.from(arr).sort(), n = a.length;
  * Coma pattern: the coma vectors (psfMoments) averaged as for elongation: `comaCoherence` |sum C| / sum |C| near 1 when
  * every star trails the same way (a decentred or tilted optic), `comaRadial` <C . r_hat> / <|C|> over the outer stars,
  * +1 when tails point away from the centre and -1 toward it.
- * @param opts { nx = 3, ny = 3, max = 250, nsigma = 8, saturation = Infinity, minSnr = 30, gain = 1, pixelScale }
+ * @param opts { nx = 3, ny = 3, max = 250, nsigma = 8, saturation = Infinity, minSnr = 30, gain (e-/count; unknown when absent), pixelScale }
  * @returns { stars: [{ x, y, fwhm, fwhmMajor, fwhmMinor, ellipticity, angle, peak, flux, snr, coma, asymmetry }],
  *            rejected: [{ x, y, peak, flux, reason }], cells: [{ ix, iy, x0, x1, y0, y1, n, fwhm, ellipticity, angle,
  *            coherence }], surface (polySurface result or null), summary: { n, rejected: { reason: count }, minSnr,
@@ -320,7 +324,7 @@ const median = (arr) => { const a = Float64Array.from(arr).sort(), n = a.length;
  *            asymmetry (median), verdict: [] } }
  */
 export function focusMap(data, w, h, opts = {}) {
-  const { nx = 3, ny = 3, max = 250, nsigma = 8, saturation = Infinity, minSnr = 30, gain = 1 } = opts;
+  const { nx = 3, ny = 3, max = 250, nsigma = 8, saturation = Infinity, minSnr = 30 } = opts, gain = opts.gain > 0 ? opts.gain : NaN;
   const det = detectSources(data, w, h, { nsigma, max, border: 6, minSep: 4, saturation, half: 6 });
   const src = det.sources;
   // saturation: 90% of a known level; without one, a flat top at the frame's maximum
@@ -342,7 +346,7 @@ export function focusMap(data, w, h, opts = {}) {
       const f = fitPsf(data, w, h, s.x, s.y, half, { model: 'gaussian', rotate: true, sigma: s0 });
       const fitOk = f.ok && f.amp > 5 * det.sigma && f.sx > 0.35 && f.sy > 0.35 && f.sx <= half && f.sy <= half && Math.hypot(f.x - s.x, f.y - s.y) <= 2;
       const sh = fitOk ? psfShape(f) : null, fwhm0 = sh ? sh.fwhm : FWHM_SIGMA * s0, F0 = fitOk ? f.flux : s.flux;
-      const snr = F0 / Math.sqrt(Math.max(0, F0) / gain + Math.PI * (1.5 * fwhm0) ** 2 * det.sigma * det.sigma);
+      const snr = F0 / Math.sqrt((Number.isFinite(gain) ? Math.max(0, F0) / gain : 0) + Math.PI * (1.5 * fwhm0) ** 2 * det.sigma * det.sigma);
       if (!(snr >= minSnr)) { no('faint'); continue; }
       if (!fitOk) { no('fit'); continue; }
       // crowded: a neighbour brighter than 5% of the star whose light reaches the fitting box (box half-width + 3 sigma)
@@ -442,7 +446,7 @@ export function focusMap(data, w, h, opts = {}) {
   }
   return {
     stars, rejected, cells, surface, background: det.background, noise: det.sigma,
-    summary: { n: stars.length, rejected: rejCount, minSnr, fwhm: median(stars.map((s) => s.fwhm)), fwhmCentre: fc, fwhmCorners: fco, curvature, tilt, worstCorner, plane, best, ellipticity: ell, radial, coherence, angle, coma, comaCoherence, comaAngle, comaRadial, asymmetry, pixelScale: opts.pixelScale ?? NaN, verdict },
+    summary: { n: stars.length, rejected: rejCount, minSnr, snrNoise: Number.isFinite(gain) ? 'photon+sky' : 'sky', fwhm: median(stars.map((s) => s.fwhm)), fwhmCentre: fc, fwhmCorners: fco, curvature, tilt, worstCorner, plane, best, ellipticity: ell, radial, coherence, angle, coma, comaCoherence, comaAngle, comaRadial, asymmetry, pixelScale: opts.pixelScale ?? NaN, verdict },
   };
 }
 

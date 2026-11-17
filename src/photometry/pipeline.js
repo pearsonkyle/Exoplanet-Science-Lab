@@ -124,8 +124,8 @@ export function calibrate(data, cal) {
 /** Version of the reduction code, written into exported settings so a light curve can be traced to what made it. */
 export const PHOT_VERSION = '0.4.0';
 
-/** The fitter a configuration asks for: EXOTIC's transit-model least squares when cfg.score === 'transit' and a planet is given, else null (the quick trapezoid fit). Functions cannot cross to a worker, so both sides build it from cfg. */
-export function makeFitter(cfg) { return cfg && cfg.score === 'transit' && cfg.planet && cfg.planet.per > 0 && cfg.planet.rprs > 0 ? makeTransitFitter(cfg.planet, { loss: cfg.loss, weights: cfg.weights }) : null; }
+/** The fitter a configuration asks for: EXOTIC's transit-model least squares whenever the planet is given (cfg.score 'quick' forces the trapezoid), with the night's detrending (cfg.fit.detrend: 'airmass' | 'linear' | 'quadratic'); else null (the quick trapezoid fit). Functions cannot cross to a worker, so both sides build it from cfg. */
+export function makeFitter(cfg) { return cfg && cfg.score !== 'quick' && cfg.planet && cfg.planet.per > 0 && cfg.planet.rprs > 0 ? makeTransitFitter(cfg.planet, { loss: cfg.loss, weights: cfg.weights, detrend: cfg.fit && cfg.fit.detrend }) : null; }
 
 /**
  * Photometry of a stack of frames.

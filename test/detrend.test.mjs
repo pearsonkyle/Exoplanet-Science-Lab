@@ -9,7 +9,7 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { standardise, legendre, timePolynomial, buildRegressors, symEig, pldBasis, gaussianWeights, kernelSmooth, ensembleWeights, detrendFromColumns, alignColumns } from '../src/core/detrend.js';
 import { buildProblem } from '../src/core/model.js';
-import { fitTransitLsq } from '../src/photometry/transitfit.js';
+import { fitTransitLsq, makeTransitFitter } from '../src/photometry/transitfit.js';
 import { openFits, readTargetPixelFile } from '../src/core/fits.js';
 import { tpfLightCurve, pipelineMask, medianOf } from '../src/core/photometry.js';
 import { splitFits, runStack } from '../src/photometry/pipeline.js';
@@ -66,6 +66,21 @@ const at = (data, rp = sys.rprs) => buildProblem({ data, values, ldLaw: 'nonline
   const f0 = fitTransitLsq(t, f, e, null, planet, { bounds }), f3 = fitTransitLsq(t, f, e, null, planet, { bounds, detrend: { columns: cols, spec: { pld: ['pld1', 'pld2', 'pld3'] } } });
   check('PLD in the transit fit: Rp/R★ recovered, scatter at the noise level', Math.abs(f3.params.rprs - sys.rprs) < 3 * f3.errors.rprs && f3.scatter < 1.15 * S.noise && f0.scatter > 2 * S.noise,
     `Rp/R★ ${f3.params.rprs.toFixed(5)} ± ${f3.errors.rprs.toFixed(5)} (injected ${sys.rprs}; without detrending ${f0.params.rprs.toFixed(5)}), scatter ${(1e6 * f0.scatter).toFixed(0)} → ${(1e6 * f3.scatter).toFixed(0)} ppm (injected white noise ${(1e6 * S.noise).toFixed(0)} ppm)`);
+}
+
+// ---- 3b. the photometry page's Detrend choice: the closed-form transit (numpy) times a quadratic trend in time; the
+// transit-model fitter with detrend 'quadratic' recovers Rp/R*, 'linear' leaves the curvature in the residuals, and
+// 'airmass' on a night without an airmass falls back to a line in time
+{
+  const t0 = t[0], span = t[n - 1] - t[0], tau = (x) => (x - t0) / span - 0.5;
+  let seed = 7; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const fq = Float64Array.from(t, (x, i) => tr[i] * (1 + 0.004 * tau(x) + 0.012 * tau(x) ** 2) + S.noise * Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd()));
+  const planet = { ...sys, ecc: 0, omega: 0, ld: [0, 0, 0, 0], tmidUnc: 0.002, perUnc: 0 };
+  const fit = (d) => makeTransitFitter(planet, { detrend: d })(t, fq, {});
+  const q = fit('quadratic'), l = fit('linear'), a = fit('airmass');
+  check("photometry Detrend: a quadratic trend is fitted by 'quadratic' and Rp/R* recovered; 'linear' leaves it; 'airmass' without one is linear",
+    Math.abs(q.params.rprs - sys.rprs) < 3 * q.errors.rprs && q.detrend === 'quadratic' && l.scatter > 1.05 * q.scatter && q.scatter < 1.1 * S.noise && a.detrend === 'linear' && Math.abs(a.scatter - l.scatter) < 1e-12,
+    `Rp/R* ${q.params.rprs.toFixed(5)} ± ${q.errors.rprs.toFixed(5)} (injected ${sys.rprs}; linear ${l.params.rprs.toFixed(5)}); scatter ${(1e6 * q.scatter).toFixed(0)} ppm quadratic, ${(1e6 * l.scatter).toFixed(0)} ppm linear (noise ${(1e6 * S.noise).toFixed(0)} ppm)`);
 }
 
 // ---- 4. nearest-neighbour Gaussian kernel regression against EXOTIC

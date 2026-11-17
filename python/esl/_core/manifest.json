@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "8d422ff7b2401a2e",
+ "sourceHash": "bc2b0f33ce6be5cf",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1344925,
-   "sha256": "858e60ca6f08a69ecb86446e12f3fa601d634c8ae4dd0c5650669a7dc41dcac7"
+   "bytes": 1345270,
+   "sha256": "05464a9cf784b13e5276dfe8c7c871c35483739a15caa1d86ba159e648d0f69a"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,

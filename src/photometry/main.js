@@ -2,7 +2,7 @@
 // Science lives in src/core (fits.js, photometry.js, gp.js) and src/photometry/pipeline.js; this file is the UI.
 import { startJob } from '../site/jobs.js';
 import { siteRoot } from '../site/nav.js';
-import { fetchOr } from '../site/net.js';
+import { fetchOr, siteJson } from '../site/net.js';
 import { openFits, readTargetPixelFile, framePointing, frameTime, pixelScale } from '../core/fits.js';
 import { centroidIter, detectSources, fitPsf, lightCurveFor, tpfLightCurve, pipelineMask, tpfMedianImage, medianOf, runningMedian, METHOD_LABEL } from '../core/photometry.js';
 import { gappedPsd, gappedWhiteLevel, lombScarglePsd, welchPsd, splitSegments, whiteNoiseLevel, photonNoiseLevel, logBinPsd, fitRedNoise, rmsVsBin, pixelMap, polySurface } from '../core/psd.js';
@@ -19,6 +19,8 @@ import { BUCKET, tessProducts, keplerProducts, k2Products, chooseProducts, fetch
 import { expandZips, ZIP_NAME } from '../core/zip.js';
 import { createSeries } from './series.js';
 import { makeDemoFrames, DEMO_TRUTH } from './demo.js';
+import { FILTERS, interpLDGrid, gridFromTable, greyProfile, fitLaw } from '../core/ldest.js';
+import { loadIndex, lookupHost, systemFromRows } from '../core/catalog.js';
 
 const h = (tag, props = {}, ...kids) => {
   const el = document.createElement(tag);
@@ -367,16 +369,21 @@ function buildSettings() {
       h('label', {}, 'Sky annulus width (× σ): from, to, how many', h('div', { class: 'row3' }, h('input', { type: 'number', id: 'sN0', value: 6, step: 0.5, min: 1, inputmode: 'decimal', title: 'from', 'aria-label': 'Narrowest sky annulus, in PSF sigma' }), h('input', { type: 'number', id: 'sN1', value: 15, step: 0.5, inputmode: 'decimal', title: 'to', 'aria-label': 'Widest sky annulus, in PSF sigma' }), h('input', { type: 'number', id: 'sNn', value: 4, min: 1, max: 20, inputmode: 'numeric', title: 'how many', 'aria-label': 'Number of sky annulus widths' }))),
       h('label', { title: 'PSF photometry competes with the apertures in the same table. The Gaussian has a free position angle, as in EXOTIC.' }, 'PSF photometry', h('select', { id: 'sPsf' }, h('option', { value: 'both' }, 'Gaussian + Moffat'), h('option', { value: 'gaussian' }, 'Gaussian'), h('option', { value: 'moffat' }, 'Moffat'), h('option', { value: 'none' }, 'none'))),
       h('label', { title: 'Optimal extraction (Naylor 1998): pixels weighted by the PSF profile, one profile for every star of a frame. Elliptical apertures follow the first frame\'s PSF when it is elongated by more than 25% (trailed or astigmatic stars).' }, 'Also try', h('span', { class: 'row', style: 'gap:10px;padding-top:3px' }, h('label', { style: 'flex-direction:row;gap:4px' }, h('input', { type: 'checkbox', id: 'sOpt', checked: true }), 'optimal'), h('label', { style: 'flex-direction:row;gap:4px' }, h('input', { type: 'checkbox', id: 'sEll' }), 'ellipses'))),
-      h('label', { title: 'Where in the exposure the header time is. The FITS standard says DATE-OBS is the start; EXOTIC adds half an exposure only when the keyword comment says "start".' }, 'Header time is the', h('select', { id: 'sAt' }, h('option', { value: 'start' }, 'start of exposure'), h('option', { value: 'mid' }, 'middle'), h('option', { value: 'exotic' }, "EXOTIC's rule"))),
+      h('label', { title: 'Where in the exposure the header time is. Start: half the exposure time (EXPTIME or its equivalents) is added to reach mid-exposure; the FITS standard says DATE-OBS is the start. Middle: the time is used as it is. As the comment says: half the exposure is added only when the time keyword\'s comment says "start" (the convention of EXOTIC). A keyword that is itself a mid-exposure time (JD-MID, DATE-AVG) is never shifted.' }, 'Header time is the', h('select', { id: 'sAt' }, h('option', { value: 'start' }, 'start (+ half the exposure)'), h('option', { value: 'mid' }, 'middle of the exposure'), h('option', { value: 'exotic' }, "as the keyword's comment says"))),
       h('label', { title: 'Degrees, or hh mm ss. Needed to turn UTC into BJD_TDB.' }, 'Target RA', h('input', { type: 'text', id: 'sRa', value: v(p0.ra), placeholder: 'deg or hh mm ss' })),
       h('label', {}, 'Target Dec', h('input', { type: 'text', id: 'sDec', value: v(p0.dec), placeholder: 'deg or dd mm ss' })),
       h('label', { title: 'Only used to compute the airmass when the header has none.' }, 'Site latitude', h('input', { type: 'text', id: 'sLat', value: v(p0.lat, 4), placeholder: 'deg' })),
       h('label', {}, 'Site longitude (E +)', h('input', { type: 'text', id: 'sLon', value: v(p0.lon, 4), placeholder: 'deg' })),
-      h('label', {}, 'Baseline', h('select', { id: 'sOrd' }, h('option', { value: 1 }, 'airmass (or linear in time)'), h('option', { value: 2 }, '+ quadratic in time'))),
-      h('label', { class: 'full', title: 'How each candidate light curve is scored. Quick: a trapezoid found by a grid, no knowledge of the planet. Transit model: the real model times a1 exp(a2 airmass), least squares inside the bounds EXOTIC uses; needs the planet\'s parameters and a few seconds.' }, 'Score each candidate with', h('select', { id: 'sScore', onchange: () => { $('planetBox').hidden = $('sScore').value !== 'transit'; } }, h('option', { value: 'quick' }, 'a quick trapezoid fit'), h('option', { value: 'transit' }, "the transit model (EXOTIC's fit)"))),
-      h('div', { class: 'full grid2', id: 'planetBox', hidden: true },
+      h('label', { title: 'What the transit model is multiplied by to follow slow trends of the night. Airmass: a1 exp(a2 airmass), EXOTIC\'s model (a straight line in time when the headers give no airmass and no site and target to compute it). Linear / quadratic: a polynomial in time, fitted with the transit.' }, 'Detrend', h('select', { id: 'sOrd' }, h('option', { value: 'airmass' }, 'airmass'), h('option', { value: 'linear' }, 'linear in time'), h('option', { value: 'quadratic' }, 'quadratic in time'))),
+      h('p', { class: 'full hint', style: 'margin:2px 0 0' }, 'Every candidate light curve is scored with the transit model and these planet parameters (least squares inside the bounds EXOTIC uses). Without them the candidates are ranked with a quick trapezoid fit, and the page says so.'),
+      h('div', { class: 'full row', style: 'gap:8px' }, h('button', { class: 'btn sm', type: 'button', id: 'bPlanetCat', onclick: () => fillPlanetFromCatalogue().catch((e) => setStatus('stPlanet', String(e.message || e), 'err')) }, 'Fill from the catalogue'), h('span', { class: 'status', id: 'stPlanet' }, P.name ? `Looks up “${P.name}” in the site's catalogue (NASA Exoplanet Archive).` : 'Name the target in the Field card, then look it up.')),
+      h('div', { class: 'full grid2', id: 'planetBox' },
         ...[['pPer', 'Period [d]', 'per'], ['pTmid', 'Mid-transit [BJD]', 'tmid'], ['pRprs', 'Rp/R★', 'rprs'], ['pArs', 'a/R★', 'ars'], ['pInc', 'Inclination [°]', 'inc'], ['pEcc', 'Eccentricity', 'ecc'], ['pOm', 'ω [°]', 'omega'], ['pTu', 'Mid-transit uncertainty [d]', 'tmidUnc']].map(([id, lab, k]) => h('label', {}, lab, h('input', { type: 'text', id, inputmode: k === 'omega' ? null : 'decimal', autocomplete: 'off', value: P.planet && P.planet[k] != null ? String(P.planet[k]) : (k === 'ecc' ? '0' : k === 'omega' ? '0' : k === 'tmidUnc' ? '0.01' : '') }))),
-        h('label', { class: 'full', title: 'Four coefficients of the Claret law. The default is a G star in a red band (HD 80606 in the TESS band from ExoTETHyS); the choice hardly matters for ranking apertures.' }, 'Limb darkening (Claret a1..a4)', h('input', { type: 'text', id: 'pLd', value: (P.planet && P.planet.ld ? P.planet.ld : [0.4939, -0.0729, 0.4578, -0.2158]).join(', ') }))),
+        h('label', { class: 'full', title: 'Four coefficients of the Claret law. The default is a G star in a red band (HD 80606 in the TESS band from ExoTETHyS); the choice hardly matters for ranking apertures, but it does for the transit depth. Estimate them from the star and the filter below.' }, 'Limb darkening (Claret a1..a4)', h('input', { type: 'text', id: 'pLd', value: (P.planet && P.planet.ld ? P.planet.ld : [0.4939, -0.0729, 0.4578, -0.2158]).join(', ') })),
+        // limb darkening from the star and the filter: the bundled PHOENIX table (the analyzer's), else a grey atmosphere
+        h('label', {}, 'Filter', h('select', { id: 'pFilt' }, Object.keys(FILTERS).map((f) => h('option', { value: f, selected: f === guessFilter() }, f)))),
+        h('label', { title: 'Effective temperature, surface gravity and metallicity of the host star (filled from the catalogue when it knows the planet)' }, 'Star: T eff [K], log g, [Fe/H]', h('div', { class: 'row3' }, h('input', { type: 'text', id: 'pTeff', inputmode: 'decimal', value: P.star && P.star.teff ? String(P.star.teff) : '', placeholder: 'T eff', 'aria-label': 'Effective temperature, K' }), h('input', { type: 'text', id: 'pLogg', inputmode: 'decimal', value: P.star && P.star.logg ? String(P.star.logg) : '4.5', 'aria-label': 'log g' }), h('input', { type: 'text', id: 'pFeh', inputmode: 'decimal', value: P.star && Number.isFinite(P.star.feh) ? String(P.star.feh) : '0', 'aria-label': 'Metallicity [Fe/H]' }))),
+        h('div', { class: 'full row', style: 'gap:8px' }, h('button', { class: 'btn sm', type: 'button', id: 'bLd', onclick: () => estimatePhotLD().catch((e) => setStatus('stLd', String(e.message || e), 'err')) }, 'Estimate limb darkening'), h('span', { class: 'status', id: 'stLd' }, 'From the star and the filter: PHOENIX model atmospheres (Husser et al. 2013), the table the analyzer uses.'))),
       h('label', { title: 'Electrons per count, for the photon-noise limit in the diagnostics. Taken from GAIN or EGAIN in the header when present.' }, 'Gain [e⁻/ADU]', h('input', { type: 'text', id: 'sGain', inputmode: 'decimal', autocomplete: 'off', value: P.lights.length && Number(P.lights[0].header.GAIN ?? P.lights[0].header.EGAIN) > 0 ? String(Number(P.lights[0].header.GAIN ?? P.lights[0].header.EGAIN)) : '', placeholder: 'unknown' })),
       nCal ? h('label', {}, 'Calibration', h('select', { id: 'sCal' }, h('option', { value: 1 }, `use ${P.cal.bias.length} bias, ${P.cal.dark.length} dark, ${P.cal.flat.length} flat`), h('option', { value: 0 }, 'ignore'))) : h('label', {}, 'Calibration', h('span', { class: 'dim', style: 'padding-top:4px' }, 'no darks / flats found')))));
 }
@@ -424,11 +431,56 @@ function drawOverlay(c, v) {
 // ------------------------------------------------------------------------------------------- running
 const numOf = (id) => { const el = $(id); if (!el) return NaN; const v = parseFloat(String(el.value).trim()); return Number.isFinite(v) ? v : NaN; };
 function planetFromForm() {
-  if (!$('sScore') || $('sScore').value !== 'transit') return null;
+  if (!$('pPer')) return null;
   const pl = { per: numOf('pPer'), tmid: numOf('pTmid'), rprs: numOf('pRprs'), ars: numOf('pArs'), inc: numOf('pInc'), ecc: numOf('pEcc') || 0, omega: numOf('pOm') || 0, tmidUnc: numOf('pTu') || 0.01, perUnc: 0, ld: String($('pLd').value).split(/[,\s]+/).map(Number).filter(Number.isFinite).slice(0, 4) };
   while (pl.ld.length < 4) pl.ld.push(0);
-  if (![pl.per, pl.tmid, pl.rprs, pl.ars, pl.inc].every(Number.isFinite)) throw new Error('To score with the transit model, fill in the period, mid-transit time, Rp/R★, a/R★ and inclination (or choose the quick fit).');
+  if (![pl.per, pl.tmid, pl.rprs, pl.ars, pl.inc].every(Number.isFinite)) return null;   // not given: the quick fit, and the page says so
   return pl;
+}
+
+// ---- the planet and its star from the site's catalogue, and limb darkening for a filter ------------------------
+/** The filter of FILTERS a header's FILTER keyword most likely means (V, R, I, g', r', clear, ...), else Johnson V. */
+function guessFilter() {
+  const f = String((P.lights.length && P.lights[0].header.FILTER) || '').trim(), u = f.toLowerCase().replace(/['’]/g, '');
+  if (!f) return 'Johnson V';
+  const exact = Object.keys(FILTERS).find((k) => k.toLowerCase() === u); if (exact) return exact;
+  if (/^(cv|clear|cl|l|lum|luminance|none|open)$/.test(u)) return 'MObs CV (clear)';
+  if (/exo/.test(u)) return 'Astrodon ExoPlanet-BB';
+  const sl = /^(sloan|sdss)?\s*([ugriz])p?$/.exec(u); if (sl) return 'Sloan ' + sl[2];
+  const jo = /^(johnson|bessel|cousins)?\s*([ubvri])$/i.exec(f.trim()); if (jo) { const b = jo[2].toUpperCase(); return (/cousins/i.test(f) && (b === 'R' || b === 'I') ? 'Cousins ' : 'Johnson ') + b; }
+  return 'Johnson V';
+}
+/** Fill the planet's parameters (and the star's T eff, log g, [Fe/H]) from the site's catalogue, by the target's name. */
+async function fillPlanetFromCatalogue() {
+  const name = (($('fTarget') && $('fTarget').value) || P.name || (P.lights.length && P.lights[0].header.OBJECT) || '').toString().trim();
+  if (!name) throw new Error('Name the target first (the Field card), or type the planet parameters.');
+  setStatus('stPlanet', `Looking up “${name}”…`);
+  const fj = (nm) => siteJson(new URL('catalog/' + nm, siteRoot()), "The site's catalogue");
+  const look = await lookupHost(await loadIndex(fj), name, fj);
+  if (!look) throw new Error(`“${name}” is not in the site's catalogue (NASA Exoplanet Archive). Type the parameters, or name the host as the archive does.`);
+  const sys = systemFromRows(look.rows, { use: 'transit' }), want = look.planet;
+  const pl = sys.planets.find((q) => want && q.planet === want) || sys.planets.find((q) => q.values.rprs && q.values.tmid) || sys.planets[0];
+  if (!pl) throw new Error(`No planet of ${look.host} in the catalogue.`);
+  const v = pl.values, val = (k) => (v[k] && Number.isFinite(v[k].value) ? v[k].value : null), put = (id, x) => { if (x != null && $(id)) $(id).value = String(+x.toPrecision(10)); };
+  put('pPer', val('per')); put('pTmid', val('tmid')); put('pRprs', val('rprs')); put('pArs', val('ars')); put('pInc', val('inc')); put('pEcc', val('ecc') ?? 0); put('pOm', val('omega') ?? 0);
+  if (v.tmid && v.tmid.err > 0) put('pTu', v.tmid.err);
+  put('pTeff', val('teff')); put('pLogg', val('logg')); put('pFeh', val('feh') ?? 0);
+  P.planetSource = { planet: pl.planet, reference: pl.reference && pl.reference.label, snapshot: look.snapshot };
+  const missing = ['per', 'tmid', 'rprs', 'ars', 'inc'].filter((k) => val(k) == null);
+  setStatus('stPlanet', `${pl.planet}: ${pl.reference ? pl.reference.label : 'catalogue'} (NASA Exoplanet Archive, ${look.snapshot}).${missing.length ? ' Missing: ' + missing.join(', ') + '.' : ''} Estimate the limb darkening next.`, missing.length ? 'err' : 'ok');
+}
+/** Claret four-coefficient limb darkening for the star and the filter: the bundled PHOENIX table, else a grey atmosphere. */
+async function estimatePhotLD() {
+  const teff = numOf('pTeff'), logg = Number.isFinite(numOf('pLogg')) ? numOf('pLogg') : 4.5, feh = Number.isFinite(numOf('pFeh')) ? numOf('pFeh') : 0, band = $('pFilt').value;
+  if (!(teff > 2000 && teff < 50000)) throw new Error('Give the star\'s effective temperature (K), or fill it from the catalogue.');
+  const { LD_TABLE } = await import('../data/ld_table.js');
+  const g = LD_TABLE ? gridFromTable(LD_TABLE, 'nonlinear') : null, inTable = g && g.filters.some((f) => f === band);
+  let c, how;
+  if (inTable) { const r = interpLDGrid(g, teff, logg, feh, band); c = r.coeffs; how = `the PHOENIX table (Husser et al. 2013) in ${band}, ${r.method}${r.clamped ? ', <b>clamped to the table\'s edge</b>' : ''}`; }
+  else { const [w0, w1] = FILTERS[band]; const fit = fitLaw('nonlinear', greyProfile(teff, w0, w1)); c = fit.coeffs; how = `a grey atmosphere over ${w0}–${w1} nm (${band} is not in the table; no log g or [Fe/H] dependence)`; }
+  $('pLd').value = c.map((x) => x.toFixed(5)).join(', ');
+  P.ldSource = { band, teff, logg, feh, how: how.replace(/<[^>]+>/g, '') };
+  const el = $('stLd'); el.className = 'status ok'; el.innerHTML = `T eff ${teff} K, log g ${logg}, [Fe/H] ${feh}: from ${how}.`;
 }
 
 let runJob = null;   // the reduction on the site's progress pill (src/site/jobs.js)
@@ -453,13 +505,13 @@ async function run() {
       const cfg = {
         stars: P.stars.map((s) => ({ x: s.x, y: s.y })), nAper: Math.round(num('sAn', 12)), nAnn: Math.round(num('sNn', 4)), aperRange: [num('sA0', 1.5), num('sA1', 6)], annRange: [num('sN0', 6), num('sN1', 15)],
         psf: $('sPsf').value, optimal: $('sOpt').checked, ellipse: $('sEll').checked ? 'auto' : false, score: planet ? 'transit' : 'quick', planet, gain: numOf('sGain') > 0 ? numOf('sGain') : undefined,
-        timeAt: $('sAt').value, target: { ra: angle($('sRa').value, true), dec: angle($('sDec').value) }, site: { lat: angle($('sLat').value), lon: angle($('sLon').value) }, fit: { order: +$('sOrd').value },
+        timeAt: $('sAt').value, target: { ra: angle($('sRa').value, true), dec: angle($('sDec').value) }, site: { lat: angle($('sLat').value), lon: angle($('sLon').value) }, fit: { order: $('sOrd').value === 'quadratic' ? 2 : 1, detrend: $('sOrd').value },
       };
       const useCal = $('sCal') && $('sCal').value === '1';
       startLive(P.lights.length);
       const res = await call({ type: 'stack', files: P.lights.map((l) => l.file), cfg, cal: useCal ? P.cal : null }, onLive);
       res.frameOf = new Map(); let li = 0; for (const f of res.frames) { if (f.index != null) res.frameOf.set(li, f.index); li++; }
-      res.fitOpts = { ...(res.opt.fitOpts || {}), order: cfg.fit.order, airmass: res.M.airmass.subarray(0, res.M.count).every(Number.isFinite) ? res.M.airmass.subarray(0, res.M.count) : null };
+      res.fitOpts = { ...(res.opt.fitOpts || {}), order: cfg.fit.order, detrend: cfg.fit.detrend, airmass: cfg.fit.detrend === 'airmass' && res.M.airmass.subarray(0, res.M.count).every(Number.isFinite) ? res.M.airmass.subarray(0, res.M.count) : null };
       res.fitter = res.usedTransit ? makeFitter(cfg) : null; res.cfg = cfg; res.gainKnown = cfg.gain > 0 || !!(res.meta && res.meta.gain); res.fitOpts.gain = cfg.gain || (res.meta && res.meta.gain) || 1;
       P.result = res; P.sel = res.opt.best; P.gp = null;
       if (P.sel < 0) throw new Error('No aperture gave a usable light curve.');
@@ -606,7 +658,8 @@ function renderResults() {
   el.append(h('h2', {}, 'Report'), sum);
   if (R.kind === 'stack' && R.timeSystem !== 'BJD_TDB') el.append(h('p', { class: 'warnline' }, R.timeSystem === 'none' ? 'These frames have no time keyword that could be read.' : `Times are ${R.timeSystem}, not BJD_TDB: enter the target's RA and Dec under Settings and measure again to convert.`));
   if (R.kind === 'stack' && R.scoreNote) el.append(h('p', { class: 'warnline' }, R.scoreNote));
-  if (R.kind === 'stack' && !R.fitOpts.airmass) el.append(h('p', { class: 'note2' }, 'No airmass in the headers (and no site and target to compute it from), so the baseline is a line in time.'));
+  if (R.kind === 'stack' && !R.cfg.planet && !R.scoreNote) el.append(h('p', { class: 'warnline' }, 'Ranked with a quick trapezoid fit: the planet\'s parameters are not filled in under Settings. Fill them (or “Fill from the catalogue”) and measure again to score every candidate with the transit model.'));
+  if (R.kind === 'stack' && !R.fitOpts.airmass) el.append(h('p', { class: 'note2' }, R.cfg.fit && R.cfg.fit.detrend !== 'airmass' ? `Detrended with a ${R.cfg.fit.detrend} polynomial in time.` : 'No airmass in the headers (and no site and target to compute it from), so the baseline is a line in time.'));
   const cFov = h('canvas'), cLc = h('canvas'), cRes = h('canvas'), cXY = h('canvas'), cBg = h('canvas'), cAm = h('canvas'), cFw = h('canvas'), cPsd = h('canvas'), cRms = h('canvas'), cMap = h('canvas');
   el.append(h('div', { class: 'plots report' }, h('div', { class: 'card' }, cFov), h('div', { class: 'card' }, cLc, cRes)),
     h('div', { class: 'plots four' }, h('div', { class: 'card' }, cXY), h('div', { class: 'card' }, cBg), h('div', { class: 'card' }, cAm), R.kind === 'stack' ? h('div', { class: 'card' }, cFw) : null));
@@ -965,7 +1018,6 @@ const HATP32 = { stars: [[424, 286], [465, 183], [512, 263]], planet: { per: 2.1
       P.stars = HATP32.stars.map(([x, y]) => { const c = centroidIter(P.cur.data, P.cur.width, P.cur.height, x - ox, y - oy, 8); return { x: c[0], y: c[1], peak: P.cur.data[Math.round(c[1]) * P.cur.width + Math.round(c[0])] }; });
       buildStarsCard(); buildSettings(); viewer.draw();
       $('sAt').value = 'exotic'; $('sRa').value = String(HATP32.ra); $('sDec').value = String(HATP32.dec); $('sLat').value = String(HATP32.lat); $('sLon').value = String(HATP32.lon); $('sAn').value = 20; $('sNn').value = 10;
-      $('sScore').value = 'transit'; $('planetBox').hidden = false;
       setStatus('stLocal', 'HAT-P-32 b, 2017-12-20, a 6-inch MicroObservatory telescope: every third frame of the sample data EXOTIC is tested with, cut down to the three stars (the window follows the field in steps of 8 px). Tile-compressed FITS, decoded here.', 'ok');
       if (!look) await run();
     }
@@ -981,7 +1033,7 @@ const HATP32 = { stars: [[424, 286], [465, 183], [512, 263]], planet: { per: 2.1
   const frames = (limit = 8) => (P.mode === 'series' ? { kind: 'light curves (several sectors)', name: P.name, ...series.state() } : P.mode === 'tpf' ? { kind: 'target pixel file', file: P.tpfName, object: P.tpf && P.tpf.object, mission: P.tpf && P.tpf.mission }
     : P.mode === 'stack' ? { kind: 'image stack', light_frames: P.lights.length, calibration: { bias: P.cal.bias.length, dark: P.cal.dark.length, flat: P.cal.flat.length }, first_frames: P.lights.slice(0, limit).map((l) => ({ name: l.file.name, jd: Number.isFinite(l.jd) ? +l.jd.toFixed(5) : null })), header_of_first: Object.fromEntries(HDR.filter((k) => P.lights[0].header[k] !== undefined).map((k) => [k, P.lights[0].header[k]])) }
     : { kind: 'nothing loaded', how: 'The user opens a folder of FITS frames (or a .zip of them) or drops them on the page; FITS or zip files attached to this chat can be loaded with photometry_load_files; photometry_find_archive and photometry_load_archive fetch TESS / Kepler / K2 light curves or pixels; the page\'s address parameter demo=2 makes a synthetic night.' });
-  const settings = () => (document.getElementById('sA0') ? { aperture_radii_psf_sigma: [numOf('sA0'), numOf('sA1')], aperture_count: numOf('sAn'), annulus_width_psf_sigma: [numOf('sN0'), numOf('sN1')], annulus_count: numOf('sNn'), psf_photometry: $('sPsf').value, scoring: $('sScore') ? $('sScore').value : undefined, time_at: $('sAt').value, target_ra: $('sRa').value || null, target_dec: $('sDec').value || null, site_lat: $('sLat').value || null, site_lon: $('sLon').value || null, baseline: Number($('sOrd').value), gain: numOf('sGain') || null, calibration: $('sCal') ? $('sCal').value === '1' : null } : undefined);
+  const settings = () => (document.getElementById('sA0') ? { aperture_radii_psf_sigma: [numOf('sA0'), numOf('sA1')], aperture_count: numOf('sAn'), annulus_width_psf_sigma: [numOf('sN0'), numOf('sN1')], annulus_count: numOf('sNn'), psf_photometry: $('sPsf').value, scoring: planetFromForm() ? 'transit model' : 'quick trapezoid (no planet parameters)', detrend: $('sOrd').value, time_at: $('sAt').value, target_ra: $('sRa').value || null, target_dec: $('sDec').value || null, site_lat: $('sLat').value || null, site_lon: $('sLon').value || null, baseline: Number($('sOrd').value), gain: numOf('sGain') || null, calibration: $('sCal') ? $('sCal').value === '1' : null } : undefined);
   const outcome = () => {
     if (!P.result || !P.lc) return { has_result: false };
     const rec = reductionRecord(), s = rec.selected || {};
@@ -1037,18 +1089,16 @@ const HATP32 = { stars: [[424, 286], [465, 183], [512, 263]], planet: { per: 2.1
         if (a.psf !== undefined) { const opt = [...$('sPsf').options].find((o) => o.value === a.psf || o.value.startsWith(a.psf)); if (opt) set('sPsf', opt.value); }
         return { settings: settings(), next: 'photometry_run measures every frame with these.' };
       } },
-    { name: 'photometry_set_options', description: 'Set the reduction options besides the apertures: where the header time sits in the exposure, the target position (for BJD_TDB), the site (for the airmass when the header has none), the baseline, the gain, whether calibration frames are used, and how candidates are scored (a quick trapezoid, or the transit model with the planet\'s parameters).',
-      parameters: obj({ time_at: T('Where the header time is: start of the exposure, middle, or EXOTIC\'s rule.', { enum: ['start', 'mid', 'exotic'] }), ra: T('Target RA, degrees or hh mm ss.'), dec: T('Target Dec, degrees or dd mm ss.'), site_lat: N('Site latitude, degrees.'), site_lon: N('Site longitude, degrees east.'),
-        baseline: { type: 'integer', description: '1: airmass (or linear in time); 2: plus a quadratic in time.', enum: [1, 2] }, gain: N('Electrons per count.'), calibration: { type: 'boolean', description: 'Use the bias, dark and flat frames found (when there are any).' },
-        score: T('How each candidate light curve is scored.', { enum: ['quick', 'transit'] }), planet: obj({ per: N('Period [d]'), tmid: N('Mid-transit [BJD_TDB]'), rprs: N('Rp/R*'), ars: N('a/R*'), inc: N('Inclination [deg]'), ecc: N('Eccentricity'), omega: N('omega [deg]'), tmid_unc: N('Uncertainty of the mid-transit time [d]'), ld: { type: 'array', items: N('coefficient'), description: 'Claret a1..a4' } }) }),
+    { name: 'photometry_set_options', description: 'Set the reduction options besides the apertures: where the header time sits in the exposure, the target position (for BJD_TDB), the site (for the airmass when the header has none), the detrending of the night (airmass, linear or quadratic in time), the gain, whether calibration frames are used, and the planet\'s parameters, with which every candidate is scored by the transit model (without them a quick trapezoid fit ranks the candidates).',
+      parameters: obj({ time_at: T('Where the header time is: start (half the exposure time added), mid (used as it is), or exotic (half the exposure added only when the keyword comment says start).', { enum: ['start', 'mid', 'exotic'] }), ra: T('Target RA, degrees or hh mm ss.'), dec: T('Target Dec, degrees or dd mm ss.'), site_lat: N('Site latitude, degrees.'), site_lon: N('Site longitude, degrees east.'),
+        detrend: T('What the transit model is multiplied by: airmass (a1 exp(a2 airmass), the default), linear or quadratic in time.', { enum: ['airmass', 'linear', 'quadratic'] }), gain: N('Electrons per count.'), calibration: { type: 'boolean', description: 'Use the bias, dark and flat frames found (when there are any).' },
+        planet: obj({ per: N('Period [d]'), tmid: N('Mid-transit [BJD_TDB]'), rprs: N('Rp/R*'), ars: N('a/R*'), inc: N('Inclination [deg]'), ecc: N('Eccentricity'), omega: N('omega [deg]'), tmid_unc: N('Uncertainty of the mid-transit time [d]'), ld: { type: 'array', items: N('coefficient'), description: 'Claret a1..a4' } }) }),
       run(a) {
         if (P.mode !== 'stack' || !$('sAt')) throw new Error(P.mode === 'tpf' ? 'a target pixel file has no such options' : 'load an image stack first');
         const set = (id, v) => { if (v === undefined || v === null || !$(id)) return; $(id).value = String(v); $(id).dispatchEvent(new Event('change', { bubbles: true })); };
-        set('sAt', a.time_at); set('sRa', a.ra); set('sDec', a.dec); set('sLat', a.site_lat); set('sLon', a.site_lon); set('sOrd', a.baseline); set('sGain', a.gain);
+        set('sAt', a.time_at); set('sRa', a.ra); set('sDec', a.dec); set('sLat', a.site_lat); set('sLon', a.site_lon); set('sOrd', a.detrend); set('sGain', a.gain);
         if (a.calibration !== undefined && $('sCal')) set('sCal', a.calibration ? 1 : 0);
-        if (a.score) { set('sScore', a.score); $('planetBox').hidden = a.score !== 'transit'; }
         const pl = a.planet || {}; set('pPer', pl.per); set('pTmid', pl.tmid); set('pRprs', pl.rprs); set('pArs', pl.ars); set('pInc', pl.inc); set('pEcc', pl.ecc); set('pOm', pl.omega); set('pTu', pl.tmid_unc); if (Array.isArray(pl.ld)) set('pLd', pl.ld.join(', '));
-        if (a.score === 'transit') planetFromForm();     // says now which planet values are missing
         return { settings: settings(), next: 'photometry_run measures every frame with these.' };
       } },
     { name: 'photometry_set_detrend', description: 'Choose what the systematics are fitted against when the light curve goes to the analyzer: linear terms in the centroids, FWHM, sky or comparison flux, a polynomial in time, pixel-level decorrelation components (target pixel files), and nearest-neighbour kernel regression on the centroids. Nothing is removed from the light curve; the analyzer fits these with the transit.',
