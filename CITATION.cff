@@ -24,3 +24,51 @@ keywords:
   - Bayesian inference
 license: MIT
 repository-code: "https://github.com/pearsonkyle/Exoplanet-Science-Lab"
+references:
+  - type: article
+    title: "A Search for Multiplanet Systems with TESS Using a Bayesian N-body Retrieval and Machine Learning"
+    authors:
+      - family-names: Pearson
+        given-names: Kyle A.
+    journal: "The Astronomical Journal"
+    volume: 158
+    issue: 6
+    start: 243
+    year: 2019
+    doi: "10.3847/1538-3881/ab4e1c"
+  - type: article
+    title: "Utilizing Small Telescopes Operated by Citizen Scientists for Transiting Exoplanet Follow-up"
+    authors:
+      - family-names: Zellem
+        given-names: Robert T.
+      - family-names: Pearson
+        given-names: Kyle A.
+      - family-names: Blaser
+        given-names: Ethan
+      - family-names: Fowler
+        given-names: Martin
+      - name: "and others"
+    journal: "Publications of the Astronomical Society of the Pacific"
+    volume: 132
+    issue: 1011
+    start: "054401"
+    year: 2020
+    doi: "10.1088/1538-3873/ab7ee7"
+  - type: article
+    title: "Utilizing a Global Network of Telescopes to Update the Ephemeris for the Highly Eccentric Planet HD 80606 b and to Ensure the Efficient Scheduling of JWST"
+    authors:
+      - family-names: Pearson
+        given-names: Kyle A.
+      - family-names: Beichman
+        given-names: Charles
+      - family-names: Fulton
+        given-names: B. J.
+      - family-names: Esposito
+        given-names: Thomas M.
+      - name: "and others"
+    journal: "The Astronomical Journal"
+    volume: 164
+    issue: 5
+    start: 178
+    year: 2022
+    doi: "10.3847/1538-3881/ac8dee"

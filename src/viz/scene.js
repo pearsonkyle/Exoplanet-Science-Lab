@@ -201,10 +201,10 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
 
   // ---- data coverage (viz.setCoverage) --------------------------------------
   // Where on the active planet's orbit each measurement was taken: the planet's position at the time of the point, drawn
-  // as a dot just outside the orbit line for radial velocities and just inside it for photometry, so the two read as two
-  // tracks along the orbit. Phases that were never observed are the gaps. Not drawn from Earth or in the inset (edge-on,
+  // as a dot on the orbit line itself, orange for radial velocities and green for photometry (the velocities are drawn last,
+  // so they stay visible where the two overlap). Phases that were never observed are the gaps. Not drawn from Earth or in the inset (edge-on,
   // every point lies on one line).
-  const COV_MAX = 20000, COV_KINDS = { rv: { color: 0xffa94d, label: 'radial velocity', shift: 1 }, phot: { color: 0x5ce0a0, label: 'photometry', shift: -1 } };
+  const COV_MAX = 20000, COV_KINDS = { phot: { color: 0x5ce0a0, label: 'photometry' }, rv: { color: 0xffa94d, label: 'radial velocity' } };
   const covGeo = new THREE.BufferGeometry();
   covGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(COV_MAX * 3), 3));
   covGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(COV_MAX * 3), 3));
@@ -218,15 +218,14 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     let n = 0; covCounts = {};
     if (el && opts.coverage) {
       const total = covSets.reduce((a, c) => a + c.t.length, 0), stride = Math.max(1, Math.ceil(total / COV_MAX));
-      const P = covGeo.attributes.position.array, C = covGeo.attributes.color.array, gap = 0.035 * el.ars + 0.04;
-      for (const c of covSets) {
+      const P = covGeo.attributes.position.array, C = covGeo.attributes.color.array;
+      for (const c of [...covSets].sort((a, b) => (a.kind === 'rv') - (b.kind === 'rv'))) {   // photometry first, velocities on top
         const K = COV_KINDS[c.kind]; if (!K) continue;
         covCol.setHex(K.color); covCounts[c.kind] = (covCounts[c.kind] || 0) + c.t.length;
         for (let i = 0; i < c.t.length && n < COV_MAX; i += stride) {
           if (!Number.isFinite(c.t[i])) continue;
           orbitPosition(el, c.t[i], covPos);
-          const r = Math.hypot(covPos[0], covPos[1], covPos[2]) || 1, k = 1 + (K.shift * gap) / r;   // a fixed distance off the orbit, outward or inward
-          P[n * 3] = covPos[0] * k; P[n * 3 + 1] = covPos[1] * k; P[n * 3 + 2] = covPos[2] * k;
+          P[n * 3] = covPos[0]; P[n * 3 + 1] = covPos[1]; P[n * 3 + 2] = covPos[2];
           C[n * 3] = covCol.r; C[n * 3 + 1] = covCol.g; C[n * 3 + 2] = covCol.b; n++;
         }
       }
@@ -234,7 +233,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     }
     covGeo.setDrawRange(0, n);
     const kinds = Object.keys(covCounts);
-    covLegend.innerHTML = kinds.map((k) => `<span><i style="background:#${COV_KINDS[k].color.toString(16).padStart(6, '0')}"></i>${COV_KINDS[k].label} · ${covCounts[k].toLocaleString('en-US')}</span>`).join('') + (kinds.length ? '<small>outside the orbit: velocities · inside: photometry</small>' : '');
+    covLegend.innerHTML = kinds.map((k) => `<span><i style="background:#${COV_KINDS[k].color.toString(16).padStart(6, '0')}"></i>${COV_KINDS[k].label} · ${covCounts[k].toLocaleString('en-US')}</span>`).join('');
   }
 
   // ---- state ----------------------------------------------------------------

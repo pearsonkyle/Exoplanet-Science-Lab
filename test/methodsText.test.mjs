@@ -50,13 +50,19 @@ const same = (a, b) => a.length === b.length && [...a].sort().join() === [...b].
   const exp = {
     'hd80606-rv': [...base, 'danby1987'],                                              // velocities only: no limb darkening
     'hd80606-tess': [...base, 'claret2000', 'danby1987'],
-    single: [...base, 'claret2000', 'danby1987'],                                      // quadratic law, e = 0.159
-    nbody: [...base, 'wisdom1991', 'rein2015whfast'],
+    single: [...base, 'claret2000', 'zellem2020', 'danby1987'],                        // quadratic law, airmass baseline (EXOTIC's model), e = 0.159
+    nbody: [...base, 'pearson2019', 'wisdom1991', 'rein2015whfast'],                  // N-body retrieval
     eclipsemap: [...base, 'claret2000', 'luger2019'],
     phasecurve: [...base, 'claret2000'],                                               // circular orbit, harmonic phase curve: no Kepler solver, no map
   };
   const bad = Object.entries(exp).filter(([k, v]) => !same(R[k].keys, v)).map(([k, v]) => `${k}: ${R[k].keys.join(' ')} (expected ${v.join(' ')})`);
   check('each component brings its references and no others', !bad.length && !has('phasecurve', 'danby1987') && !has('hd80606-rv', 'claret2000'), bad.length ? bad.join('; ') : `velocities only ${exp['hd80606-rv'].length}, transit ${exp['hd80606-tess'].length}, N-body ${exp.nbody.length}, eclipse map ${exp.eclipsemap.length} keys`);
+  // the methods of the software's own papers: transit times refine the ephemeris as in Pearson et al. (2022), an N-body
+  // fit is the Bayesian N-body retrieval of Pearson (2019), an airmass baseline is EXOTIC's (Zellem et al. 2020)
+  const withT = Object.keys(R).filter((k) => R[k].text.includes('Mid-transit times were compared with the linear')), noT = Object.keys(R).filter((k) => !/Mid-(transit|eclipse)/.test(R[k].text));
+  check('papers of the methods used: timing cites Pearson et al. 2022 (and only then), N-body Pearson 2019, airmass baseline Zellem et al. 2020',
+    withT.length > 0 && withT.every((k) => has(k, 'pearson2022')) && noT.every((k) => !has(k, 'pearson2022')) && has('nbody', 'pearson2019') && !has('single', 'pearson2019') && has('single', 'zellem2020') && !has('hd80606-rv', 'zellem2020'),
+    `timing in ${withT.join(', ')}`);
 }
 
 // 4. options and edge cases

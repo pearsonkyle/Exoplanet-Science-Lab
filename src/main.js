@@ -2554,7 +2554,7 @@ function buildLookPanel() {
   const a0 = h('input', { type: 'number', min: 0, max: 0.95, step: 0.05, value: S.albedo[0], 'aria-label': 'Minimum albedo' }), a1 = h('input', { type: 'number', min: 0, max: 0.95, step: 0.05, value: S.albedo[1], 'aria-label': 'Maximum albedo' });
   [a0, a1].forEach((i, j) => i.addEventListener('change', () => { S.albedo[j] = Math.min(0.95, Math.max(0, Number(i.value) || 0)); S.albedo.sort((x, y) => x - y); refresh(); }));
   p.append(h('h4', {}, 'Habitable zone'), h('label', { class: 'tog' }, hzc, 'Show the habitable zone'), h('div', { class: 'field3', style: 'margin-top:4px' }, h('span', {}, 'Albedo'), a0, h('span', { class: 'pm' }, '–'), a1));
-  p.append(h('p', { class: 'note', style: 'margin-bottom:0' }, '“Data along the orbit” puts each measurement where the planet was when it was taken: velocities outside the orbit, photometry inside; the gaps are phases never observed. Brightest where every case agrees: Kopparapu et al. conservative limits, fading to the optimistic ones, blurred by the T eff uncertainty and the albedo range. “Enlarge planet” is for visibility only; the From Earth view and the inset are always true scale.'));
+  p.append(h('p', { class: 'note', style: 'margin-bottom:0' }, '“Data along the orbit” puts each measurement where the planet was when it was taken, on the orbit: velocities orange, photometry green; the gaps are phases never observed. Brightest where every case agrees: Kopparapu et al. conservative limits, fading to the optimistic ones, blurred by the T eff uncertainty and the albedo range. “Enlarge planet” is for visibility only; the From Earth view and the inset are always true scale.'));
 }
 
 function animRange() {

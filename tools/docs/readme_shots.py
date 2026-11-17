@@ -54,6 +54,11 @@ def orbit(b):
 def plan(b):
     pg = open_page(b, "plan/", 6000)
     pg.evaluate("(() => { const e = document.getElementById('p-count'); window.scrollTo(0, e.getBoundingClientRect().top + window.scrollY - 70); })()"); pg.wait_for_timeout(800)
+    # open one event's details (the large altitude chart and sky chart): WASP-33 b if it is listed, else the best score
+    pg.evaluate("""(() => { const rows = [...document.querySelectorAll('.ev')], score = (r) => +(r.querySelector('.ev-score b') || {}).textContent || 0;
+        const r = rows.find((x) => (x.querySelector('.nm') || {}).textContent === 'WASP-33 b') || rows.sort((a, b) => score(b) - score(a))[0];
+        r.querySelector('.c-name').click(); })()"""); pg.wait_for_timeout(2500)
+    pg.evaluate("(() => { const e = document.getElementById('p-count'); window.scrollTo(0, e.getBoundingClientRect().top + window.scrollY - 70); })()"); pg.wait_for_timeout(1000)
     save(pg, "plan"); pg.close()
 
 
