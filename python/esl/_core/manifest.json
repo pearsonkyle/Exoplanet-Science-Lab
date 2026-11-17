@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "577870113720e87a",
+ "sourceHash": "84a035bf3c252028",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1328243,
-   "sha256": "d2ba68a5e8d588d15537dbae9506cf31558004081a77cc368bea5faa740c36a2"
+   "bytes": 1333134,
+   "sha256": "e0de0f667b54e1fc9bbd8327e7fb5bce53419f0ea513651fc4d378ba5880da24"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -20,6 +20,7 @@
  "inputs": [
   "src/core/aavso.js",
   "src/core/aliases.js",
+  "src/core/asteroids.js",
   "src/core/astro.js",
   "src/core/catalog.js",
   "src/core/config.js",
@@ -133,6 +134,17 @@
    "coverageIntervals",
    "coveredLength",
    "transitDuration"
+  ],
+  "asteroids": [
+   "ASTEROIDS",
+   "ELEMENTS_EPOCH",
+   "ELEMENTS_SOURCE",
+   "asteroidById",
+   "asteroidGeocentric",
+   "asteroidPlace",
+   "heliocentricAt",
+   "hgMagnitude",
+   "keplerMeanMotion"
   ],
   "astro": [
    "ASEC",

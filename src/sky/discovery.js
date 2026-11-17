@@ -18,14 +18,19 @@
 // Colours: the Okabe & Ito (2008) palette for colour-vision deficiencies, the members that stand out on a dark sky
 // (sky blue, orange, reddish purple, bluish green, yellow), and white for the candidates, whose ring is also dashed
 // (src/sky/renderer.js) so that colour is not the only cue; contrast and simulated-CVD separations are in the test.
+//
+// Shapes: each group also has its own marker on the sky (renderer.js draws them, shapeSvg() the same for the page's
+// controls), so that a red-only view (the Night theme) or a colour-blind eye still tells them apart: transit a ring
+// crossed by a bar (a planet in front of its star), radial velocity a plain ring, imaging a square, microlensing a
+// diamond, other a triangle, a TESS candidate a dashed ring.
 
 export const GROUPS = [
-  { id: 't', key: 'transit', label: 'Transit', short: 'T', color: '#56B4E9', note: 'the planet passes in front of its star' },
-  { id: 'r', key: 'rv', label: 'Radial velocity', short: 'RV', color: '#E69F00', note: 'the star moves back and forth' },
-  { id: 'i', key: 'imaging', label: 'Imaging', short: 'I', color: '#CC79A7', note: 'the planet seen directly' },
-  { id: 'm', key: 'microlensing', label: 'Microlensing', short: 'M', color: '#009E73', note: 'the star bends the light of a star behind it' },
-  { id: 'o', key: 'other', label: 'Other', short: 'O', color: '#F0E442', note: 'transit or eclipse timing, pulsar timing, astrometry, brightness modulation, disk kinematics' },
-  { id: 'c', key: 'toi', label: 'TOI candidate', short: 'TOI', color: '#FFFFFF', note: 'a TESS candidate, not yet confirmed (TFOPWG PC or APC); dashed ring', candidate: true },
+  { id: 't', key: 'transit', shape: 'transit', label: 'Transit', short: 'T', color: '#56B4E9', note: 'the planet passes in front of its star' },
+  { id: 'r', key: 'rv', shape: 'ring', label: 'Radial velocity', short: 'RV', color: '#E69F00', note: 'the star moves back and forth' },
+  { id: 'i', key: 'imaging', shape: 'square', label: 'Imaging', short: 'I', color: '#CC79A7', note: 'the planet seen directly' },
+  { id: 'm', key: 'microlensing', shape: 'diamond', label: 'Microlensing', short: 'M', color: '#009E73', note: 'the star bends the light of a star behind it' },
+  { id: 'o', key: 'other', shape: 'triangle', label: 'Other', short: 'O', color: '#F0E442', note: 'transit or eclipse timing, pulsar timing, astrometry, brightness modulation, disk kinematics' },
+  { id: 'c', key: 'toi', shape: 'dashed', label: 'TOI candidate', short: 'TOI', color: '#FFFFFF', note: 'a TESS candidate, not yet confirmed (TFOPWG PC or APC); dashed ring', candidate: true },
 ];
 export const GROUP_IDS = GROUPS.map((g) => g.id).join('');
 const BY_ID = Object.fromEntries(GROUPS.map((g) => [g.id, g]));
@@ -40,6 +45,26 @@ export function groupOf(method) {
   if (s === 'imaging' || s === 'direct imaging') return 'i';
   if (s === 'microlensing' || s === 'gravitational microlensing') return 'm';
   return 'o';
+}
+/** The marker of each shape in the point shader of renderer.js (uStyle 1, aShape). */
+export const SHAPE_CODE = { ring: 0, transit: 1, square: 2, diamond: 3, triangle: 4, dashed: 5 };
+/** The shader code of a group id. */
+export const shapeCode = (id) => SHAPE_CODE[(BY_ID[id] || BY_ID.o).shape];
+/**
+ * The marker of a group as inline SVG (the swatches of the Filter panel and the list rows): the same shape as on the
+ * sky, in currentColor unless a colour is given, with the group's letter beside it only when `letter` is true.
+ */
+export function shapeSvg(id, { size = 18, color = 'currentColor', stroke = 2 } = {}) {
+  const g = BY_ID[id] || BY_ID.o, c = 12, r = 7.2, a = `fill="none" stroke="${color}" stroke-width="${stroke * 24 / size}" stroke-linejoin="round"`;
+  const body = {
+    ring: `<circle cx="${c}" cy="${c}" r="${r}" ${a}/>`,
+    transit: `<circle cx="${c}" cy="${c}" r="${r}" ${a}/><path d="M2.2 ${c}h19.6" ${a}/>`,
+    square: `<rect x="${c - 6.4}" y="${c - 6.4}" width="12.8" height="12.8" ${a}/>`,
+    diamond: `<path d="M${c} ${c - 8.6}L${c + 8.6} ${c}L${c} ${c + 8.6}L${c - 8.6} ${c}Z" ${a}/>`,
+    triangle: `<path d="M${c} ${c - 8.2}L${c + 7.6} ${c + 5.6}H${c - 7.6}Z" ${a}/>`,
+    dashed: `<circle cx="${c}" cy="${c}" r="${r}" ${a} stroke-dasharray="3.6 2.05"/>`,
+  }[g.shape];
+  return `<svg class="shape" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${body}</svg>`;
 }
 /** The group record ({ id, label, color, ... }) of a group id or an archive string. Unknown -> Other. */
 export const groupInfo = (idOrMethod) => BY_ID[idOrMethod] || BY_ID[groupOf(idOrMethod)] || BY_ID.o;

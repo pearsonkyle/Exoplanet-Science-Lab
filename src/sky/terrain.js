@@ -5,6 +5,7 @@
 // Nothing here runs until one of those is switched on. Offline, or when the tiles cannot be had, the promise rejects
 // and the page keeps its flat horizon.
 import { horizonProfile, tilesNeeded, terrariumElevation, TILE_URL, TILE_SIZE, ATTRIBUTION } from '../core/horizon.js';
+import { reportDown, reportUp } from '../site/net.js';
 
 export { ATTRIBUTION };
 // v2: the pyramid with zoom 13 near the observer and a march of up to 300 km (horizon.js, 2026-11-15)
@@ -65,8 +66,10 @@ const stats = { fromCache: 0, fetched: 0 };
 export async function fetchTile(z, x, y, signal) {
   const k = `${z}/${x}/${y}`, hit = await cachedPng(k);
   if (hit) { try { const e = await decode(hit); stats.fromCache++; return e; } catch { /* a broken entry: fetch it again */ } }
-  const r = await fetch(TILE_URL(z, x, y), { signal, mode: 'cors', credentials: 'omit' });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
+  let r;
+  try { r = await fetch(TILE_URL(z, x, y), { signal, mode: 'cors', credentials: 'omit' }); if (!r.ok) throw new Error('HTTP ' + r.status); }
+  catch (e) { if (e && e.name !== 'AbortError' && !(signal && signal.aborted)) reportDown('Terrain tiles (AWS)', e); throw e; }
+  reportUp('Terrain tiles (AWS)');
   const blob = await r.blob(), e = await decode(blob); stats.fetched++;
   keepPng(k, blob);
   return e;

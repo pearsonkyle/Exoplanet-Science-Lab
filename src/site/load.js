@@ -1,12 +1,14 @@
 // Fetching a large JSON file with a progress report, for the catalogue snapshots (several MB each).
 //
-// fetchJsonProgress(url, onProgress) -> parsed JSON. onProgress({ received, total }) is called as bytes arrive:
+// fetchJsonProgress(url, onProgress, what) -> parsed JSON. onProgress({ received, total }) is called as bytes arrive:
 // `received` counts decoded bytes; `total` is the file size when the server states it for an uncompressed
 // response, otherwise 0 (a compressed response states the compressed size, which cannot be compared).
 
-export async function fetchJsonProgress(url, onProgress) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+import { fetchOr } from './net.js';
+
+/** `what` names the file in the notice when it cannot be read (offline and not saved yet, or the server is down). */
+export async function fetchJsonProgress(url, onProgress, what = 'A catalogue snapshot') {
+  const r = await fetchOr(String(url), { what, timeout: 0 });
   if (!onProgress || !r.body || typeof r.body.getReader !== 'function') return r.json();
   const enc = r.headers.get('content-encoding'), total = !enc || enc === 'identity' ? Number(r.headers.get('content-length')) || 0 : 0;
   const reader = r.body.getReader(), chunks = [];

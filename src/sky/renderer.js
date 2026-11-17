@@ -186,6 +186,39 @@ void main() {
   }
 }`;
 
+// The markers of the stars with planets: one shape per discovery group (discovery.js shapeSvg draws the same for the
+// page): 0 ring, 1 ring crossed by a bar (transit), 2 square, 3 diamond, 4 triangle, 5 dashed ring. A line of uLine
+// CSS pixels with a dark rim on both sides, so that the marker stands out on the Milky Way and keeps its shape when a
+// filter turns everything one hue (the Night theme). The shape fills (vHalf - rim) of the sprite.
+const HOST_VS = /* glsl */`
+attribute float aSize, aShape; attribute vec4 aColor;
+uniform mat3 uFrame; uniform float uPx, uRefract;
+varying vec4 vColor; varying float vHalf, vShape;
+${COMMON}
+void main() {
+  float c; gl_Position = proj(refr(normalize(uFrame * position), uRefract), c);
+  if (c < CULL || aSize <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+  vColor = aColor; vShape = aShape; vHalf = aSize * uPx; gl_PointSize = 2.0 * vHalf;
+}`;
+const HOST_FS = /* glsl */`
+uniform float uPx, uLine;
+varying vec4 vColor; varying float vHalf, vShape;
+void main() {
+  vec2 p = (gl_PointCoord - 0.5) * 2.0 * vHalf; p.y = -p.y;      // pixels from the centre, y up
+  float rim = 1.6 * uPx, ext = vHalf - rim - 0.5 * uLine * uPx, R = 0.74 * ext, r = length(p), d;
+  if (vShape < 0.5 || vShape > 4.5) d = abs(r - R);
+  else if (vShape < 1.5) d = min(abs(r - R), max(abs(p.y), abs(p.x) - ext));
+  else if (vShape < 2.5) d = abs(max(abs(p.x), abs(p.y)) - 0.86 * R);
+  else if (vShape < 3.5) d = abs((abs(p.x) + abs(p.y)) * 0.7071 - 0.80 * R);
+  else d = abs(max(-p.y, max(dot(p, vec2(0.866, 0.5)), dot(p, vec2(-0.866, 0.5)))) - 0.56 * R);
+  float w = 0.5 * uLine * uPx;
+  float line = 1.0 - smoothstep(w - 0.6, w + 0.6, d), halo = 1.0 - smoothstep(w + rim * 0.5, w + rim, d);
+  if (vShape > 4.5) line *= smoothstep(-0.3, 0.3, sin(atan(p.y, p.x) * 8.0));      // dashed: the TESS candidates
+  float a = max(line, 0.6 * halo);
+  if (a <= 0.004) discard;
+  gl_FragColor = vec4(mix(vec3(0.0, 0.01, 0.03), vColor.rgb, line / max(a, 1e-3)), a * vColor.a);
+}`;
+
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 /** B-V colour index to a display colour: Ballesteros' temperature, a black-body fit, then pulled toward white. */
 export function bvToRgb(bv, whiten = 0.08) {
@@ -264,6 +297,10 @@ export function createSkyRenderer(canvas) {
   planetGeom.setAttribute('position', new BufferAttribute(new Float32Array(NP * 3), 3)); planetGeom.setAttribute('aMag', new BufferAttribute(new Float32Array(NP).fill(99), 1)); planetGeom.setAttribute('aColor', new BufferAttribute(new Float32Array(NP * 3), 3));
   const planets = add(new Points(planetGeom, starMat(IDENTITY)), 31);
   const sunPts = add(new Points(pointGeom(1), pointMat(2)), 32), moonPts = add(new Points(pointGeom(1), pointMat(3)), 33);
+  // the bright asteroids (src/core/asteroids.js): stars of their magnitude, in the world frame like the planets
+  const NAST = 16, astGeom = new BufferGeometry();
+  astGeom.setAttribute('position', new BufferAttribute(new Float32Array(NAST * 3), 3)); astGeom.setAttribute('aMag', new BufferAttribute(new Float32Array(NAST).fill(99), 1)); astGeom.setAttribute('aColor', new BufferAttribute(new Float32Array(NAST * 3), 3));
+  const astPts = add(new Points(astGeom, starMat(IDENTITY)), 31);
   const MAXSAT = 512, satPts = add(new Points(pointGeom(MAXSAT), pointMat(0)), 40);
 
   let W = 1, H = 1, P = 1, px = 1;
@@ -326,12 +363,13 @@ export function createSkyRenderer(canvas) {
      * A named polyline of world directions (the 30 degree ring, the part of the track during the transit); null removes it.
      * These are GL lines, so they are drawn in the flat view and, once per eye, in a headset.
      */
-    setLine(name, dirs, { color = 0x5fd4ff, alpha = 0.9, order = 46 } = {}) {
+    setLine(name, dirs, { color = 0x5fd4ff, alpha = 0.9, order = 46, frame = 'world', alphas = null } = {}) {
       const old = lines.get(name);
       if (old) { scene.remove(old); old.geometry.dispose(); materials.splice(materials.indexOf(old.material), 1); old.material.dispose(); lines.delete(name); }
       if (!dirs || dirs.length < 2) return;
       const pairs = []; for (let i = 0; i + 1 < dirs.length; i++) pairs.push(dirs[i], dirs[i + 1]);
-      const l = add(new LineSegments(lineGeometry(pairs), lineMat(color)), order); l.material.uniforms.uAlpha.value = alpha; lines.set(name, l);
+      // frame 'j2000': the directions are J2000 vectors and turn with the stars (a path among the stars); 'world': fixed to the horizon
+      const l = add(new LineSegments(lineGeometry(pairs, alphas), lineMat(color)), order); l.material.uniforms.uAlpha.value = alpha; l.userData.frame = frame; lines.set(name, l);
     },
     /** The apparent horizon as altitudes in degrees at equal steps of azimuth from north through east, or null for a flat one. */
     setHorizon(altDeg) {
@@ -360,10 +398,11 @@ export function createSkyRenderer(canvas) {
       for (const segs of Object.values(lines)) for (const s of segs) for (let i = 0; i + 3 < s.length; i += 2) arcSegments(toEq(s[i] * R, s[i + 1] * R), toEq(s[i + 2] * R, s[i + 3] * R), 3 * R, pairs);
       conLines = add(new LineSegments(lineGeometry(pairs), lineMat(0x7fa6e8)), 20);
     },
-    /** hosts: Float32Array of J2000 unit vectors; sizes are set per frame from the magnitude limit */
+    /** hosts: Float32Array of J2000 unit vectors; sizes, colours and shapes (aShape, see HOST_FS) are set by the page */
     setHosts(pos, n) {
       const g = pointGeom(n); g.attributes.position.array.set(pos); g.attributes.position.needsUpdate = true;
-      hosts = add(new Points(g, pointMat(1)), 35);
+      g.setAttribute('aShape', new BufferAttribute(new Float32Array(n), 1));
+      hosts = add(new Points(g, mat(HOST_VS, HOST_FS, { uFrame: { value: m3() }, uRefract: { value: 0 }, uLine: { value: 1.7 } })), 35);
       return g;
     },
     /** f: everything that changes per frame (see main.js) */
@@ -378,6 +417,11 @@ export function createSkyRenderer(canvas) {
       if (conLines) { const u = conLines.material.uniforms; u.uFrame.value.set(...f.j2000ToWorld); u.uRefract.value = refr; u.uAlpha.value = 0.34 * f.starFade; }
       if (stars) { const u = stars.material.uniforms; u.uFrame.value.set(...f.j2000ToWorld); u.uMagLimit.value = f.magLimit; u.uRefract.value = refr; u.uExtinct.value = refr; u.uSize.value = f.starSize; }
       if (hosts) { const u = hosts.material.uniforms; u.uFrame.value.set(...f.j2000ToWorld); u.uRefract.value = refr; }
+      for (const l of lines.values()) if (l.userData.frame === 'j2000') { const u = l.material.uniforms; u.uFrame.value.set(...f.j2000ToWorld); u.uRefract.value = refr; }
+      { const g = astGeom, n = Math.min(f.asteroids ? f.asteroids.length : 0, NAST); set(astPts, L.planets && n);
+        if (n) { const u = astPts.material.uniforms; u.uMagLimit.value = f.magLimit; u.uExtinct.value = refr; u.uSize.value = f.starSize;
+          for (let i = 0; i < NAST; i++) { const a = f.asteroids[i]; g.attributes.position.setXYZ(i, ...(a ? a.dir : [0, -1, 0])); g.attributes.aMag.setX(i, a ? a.mag : 99); g.attributes.aColor.setXYZ(i, 0.86, 0.84, 0.78); }
+          g.attributes.position.needsUpdate = g.attributes.aMag.needsUpdate = g.attributes.aColor.needsUpdate = true; } }
       { const u = planets.material.uniforms; u.uMagLimit.value = f.magLimit; u.uExtinct.value = refr; u.uSize.value = f.starSize * 1.15;
         const g = planetGeom; f.planets.forEach((p, i) => { g.attributes.position.setXYZ(i, ...p.dir); g.attributes.aMag.setX(i, p.drawMag); g.attributes.aColor.setXYZ(i, ...p.color); });
         g.attributes.position.needsUpdate = g.attributes.aMag.needsUpdate = g.attributes.aColor.needsUpdate = true; }

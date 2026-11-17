@@ -18,10 +18,15 @@
 // Not reachable this way: TESScut cutouts of the full-frame images, TGLC (filed by camera and CCD), K2SFF and EVEREST
 // light curves (not in the bucket).
 
+import { fetchOr } from '../site/net.js';
+
 export const BUCKET = 'https://stpubdata.s3.us-east-1.amazonaws.com/';
+const ARCHIVE = 'The MAST archive (its AWS bucket)';
+// the archive through src/site/net.js: a failure names the archive in a notice and throws a plain-words error
+const archiveFetch = (url) => fetchOr(url, { what: ARCHIVE, quiet404: true, timeout: 60000 });
 
 /** List objects under a prefix. Returns [{ key, size }] (and, with delimiter, { prefixes }). */
-export async function s3List(prefix, delimiter = '', fetchFn = fetch) {
+export async function s3List(prefix, delimiter = '', fetchFn = archiveFetch) {
   const out = [], prefixes = []; let token = '';
   for (let page = 0; page < 20; page++) {
     const url = `${BUCKET}?list-type=2&prefix=${encodeURIComponent(prefix)}${delimiter ? '&delimiter=' + encodeURIComponent(delimiter) : ''}${token ? '&continuation-token=' + encodeURIComponent(token) : ''}`;
@@ -75,7 +80,7 @@ function product(o) {
 }
 
 /** Sectors that exist in the bucket (one request). */
-export async function tessSectorList(fetchFn = fetch) {
+export async function tessSectorList(fetchFn = archiveFetch) {
   const l = await s3List('tess/public/tid/', '/', fetchFn);
   return l.prefixes.map((p) => +p.match(/s(\d{4})\/$/)?.[1]).filter(Number.isFinite).sort((a, b) => a - b);
 }
@@ -84,7 +89,7 @@ export async function tessSectorList(fetchFn = fetch) {
  * Every TESS product of a TIC id the bucket holds: SPOC 20 s and 2 min TPFs and light curves, TESS-SPOC FFI TPFs and
  * light curves, QLP FFI light curves. Three small listings per sector, 16 sectors at a time.
  */
-export async function tessProducts(tic, onProgress = () => {}, fetchFn = fetch) {
+export async function tessProducts(tic, onProgress = () => {}, fetchFn = archiveFetch) {
   const sectors = await tessSectorList(fetchFn), found = []; let done = 0;
   const one = async (s) => {
     for (const pre of [tessPrefix(tic, s), tessSpocPrefix(tic, s), qlpPrefix(tic, s)]) {
@@ -97,7 +102,7 @@ export async function tessProducts(tic, onProgress = () => {}, fetchFn = fetch) 
 }
 
 /** Kepler TPFs and light curves of a KIC id (two listings). */
-export async function keplerProducts(kic, fetchFn = fetch) {
+export async function keplerProducts(kic, fetchFn = archiveFetch) {
   const k = pad(kic, 9), out = [];
   for (const base of ['kepler/public/target_pixel_files/', 'kepler/public/lightcurves/']) for (const o of await s3List(`${base}${k.slice(0, 4)}/${k}/`, '', fetchFn)) { const p = product(o); if (p) out.push(p); }
   return sortProducts(out);
@@ -107,7 +112,7 @@ export async function keplerProducts(kic, fetchFn = fetch) {
 export function k2Prefix(epic, campaignFolder, base = 'target_pixel_files') { const e = String(epic); return `k2/public/${base}/${campaignFolder}${e.slice(0, 4)}00000/${e.slice(4, 6)}000/ktwo${e}-`; }
 
 /** K2 TPFs and light curves of an EPIC id in every campaign: one listing of the campaign folders, then two per campaign. */
-export async function k2Products(epic, onProgress = () => {}, fetchFn = fetch) {
+export async function k2Products(epic, onProgress = () => {}, fetchFn = archiveFetch) {
   const camps = (await s3List('k2/public/target_pixel_files/', '/', fetchFn)).prefixes.map((p) => p.match(/(c\d+\/)$/)?.[1]).filter(Boolean), found = []; let done = 0;
   const one = async (c) => {
     for (const base of ['target_pixel_files', 'lightcurves']) { try { for (const o of await s3List(k2Prefix(epic, c, base), '', fetchFn)) { const p = product(o); if (p) found.push(p); } } catch { /* not observed */ } }
@@ -146,7 +151,7 @@ export function chooseProducts(products, { kind = 'lc', cadence = 'shortest', au
 
 /** GET with progress. Returns an ArrayBuffer. */
 export async function fetchBytes(url, onProgress = () => {}, signal = undefined) {
-  const r = await fetch(url, { signal }); if (!r.ok) throw new Error(`Download failed (${r.status})`);
+  const r = await fetchOr(url, { what: ARCHIVE, signal, timeout: 0 });
   const total = +r.headers.get('content-length') || 0;
   if (!r.body) return await r.arrayBuffer();
   const reader = r.body.getReader(), parts = []; let n = 0;
@@ -173,7 +178,7 @@ export async function resolveTarget(text, siteRoot) {
   }
   const norm = (v) => v.toLowerCase().replace(/[\s\-_]+/g, '');
   const want = norm(s), wantHost = norm(s.replace(/\s+[b-i]$/i, ''));
-  const idx = await (await fetch(new URL('catalog/index.json', siteRoot))).json();
+  const idx = await fetchOr(new URL('catalog/index.json', siteRoot).href, { what: "The site's catalogue (catalog/index.json)", as: 'json', fallback: { hosts: [] } });
   for (const h of idx.hosts || []) {
     const names = h.filter((v) => typeof v === 'string');
     if (!names.some((n) => { const q = norm(n); return q === want || q === wantHost; })) continue;
@@ -187,6 +192,6 @@ export async function resolveTarget(text, siteRoot) {
 let toiCache = null;
 /** The TOI table (src/core/sources/toi.js records), loaded once. */
 export async function toiRecords(siteRoot) {
-  if (!toiCache) toiCache = (async () => { const { default: toi } = await import('../core/sources/toi.js'); return toi.records(await (await fetch(new URL('catalog-table/toi.json', siteRoot))).json()).records; })();
+  if (!toiCache) toiCache = (async () => { const { default: toi } = await import('../core/sources/toi.js'); return toi.records(await fetchOr(new URL('catalog-table/toi.json', siteRoot).href, { what: 'The TOI snapshot (catalog-table/toi.json)', as: 'json' })).records; })().catch((err) => { toiCache = null; throw err; });
   return toiCache;
 }

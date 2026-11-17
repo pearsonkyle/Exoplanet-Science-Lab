@@ -2,6 +2,7 @@
 // Science lives in src/core (fits.js, photometry.js, gp.js) and src/photometry/pipeline.js; this file is the UI.
 import { startJob } from '../site/jobs.js';
 import { siteRoot } from '../site/nav.js';
+import { fetchOr } from '../site/net.js';
 import { openFits, readTargetPixelFile, framePointing, frameTime, pixelScale } from '../core/fits.js';
 import { centroidIter, detectSources, fitPsf, lightCurveFor, tpfLightCurve, pipelineMask, tpfMedianImage, medianOf, runningMedian, METHOD_LABEL } from '../core/photometry.js';
 import { gappedPsd, gappedWhiteLevel, lombScarglePsd, welchPsd, splitSegments, whiteNoiseLevel, photonNoiseLevel, logBinPsd, fitRedNoise, rmsVsBin, pixelMap, polySurface } from '../core/psd.js';
@@ -944,7 +945,7 @@ const HATP32 = { stars: [[424, 286], [465, 183], [512, 263]], planet: { per: 2.1
   try {
     if (demo === '1') {
       setStatus('stArch', 'Loading the bundled TESS cut-out of WASP-18 (700 cadences of sector 2)…');
-      const buf = await (await fetch(new URL('photometry/tess_wasp18_s02_sub_tp.fits', siteRoot()))).arrayBuffer();
+      const buf = await fetchOr(new URL('photometry/tess_wasp18_s02_sub_tp.fits', siteRoot()).href, { what: 'The WASP-18 sample (photometry/tess_wasp18_s02_sub_tp.fits)', as: 'arrayBuffer', timeout: 0 });
       await loadTpf(buf, 'tess_wasp18_s02_sub_tp.fits'); setStatus('stArch', 'WASP-18, TESS sector 2: one orbit cut from the real target pixel file.', 'ok');
       if (!look) await run();
     } else if (demo === '2') {
@@ -955,7 +956,7 @@ const HATP32 = { stars: [[424, 286], [465, 183], [512, 263]], planet: { per: 2.1
       if (!look) await run();
     } else if (demo === '3') {
       setStatus('stLocal', 'Loading 48 real frames of HAT-P-32 b…');
-      let r = await fetch(new URL('photometry/hatp32_exotic_sample.fits', siteRoot())); if (!r.ok || /text\/html/.test(r.headers.get('content-type') || '')) r = await fetch(new URL('test/data/hatp32_exotic_sample.fits', siteRoot()));
+      let r = await fetchOr(new URL('photometry/hatp32_exotic_sample.fits', siteRoot()).href, { what: 'The HAT-P-32 b frames (photometry/hatp32_exotic_sample.fits)', timeout: 0, quiet404: true, fallback: (e, st) => new Response(null, { status: st || 503 }) }); if (!r.ok || /text\/html/.test(r.headers.get('content-type') || '')) { const r0 = r; r = await fetch(new URL('test/data/hatp32_exotic_sample.fits', siteRoot())).catch(() => r0); }
       if (!r.ok || /text\/html/.test(r.headers.get('content-type') || '')) throw new Error('The HAT-P-32 b frames are not on this server (public/photometry/hatp32_exotic_sample.fits).');
       const parts = await splitFits(await r.arrayBuffer(), 'hatp32');
       P.name = 'HAT-P-32 b'; P.planet = HATP32.planet;

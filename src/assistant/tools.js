@@ -672,7 +672,8 @@ export function knowledgeHandlers(readSource = defaultReadSource) {
     },
   };
 }
-const defaultReadSource = async (f) => { const r = await fetch(`${REPO_RAW}/${f}`, { credentials: 'omit' }); if (!r.ok) throw new Error(`${f}: not found (HTTP ${r.status}); the file list is in the Methods section's "code"`); return r.text(); };
+// in the browser the published code on GitHub, through the site's network notice; in Node (MCP) the caller passes its own reader
+const defaultReadSource = async (f) => { if (typeof window !== 'undefined') { const { fetchOr } = await import('../site/net.js'); return fetchOr(`${REPO_RAW}/${f}`, { what: 'GitHub (source files)', as: 'text', credentials: 'omit', quiet404: true }); } const r = await fetch(`${REPO_RAW}/${f}`); if (!r.ok) throw new Error(`${f}: not found (HTTP ${r.status}); the file list is in the Methods section's "code"`); return r.text(); };
 export const KNOWLEDGE_TOOLS = ['explain_method', 'read_source'];
 
 /** list_files, read_file and write_file on a file store: the same on every page of the site and in the MCP server. */

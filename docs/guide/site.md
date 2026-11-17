@@ -17,3 +17,18 @@ Files are read in the browser and never uploaded. Saved analyses, the Project ch
 ## On phones and headsets
 
 Every page works from 360 px wide; Observe has an AR mode on phones and a WebXR mode with controllers on headsets.
+
+In the headset (Observe, *VR* or *Passthrough*):
+
+| | Controllers | Hands | Gaze and pinch (Vision Pro) | Gaze only |
+|---|---|---|---|---|
+| Select a star or press a button | trigger | pinch | look, pinch | look 1.3 s |
+| Move a window | hold trigger on its title bar, or grip anywhere on it | pinch and hold on the title bar | the same | — |
+| Resize a window | hold trigger on the bottom-right corner | pinch the corner | the same | — |
+| Turn the sky | grip and sweep | pinch and drag on the sky | the same | — |
+| Time | thumbstick left/right; B/Y tap makes the grip scrub time | menu buttons | menu buttons | menu buttons |
+| Fainter / brighter stars | thumbstick up/down | menu | menu | menu |
+| Menu here / fold it | A or X | palm up, look at it | menu's Fold button | — |
+| Leave | "Exit VR" on the menu, B or Y held 1 s, or the browser's own exit | "Exit VR" | "Exit VR" | "Exit VR" |
+
+The selection's card has "Turn to face it" and "Survey image" (a DSS2 picture of the field, needs a connection to CDS).

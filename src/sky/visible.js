@@ -76,7 +76,8 @@ export const WHEN = { now: 'above the limit now', tonight: 'above the limit in t
  *        apparent(altRad) -> apparent altitude (refraction; default none), filter (discovery groups shown),
  *        magMax (null: any), minPlanets (confirmed + candidates, default 0), when: 'now' | 'tonight' | 'either',
  *        sort: a key of SORTS, transits(i) -> the soonest transit of host i tonight or null (for 'transit'),
- *        limit (default 200), j2000ToWorld: the 3x3 matrix of the frame (else computed: slower)
+ *        limit (default 200), j2000ToWorld: the 3x3 matrix of the frame (else computed: slower),
+ *        accept(i) -> false to leave host i out (the host filter of the Filter panel, src/sky/hostFilter.js)
  * Returns { rows: [{ i, name, group, alt, az, up, maxAlt, tMax, upTonight, mag, band, planets, candidates,
  *   transit }], total: how many meet the filters before the limit, counts: { group: hosts up now }, up: hosts up now }.
  */
@@ -93,6 +94,7 @@ export function visibleHosts(hosts, pos, o) {
     const up = altA > hor(az) && alt >= minAlt;
     if (up) { nUp++; for (const g of new Set(gs)) counts[g] = (counts[g] || 0) + 1; }
     const group = shownGroup(gs, filter); if (!group) continue;
+    if (o.accept && !o.accept(i)) continue;
     const mag = hostMag(h), nc = h[6] ? h[6][2].length : 0;
     if (magMax < Infinity && !(mag != null && mag <= magMax)) continue;
     if (h[4] + nc < minPl) continue;

@@ -11,6 +11,7 @@ import { crossMatch, rankWithCatalog, contamination } from '../core/fieldstars.j
 import { parseASU, VIZIER_MIRRORS, describeFailure } from '../core/rvsources.js';
 import { loadIndex, lookupHost } from '../core/catalog.js';
 import { readHeaderOnly } from './pipeline.js';
+import { siteJson, reportDown, reportUp } from '../site/net.js';
 import { PHOT_DARK } from './plots.js';   // marks drawn on the (dark) image keep their bright colours in every theme
 
 const NOVA = 'https://nova.astrometry.net/upload';
@@ -64,15 +65,17 @@ export function createFieldTools(ctx) {
     const s = String(text || '').trim(); if (!s) return null;
     const c = parseCoords(s); if (c) return { name: s, ra: c[0], dec: c[1], from: 'typed coordinates' };
     try {
-      const root = ctx.siteRoot(), fj = async (nm) => (await fetch(new URL('catalog/' + nm, root))).json();
+      const root = ctx.siteRoot(), fj = (nm) => siteJson(new URL('catalog/' + nm, root), "The site's catalogue");
       catIndex = catIndex || await loadIndex(fj);
       const host = await lookupHost(catIndex, s, fj);
       if (host && Number.isFinite(host.system.ra)) return { name: host.host, ra: host.system.ra, dec: host.system.dec, gaiaMag: host.system.sy_gaiamag, from: `the site's catalogue (NASA Exoplanet Archive, ${host.snapshot})` };
     } catch { /* not in the catalogue, or it could not be read: Sesame next */ }
+    let reached = false, last = null;
     for (const base of VIZIER_MIRRORS) {
-      try { const r = parseSesame(await fetchText(sesameUrl(base, s), 15000)); if (r) return { name: s, ra: r.ra, dec: r.dec, from: 'CDS Sesame (SIMBAD)' }; else break; } catch { /* next mirror */ }
+      try { const r = parseSesame(await fetchText(sesameUrl(base, s), 15000)); reached = true; if (r) return { name: s, ra: r.ra, dec: r.dec, from: 'CDS Sesame (SIMBAD)' }; else break; } catch (e) { last = e; /* next mirror */ }
     }
-    return { name: s, unknown: true };
+    if (reached) reportUp('SIMBAD (CDS Sesame)'); else reportDown('SIMBAD (CDS Sesame)', last);
+    return { name: s, unknown: true, ...(reached ? {} : { unreachable: true }) };
   }
   async function fetchText(url, ms = 45000) {
     const ac = new AbortController(), t = setTimeout(() => ac.abort(), ms);
@@ -80,8 +83,9 @@ export function createFieldTools(ctx) {
   }
   async function vizier(makeUrl, parse) {
     let last = null;
-    for (const base of VIZIER_MIRRORS) { try { return parse(await fetchText(makeUrl(base)), parseASU); } catch (e) { last = e; } }
-    throw new Error('VizieR could not be reached: ' + describeFailure(last));
+    for (const base of VIZIER_MIRRORS) { try { const out = parse(await fetchText(makeUrl(base)), parseASU); reportUp('VizieR (Gaia DR3, VSX)'); return out; } catch (e) { last = e; } }
+    reportDown('VizieR (Gaia DR3, VSX)', last);
+    throw new Error('VizieR could not be reached: ' + (navigator.onLine === false ? 'you are offline. Plate solving needs the Gaia catalogue; the rest of the page works.' : describeFailure(last)));
   }
   const year = () => { const jd = P.lights[0] && P.lights[0].jd; return Number.isFinite(jd) ? 2000 + (jd - 2451545) / 365.25 : 2016; };
 
@@ -301,7 +305,7 @@ export function createFieldTools(ctx) {
     const t = F.target;
     const tsec = h('div', { class: 'fsec' }, h('h3', {}, 'Target'));
     if (!F.wcs) tsec.append(h('p', { class: 'hint' }, 'Without sky coordinates, click the target on the image (Stars tool). With them, the target is found by its name or coordinates.'));
-    else if (!t || t.unknown) tsec.append(h('p', { class: 'hint' }, t && t.unknown ? `“${t.name}” is not in the site's catalogue and Sesame did not know it: type its coordinates above.` : 'Type the target\'s name or coordinates above and press Solve, or click it on the image.'));
+    else if (!t || t.unknown) tsec.append(h('p', { class: 'hint' }, t && t.unknown ? (t.unreachable ? `“${t.name}” is not in the site's catalogue, and SIMBAD (CDS Sesame) is not reachable right now: type its coordinates above.` : `“${t.name}” is not in the site's catalogue and Sesame did not know it: type its coordinates above.`) : 'Type the target\'s name or coordinates above and press Solve, or click it on the image.'));
     else {
       const isT = P.stars[0] && t.px && Math.hypot(P.stars[0].x - (t.star || t.px)[0], P.stars[0].y - (t.star || t.px)[1]) < 3;
       tsec.append(kv([['Name', `${t.name} (from ${t.from})`], ['RA, Dec', sexagesimal(t.ra, t.dec)], ['On the frame', t.px ? (t.inside ? `pixel ${fx(t.px[0], 1)}, ${fx(t.px[1], 1)}${t.star ? '' : ' (no star found there)'}` : `outside the frame (pixel ${fx(t.px[0], 0)}, ${fx(t.px[1], 0)})`) : '–'], t.gaia ? ['Gaia DR3', `G ${fx(t.gaia.g)}, BP−RP ${fx(t.gaia.bprp)}${t.gaia.variable ? ', flagged VARIABLE' : ''}`] : null]),

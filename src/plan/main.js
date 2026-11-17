@@ -4,6 +4,7 @@
 //
 // "Observable" is judged on the region of interest of an event (the baseline before the start to the same after
 // the end, widened by 1 sigma of the predicted time): see findObservableEvents in src/core/observability.js.
+import { siteJson } from '../site/net.js';
 import * as ND from '../core/nightdates.js';
 import { siteRoot } from '../site/nav.js';
 import { fetchJsonProgress, progressText } from '../site/load.js';
@@ -19,7 +20,7 @@ import * as T from './targets.js';
 import { horizonAt, ATTRIBUTION as TERRAIN_ATTRIBUTION } from '../core/horizon.js';
 
 const $ = (id) => document.getElementById(id);
-const fetchJson = async (file) => { const r = await fetch(new URL(file, siteRoot())); if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`); return r.json(); };
+const fetchJson = (file) => siteJson(new URL(file, siteRoot()), file);
 const STORE = 'esl.plan.v3', OLD_STORE = 'esl.plan.v2', MAX_SHOWN = 300;
 const fin = Number.isFinite;
 
@@ -220,14 +221,15 @@ const kindBadge = (k) => `<span class="kb k-${k}">${KIND[k].badge}</span>`;
 const srcTag = (t) => (t.candidate ? `<span class="tag toi" title="${esc(`TESS Object of Interest, TFOPWG ${t.row.recs.toi.info.disposition || 'no disposition'}: a candidate, not a confirmed planet`)}">TOI candidate</span>` : `<span class="tag ${t.cat}">${SOURCES.find((s) => s.id === t.cat).short}</span>`);
 const scoreTip = (s) => `Score ${s.total.toFixed(0)} of 100 = coverage of the event ${s.coverage.toFixed(0)}/50 + dark baseline ${s.baseline.toFixed(0)}/20 + altitude ${s.altitude.toFixed(0)}/20 (0 at the limit, full at 60°) + Moon ${s.moon.toFixed(0)}/10 (full when it is down or more than 40° away, less the brighter and closer it is). A ranking aid: it knows nothing about the telescope or the star.`;
 /** The score as a number on a badge coloured by tier, with the four parts as a stacked bar under it. */
-function scoreHtml(s) {
+function scoreHtml(s, ev) {
   const tier = s.total >= 85 ? 'hi' : s.total >= 65 ? 'mid' : 'lo';
-  return `<span class="ev-score s-${tier}" title="${esc(scoreTip(s))}"><b>${s.total.toFixed(0)}</b><span class="sbar" aria-hidden="true"><i class="p-cov" style="width:${s.coverage.toFixed(1)}%"></i><i class="p-base" style="width:${s.baseline.toFixed(1)}%"></i><i class="p-alt" style="width:${s.altitude.toFixed(1)}%"></i><i class="p-moon" style="width:${s.moon.toFixed(1)}%"></i></span></span>`;
+  // under the score: a miniature of the coverage timeline (the large one has its own column on a wide screen)
+  return `<span class="ev-score s-${tier}" title="${esc(scoreTip(s))}"><b>${s.total.toFixed(0)}</b>${ev ? roiBar(ev).replace('class="roi-bar"', 'class="roi-bar mini"') : ''}<span class="sbar" aria-hidden="true"><i class="p-cov" style="width:${s.coverage.toFixed(1)}%"></i><i class="p-base" style="width:${s.baseline.toFixed(1)}%"></i><i class="p-alt" style="width:${s.altitude.toFixed(1)}%"></i><i class="p-moon" style="width:${s.moon.toFixed(1)}%"></i></span></span>`;
 }
 /**
  * Altitude of the star over the region of interest (and half an hour each side) as a small SVG: twilight shaded,
  * the event window tinted in the colour of its kind, the altitude limit dashed; the track is thin, and bold only inside
- * the observation window (the region of interest) where it is also observable.
+ * the observing window (the region of interest).
  */
 function sparkline(ev) {
   const s = site(), t0 = ev.roiStart - 0.5 / 24, t1 = ev.roiEnd + 0.5 / 24, n = 40, W = 120, H = 30, x = (t) => ((t - t0) / (t1 - t0) * W).toFixed(1), y = (a) => (H - 1 - Math.max(0, Math.min(90, a)) / 90 * (H - 2)).toFixed(1);
@@ -243,7 +245,7 @@ function sparkline(ev) {
     if (lit && a < 0) a = i;
     if (!lit && a >= 0) { tw += `<rect x="${x(pts[a].t)}" y="0" width="${((pts[i].t - pts[a].t) / (t1 - t0) * W).toFixed(1)}" height="${H}" class="sp-tw"/>`; a = -1; }
   }
-  for (const p of pts) { line += `${line ? 'L' : 'M'}${x(p.t)} ${y(p.alt)}`; const ok = p.t >= ev.roiStart - 1e-9 && p.t <= ev.roiEnd + 1e-9 && p.alt >= P.minAlt && p.sun <= P.sun && p.clear; obs += ok ? `${on ? 'L' : 'M'}${x(p.t)} ${y(p.alt)}` : ''; on = ok; }
+  for (const p of pts) { line += `${line ? 'L' : 'M'}${x(p.t)} ${y(p.alt)}`; const ok = p.t >= ev.roiStart - 1e-9 && p.t <= ev.roiEnd + 1e-9; /* the observing window (the region of interest); what is lost in it shows on the coverage bar */ obs += ok ? `${on ? 'L' : 'M'}${x(p.t)} ${y(p.alt)}` : ''; on = ok; }
   return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${tw}<rect x="${x(ev.ingress)}" y="0" width="${(Math.max(0.8, (ev.egress - ev.ingress) / (t1 - t0) * W)).toFixed(1)}" height="${H}" fill="${KIND_COLOUR[ev.kind]}" class="sp-ev"/>` +
     `<line x1="0" x2="${W}" y1="${y(P.minAlt)}" y2="${y(P.minAlt)}" class="sp-lim"/><path d="${line}" class="sp-all"/><path d="${obs}" class="sp-ok"/></svg>`;
 }
@@ -259,7 +261,7 @@ function row(ev, i) {
   const word = c === 'full' ? 'observable' : c === 'short' ? (B > 0 ? 'short baseline' : 'timing margin cut') : `partial · ${pct(ev.coverage)}% of the ${isLong(ev) ? 'window' : KIND[ev.kind].word}`;
   const short = B > 0 && (ev.before < B - 1e-6 || ev.after < B - 1e-6);
   return `<div class="ev ${c} k-${ev.kind}${ev === A.selected ? ' sel' : ''}${open ? ' open' : ''}" data-i="${i}" role="button" tabindex="0" aria-pressed="${ev === A.selected}">` +
-    scoreHtml(ev.score) +
+    scoreHtml(ev.score, ev) +
     `<span class="c c-name"><span class="nm">${esc(t.name)}</span> ${kindBadge(ev.kind)}${ev.assumed ? '<span class="as" title="' + esc(ev.assumed) + '">e?</span>' : ''}` +
     `<small>${fin(t.mag) ? `${t.band} ${t.mag.toFixed(1)}` : ''}${fin(t.depth) ? `${fin(t.mag) ? ' · ' : ''}<span class="${estD ? 'est' : ''}">${estD ? '~' : ''}${(t.depth * 1000).toFixed(1)} ppt</span>` : ''} ${srcTag(t)}</small></span>` +
     `<span class="c c-time" data-l="Start – mid – end (${esc(F.tzShort)})"><span class="v">${tm(ev.ingress, ev.ingressObs)}<i>–</i>${F.local(ev.mid)}<i>–</i>${tm(ev.egress, ev.egressObs)}</span><small><span class="${estT ? 'est' : ''}">${estT ? '~' : ''}${hours(ev.egress - ev.ingress)}</span>${ev.kind === 'eclipse' ? ` · phase ${ev.phase.toFixed(3)}` : ''}</small></span>` +
@@ -566,7 +568,7 @@ function fillDisc() {
     return `<button type="button" class="dmc" data-g="${g.id}" aria-pressed="${on}" style="--c:${g.color}" title="${esc(tip)}"${off ? ' disabled' : ''}><i class="sw${g.candidate ? ' dash' : ''}">${g.short}</i><span>${n ? n.targets.toLocaleString('en') : ''}</span></button>`;
   }).join('');
   const r = c && c.r, t = c && c.t;
-  $('p-disc-note').innerHTML = c ? `Only planets <b>seen to transit</b> have transits to plan, whatever found them: ${r.targets} found by radial velocity transit (HD 209458 b, HD 80606 b, 55 Cnc e), ${r.none.toLocaleString('en')} others do not or are not known to; imaging and microlensing planets have none. ${t.none ? t.none + ' transit planets lack a period or an epoch. ' : ''}The number on each chip: planets with a transit ephemeris.` : '';
+  $('p-disc-note').innerHTML = '';   // the long explanation of the chips was dropped: the chips' titles carry it
 }
 /** The event selector: which kinds are on, and the options of those that have any. */
 function fillKinds() {
@@ -622,6 +624,8 @@ function changed(e) {
 
 $('p-form').addEventListener('input', changed);
 $('p-form').addEventListener('change', changed);
+$('p-siteform').addEventListener('input', changed);
+$('p-siteform').addEventListener('change', changed);
 $('p-sort').addEventListener('change', (e) => { P.sort = e.target.value; save(); draw(); });
 $('p-disc').addEventListener('click', (e) => {
   const b = e.target.closest('[data-g]'); if (!b) return;
@@ -666,7 +670,7 @@ let rs = 0; window.addEventListener('resize', () => { cancelAnimationFrame(rs); 
 async function start() {
   // on a narrow screen the settings start folded, except the site until one has been chosen; on a phone the globe
   // (a screen and a half tall there) starts folded too, so the list of events is not three screens down
-  if (matchMedia('(max-width: 1100px)').matches) for (const id of ['p-g-dates', 'p-g-limits', 'p-g-targets'].concat(P.chosen ? ['p-g-site', 'p-sitebox'] : matchMedia('(max-width: 640px)').matches ? ['p-sitebox'] : [])) $(id).open = false;
+  if (matchMedia('(max-width: 1100px)').matches) for (const id of ['p-g-dates', 'p-g-limits', 'p-g-targets'].concat(P.chosen ? ['p-sitebox'] : matchMedia('(max-width: 640px)').matches ? ['p-sitebox'] : [])) $(id).open = false;
   $('p-sitebox').addEventListener('toggle', () => { if ($('p-sitebox').open && globe) globe.resize(); });
   if (!['list', 'grid', 'eph'].includes(P.view)) P.view = 'list';
   if (!['roi', 'transit', 'partial'].includes(P.show)) P.show = 'transit';

@@ -948,7 +948,7 @@ References: [Akeson et al. 2013](#ref-akeson2013); [Schneider et al. 2011](#ref-
 
 ## 20. Observability and sky positions
 
-Code: `src/core/observability.js`, `src/core/astro.js`, `src/core/horizon.js`, `src/core/skyfield.js`, `src/core/healpix.js`
+Code: `src/core/observability.js`, `src/core/astro.js`, `src/core/asteroids.js`, `src/core/horizon.js`, `src/core/skyfield.js`, `src/core/healpix.js`
 
 Two modules compute positions; both take UT1 = UTC and use the algorithms of [Meeus 1998](#ref-meeus1998): IAU 1976 precession, the mean sidereal time of 1982, a four-term nutation, the low-precision Sun (chapter 25) and a truncated lunar theory (chapter 47). The sky view (`astro.js`) adds the planets from the Keplerian elements of [Standish & Williams (JPL)](#ref-standish) with light-time iteration, apparent sidereal time, and refraction for display by the formulas of Bennett and Sæmundsson as given by [Meeus 1998](#ref-meeus1998) (see also [Bennett 1982](#ref-bennett1982)). The planner (`observability.js`) uses mean sidereal time for the target, topocentric parallax for the Moon, and the airmass of [Kasten & Young 1989](#ref-kasten1989).
 
@@ -961,6 +961,12 @@ $$
 $$
 
 which assumes $T_0$ and $P$ uncorrelated. A transit is listed as observable in full when the whole region of interest, from one hour before ingress to one hour after egress, has the target above 30° altitude with the Sun below −18°; complete transits with a shorter baseline, and partial ones, are listed as such. All three limits are settings. Rise, set and twilight times are found by sampling every 10 minutes and bisecting.
+
+### Bright asteroids and paths
+
+The sky view draws eight bright asteroids (Ceres, Pallas, Juno, Vesta, Hebe, Iris, Hygiea, Eunomia) from osculating elements of the JPL Small-Body Database bundled in `asteroids.js` (epoch JD 2461200.5 TDB, ecliptic J2000), propagated as two-body orbits about the Sun (Kepler's equation as for the planets), with light-time iteration and the Earth of `astro.js`; magnitudes are the IAU $H, G$ system of Bowell et al. (1989) with $H$ and $G$ from the same database. A card's "Show path" draws where a satellite (SGP4), the Moon, a planet or an asteroid goes: across the sky tonight, or among the stars over ±3 days to ±6 months (drawn in J2000, so it turns with the stars), with time or date ticks.
+
+Against JPL Horizons (geocentric astrometric RA and Dec, five dates from 200 days before the epoch to a year after, `test/asteroids.test.mjs`): at most 56″ within 200 days of the epoch and 138″ a year after it (Hygiea; the other seven under 40″), magnitudes within 0.003 mag. Perturbations by the planets are not modelled, so the error keeps growing away from the epoch; the elements are refreshed by `test/make_asteroid_reference.py`.
 
 ### Terrain horizon
 

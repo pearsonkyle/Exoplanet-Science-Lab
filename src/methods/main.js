@@ -10,6 +10,7 @@ import { TOPICS } from '../validation/topics.js';
 import { REFS } from '../validation/refs.js';
 import { methodsParagraph } from '../core/methodsText.js';
 import { siteRoot } from '../site/nav.js';
+import { siteJson } from '../site/net.js';
 import { initTabs } from './tabs.js';
 
 const $ = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
@@ -40,7 +41,7 @@ function citeTool(host) {
   };
   const load = async (id) => {
     status.textContent = 'Loading the stored session…';
-    try { const r = await fetch(new URL(`examples/results/${id}.json`, root)); if (!r.ok) throw new Error('HTTP ' + r.status); show(await r.json(), `${id}.json`); }
+    try { show(await siteJson(new URL(`examples/results/${id}.json`, root), `The stored session ${id}.json`), `${id}.json`); }
     catch (err) { status.textContent = `Could not load ${id}.json (${err.message}).`; }
   };
   sel.onchange = () => { file.value = ''; load(sel.value); };

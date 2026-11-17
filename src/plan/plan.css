@@ -312,3 +312,36 @@ table.eph { border-collapse: collapse; width: 100%; font: 12px var(--mono); font
 /* Light theme: the discovery colours (Okabe-Ito, chosen for a dark sky) are darkened so yellow and white chips read on white */
 :root[data-theme=light] .dmc .sw { color: color-mix(in srgb, var(--c) 50%, #000); border-color: color-mix(in srgb, var(--c) 60%, #000); }
 :root[data-theme=light] .dmc .sw.dash { color: #333; border-color: #555; }
+
+/* the site's controls at the top of "Site and globe" (they were a second "Site" section in the Plan panel): one row
+   on a wide screen, wrapping on a narrow one */
+.s-form { --fh: 32px; display: grid; grid-template-columns: minmax(220px, 2.2fr) repeat(3, minmax(84px, 1fr)) minmax(120px, 1.2fr) auto; gap: 8px; align-items: end; padding: 4px 14px 10px; }
+.s-form .row3, .s-form .row2 { display: contents; }
+.s-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--lab); min-width: 0; margin: 0; }
+.s-form input, .s-form select { width: 100%; height: var(--fh, 34px); padding: 0 7px; color: var(--text); font-size: 13px; min-width: 0; background: var(--panel2); border: 1px solid var(--line2); border-radius: 6px; }
+.s-form > .btn, .s-form .btn { height: var(--fh, 34px); white-space: nowrap; align-self: end; }
+.s-form .hint { grid-column: 1 / -1; }
+.s-form .hint:empty { display: none; }
+@media (max-width: 900px) { .s-form { grid-template-columns: repeat(3, minmax(0, 1fr)); } .s-form > label.row { grid-column: 1 / -1; } }
+@media (max-width: 560px) { .s-form input, .s-form select { font-size: 16px; } }
+
+/* ---- the list's row, rebalanced: the start-mid-end times and the coverage narrower, the altitude chart wider ---- */
+@container (min-width: 1001px) { .ev, .ev-head { grid-template-columns: 46px minmax(130px, 0.9fr) 150px minmax(110px, 0.75fr) minmax(170px, 1.6fr) 78px 56px 30px; } }   /* wide lists only: the narrow layouts above set their own columns */
+.spark { height: 34px; }
+/* under the score: a miniature of the coverage timeline in place of the score's breakdown (which the score's title
+   gives); shown where the large coverage column is not */
+.ev-score .sbar { display: none; }
+.ev-score .roi-bar.mini { display: none; flex: none; width: 38px; min-width: 0; max-width: none; height: 6px; border-radius: 2px; }
+.ev-score .roi-bar.mini .tr { border-left-width: 1px; border-right-width: 1px; }
+/* portrait and narrow lists: the miniature only, and the altitude chart takes the coverage column's room */
+@container (max-width: 1000px) {
+  .ev-score .roi-bar.mini { display: block; }
+  .ev .c-roi { display: none; }
+  .ev { grid-template-areas: "score name time time tog" "score alt alt base go"; }
+}
+@container (max-width: 560px) {
+  .ev { grid-template-areas: "score name name tog" "time time time time" "alt alt alt alt" "base base go go"; }
+}
+@media (orientation: portrait) and (max-width: 1100px) {
+  .ev-score .roi-bar.mini { display: block; }
+}

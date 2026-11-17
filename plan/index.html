@@ -8,6 +8,8 @@
 <meta name="esl-root" content="../">
 <!-- the site theme before first paint (src/site/theme.js) -->
 <script>try{var t=localStorage.getItem('esl.theme');if(t&&t!=='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<!-- opened as a file: browsers do not run the site's modules from file://; say how to open it (docs/guide/getting-started.md) -->
+<script>if(location.protocol==='file:')addEventListener('DOMContentLoaded',function(){var d=document.createElement('div');d.setAttribute('role','alert');d.style.cssText='position:fixed;inset:auto 12px 12px 12px;z-index:999;padding:14px 16px;border-radius:8px;background:#1a2133;color:#dfe6f3;border:1px solid #ffb454;font:14px/1.5 system-ui;max-width:640px';d.innerHTML='<b>This page needs a local web server.</b> Browsers do not run the site\u2019s scripts from a file. In the folder that holds it, run <code>npx serve</code> or <code>python3 -m http.server</code> and open the address it prints (for example http://localhost:8000/).';document.body.appendChild(d)})</script>
 <link rel="stylesheet" href="../src/site/site.css">
 <link rel="stylesheet" href="../src/plan/plan.css">
 </head>
@@ -35,19 +37,6 @@
           <label title="Orbital phase where the window ends; smaller than the start wraps through the transit">To phase<input type="number" id="p-cto" min="0" max="1" step="0.01" inputmode="decimal"></label>
         </div>
       </fieldset>
-      <details open id="p-g-site"><summary>Site <span class="sum" id="p-site-sum"></span></summary>
-        <label class="row" title="Or pick one on the globe">Observatory<select id="p-obs"></select></label>
-        <div class="row3">
-          <label>Lat °N<input type="number" id="p-lat" step="any" min="-90" max="90"></label>
-          <label>Lon °E<input type="number" id="p-lon" step="any" min="-180" max="360"></label>
-          <label>Elev m<input type="number" id="p-elev" step="any"></label>
-        </div>
-        <div class="row2">
-          <label>Time zone<select id="p-tz"></select></label>
-          <button type="button" class="btn" id="p-geo" title="Use this device's position (it stays in this browser)">My location</button>
-        </div>
-        <span class="hint" id="p-geo-msg" role="status"></span>
-      </details>
       <details open id="p-g-dates"><summary>Dates <span class="sum" id="p-dates-sum"></span></summary>
         <div class="row3 r-dates">
           <label title="The evening date at the site">First night<input type="date" id="p-date"></label>
@@ -88,6 +77,22 @@
     </form>
     <section class="p-results">
       <details class="p-sitebox" id="p-sitebox" open><summary><span class="sb-t">Site and globe</span><span class="sb-n" id="p-sbname"></span></summary>
+      <div class="s-form" id="p-siteform">
+        <!-- the site's controls (moved here from the Plan panel: one place for the site); changes go through the same handler -->
+
+        <label class="row" title="Or pick one on the globe">Observatory<select id="p-obs"></select></label>
+        <div class="row3">
+          <label>Lat °N<input type="number" id="p-lat" step="any" min="-90" max="90"></label>
+          <label>Lon °E<input type="number" id="p-lon" step="any" min="-180" max="360"></label>
+          <label>Elev m<input type="number" id="p-elev" step="any"></label>
+        </div>
+        <div class="row2">
+          <label>Time zone<select id="p-tz"></select></label>
+          <button type="button" class="btn" id="p-geo" title="Use this device's position (it stays in this browser)">My location</button>
+        </div>
+        <span class="hint" id="p-geo-msg" role="status"></span>
+        <span class="sum" id="p-site-sum" hidden></span>
+      </div>
       <div class="p-site" id="p-site">
         <div class="g-wrap">
           <canvas id="p-globe" class="p-globe" tabindex="0" role="img" aria-label="Globe with the observatories that can be chosen, the night side for the chosen time and your site. The Observatory menu lists the same sites."></canvas>

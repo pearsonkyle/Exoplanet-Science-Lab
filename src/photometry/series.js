@@ -8,6 +8,7 @@ import { toiRecords } from './mast.js';
 import { preparedCsv, windowCsvs } from './prep.js';
 import { makeZip } from '../core/zip.js';
 import { medianOf } from '../core/photometry.js';
+import { siteJson } from '../site/net.js';
 
 /**
  * @param ctx { P, h, $, call (worker), setStatus, siteRoot, download, el (the section), name () }
@@ -76,7 +77,7 @@ export function createSeries(ctx) {
   /** Known planets of the host and TOIs of the TIC (not already known by period). */
   async function lookup() {
     ctx.setStatus('stPrep', 'Looking up the catalogue and the TOI list…');
-    const root = ctx.siteRoot(), fj = async (nm) => (await fetch(new URL('catalog/' + nm, root))).json(), found = [];
+    const root = ctx.siteRoot(), fj = (nm) => siteJson(new URL('catalog/' + nm, root), "The site's catalogue"), found = [];
     try {
       const idx = await loadIndex(fj), names = [S.info.name, S.info.tic ? 'TIC ' + S.info.tic : null, S.info.kic ? 'KIC ' + S.info.kic : null, S.info.epic ? 'EPIC ' + S.info.epic : null, S.info.object].filter(Boolean);
       let host = null; for (const nm of names) { try { host = await lookupHost(idx, nm, fj); } catch { host = null; } if (host) break; }

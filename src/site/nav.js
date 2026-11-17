@@ -8,6 +8,8 @@
 
 import { mountTips } from './tips.js';
 import { THEMES, getTheme, setTheme, applyStoredTheme } from './theme.js';
+import { mountNet } from './net.js';
+import { registerOffline } from './offline.js';
 
 applyStoredTheme();   // the inline script in each page's <head> normally did this already, before first paint
 
@@ -74,6 +76,7 @@ export function mountNav(el, active) {
   nav.append(trow);
   el.append(tbtn, tmenu, menu, nav);
   compactNav(el, menu, nav);
+  if (window.__eslNet) mountNet();   // a rebuilt bar keeps its network indicator
 }
 
 /**
@@ -124,6 +127,6 @@ export function mountAssistant() {
 
 // pages that only need the bar can load this module directly
 if (typeof document !== 'undefined') {
-  const boot = () => { const el = document.getElementById('sitebar'); if (el && !el.classList.contains('sitebar')) mountNav(el); mountTips(); mountAssistant(); import('./project.js').then((m) => m.mountProject()).catch((err) => console.warn('project checklist unavailable:', err)); import('./welcome.js').then((m) => m.mountWelcome()).catch((err) => console.warn('welcome card unavailable:', err)); };
+  const boot = () => { const el = document.getElementById('sitebar'); if (el && !el.classList.contains('sitebar')) mountNav(el); mountNet(); registerOffline(siteRoot()); mountTips(); mountAssistant(); import('./project.js').then((m) => m.mountProject()).catch((err) => console.warn('project checklist unavailable:', err)); import('./welcome.js').then((m) => m.mountWelcome()).catch((err) => console.warn('welcome card unavailable:', err)); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 }

@@ -3,6 +3,7 @@
 // The science is src/core/spectroscopy.js (tested in test/spectroscopy.test.mjs); this file is the UI.
 import { startJob } from '../site/jobs.js';
 import { siteRoot } from '../site/nav.js';
+import { siteJson } from '../site/net.js';
 import { openFits } from '../core/fits.js';
 import { loadIndex, lookupHost, systemFromRows, searchNames } from '../core/catalog.js';
 import { deriveSystem } from '../core/derive.js';
@@ -176,7 +177,7 @@ $('kind').addEventListener('change', () => { P.kind = $('kind').value; if (P.kin
 
 // catalogue
 let catIndex = null;
-const fetchCat = async (name) => { const r = await fetch(new URL('catalog/' + name, siteRoot())); if (!r.ok) throw new Error(`The catalogue could not be read (${name}: HTTP ${r.status}).`); return r.json(); };
+const fetchCat = (name) => siteJson(new URL('catalog/' + name, siteRoot()), `The catalogue (catalog/${name})`);
 async function catalogue() { if (!catIndex) catIndex = await loadIndex(fetchCat); return catIndex; }
 async function suggest() {
   const q = $('inPlanet').value; if (q.length < 2) return;

@@ -1,6 +1,7 @@
 // Search page: the catalogues as one table. State is the object S below; everything on screen is redrawn from it.
 import { siteRoot } from '../site/nav.js';
 import { fetchJsonProgress, progressText } from '../site/load.js';
+import { siteJson } from '../site/net.js';
 import { SOURCES, loadSources, buildTable, FIELDS } from '../core/sources/index.js';
 import { RELATIONS } from '../core/relations.js';
 import { esc, display, unitOf, shown, unitText } from './format.js';
@@ -8,7 +9,7 @@ import { createTable } from './table.js';
 import { renderDetail } from './detail.js';
 
 const $ = (id) => document.getElementById(id);
-const fetchJson = async (file) => { const r = await fetch(new URL(file, siteRoot())); if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`); return r.json(); };
+const fetchJson = (file) => siteJson(new URL(file, siteRoot()), `The catalogue file ${file}`);
 const STORE = 'esl.search.v1';
 
 // column key -> [width px, extra]. Keys are common fields, or the specials 'cats', 'mag', 'ndiff'.

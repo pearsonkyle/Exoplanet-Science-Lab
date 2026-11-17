@@ -31,7 +31,13 @@
 #                        planet), then c when the star has TESS candidates; '' if unknown. candidates (only on stars
 #                        that have some): [TESS magnitude, TIC number, [[TOI, period d, its error, epoch BJD_TDB, its
 #                        error, duration h, depth ppm, disposition], ...]] (null where not given; errors to 2 digits).
-#                        Brightest first, by V, else by T.
+#                        Brightest first, by V, else by T. When a star has no candidates that column is null, and
+#                        an eighth column follows: [Teff K or null, distance pc or null, spectral class or '', 1 if a
+#                        planet or candidate transits else 0] (src/sky/hostFilter.js, the Filter panel of observe/):
+#                        Teff and distance the first given among the star's planets in nea.json (st_teff, sy_dist),
+#                        else the TOI table's (st_teff, st_dist); the class the letter of st_spectype (sd/esd prefix
+#                        dropped, T and Y counted as L, white dwarfs unknown), else from Teff on the dwarf scale of
+#                        Pecaut & Mamajek (2013): B0 31400 K, A0 9700, F0 7220, G0 5930, K0 5270, M0 3850, L0 2250.
 import argparse, json, os, struct, sys, urllib.request, glob, datetime
 
 BASE = 'https://raw.githubusercontent.com/ofrohn/d3-celestial/master/data/'
@@ -204,6 +210,46 @@ else:
     else:
         print('no public/catalog-table/toi.json: hosts.json without TESS candidates', file=sys.stderr)
 
+    # the star values for the Filter panel: nea.json per host (first value given, in row order), toi.json per TIC
+    num = lambda v: (v[0] if isinstance(v, list) else v) if isinstance(v, (list, int, float)) else None
+    star = {}
+    if os.path.exists(nea_path):
+        sstr = lambda r, k: (nea['strs'][r[col[k]]] if isinstance(r[col[k]], int) else (r[col[k]] or '')) if k in col and col[k] < len(r) else ''
+        for r in nea['rows']:
+            o = star.setdefault(r[col['hostname']], {'teff': None, 'dist': None, 'sp': '', 'tr': 0})
+            t = num(r[col['st_teff']]) if col['st_teff'] < len(r) else None
+            d = num(r[col['sy_dist']]) if col['sy_dist'] < len(r) else None
+            if o['teff'] is None and isinstance(t, (int, float)) and t > 0: o['teff'] = t
+            if o['dist'] is None and isinstance(d, (int, float)) and d > 0: o['dist'] = d
+            if not o['sp']: o['sp'] = sstr(r, 'st_spectype')
+            if col['tran_flag'] < len(r) and r[col['tran_flag']] == 1: o['tr'] = 1
+    toi_star = {}
+    if cand:
+        for r in toi['rows']:
+            tic = cell(r, 'tid')
+            if tic is None: continue
+            o = toi_star.setdefault(int(tic), {'teff': None, 'dist': None})
+            t, d = num(cell(r, 'st_teff')), num(cell(r, 'st_dist'))
+            if o['teff'] is None and isinstance(t, (int, float)) and t > 0: o['teff'] = t
+            if o['dist'] is None and isinstance(d, (int, float)) and d > 0: o['dist'] = d
+    EDGES = [(31400, 'O'), (9700, 'B'), (7220, 'A'), (5930, 'F'), (5270, 'G'), (3850, 'K'), (2250, 'M')]
+    def spec_class(sp, teff):
+        import re
+        m = re.match(r'\s*(?:e?sd)?([OBAFGKMLTY])', sp or '', re.I)
+        if m:
+            c = m.group(1).upper(); return 'L' if c in 'TY' else c
+        if not teff: return ''
+        return next((c for t, c in EDGES if teff >= t), 'L')
+    def star_values(row):
+        o = star.get(row[0]) or {'teff': None, 'dist': None, 'sp': '', 'tr': 0}
+        teff, dist, tr = o['teff'], o['dist'], o['tr']
+        c = row[6] if len(row) > 6 else None
+        if c:
+            tr = 1; t2 = toi_star.get(int(c[1])) or {}
+            if teff is None: teff = t2.get('teff')
+            if dist is None: dist = t2.get('dist')
+        return [None if teff is None else round(teff), None if dist is None else round(dist, 2), spec_class(o['sp'], teff), tr]
+
     hosts, skipped = [], 0
     for p in shards:
         with open(p, encoding='utf-8') as f:
@@ -224,11 +270,15 @@ else:
             row = by_name[host]; row[5] = row[5] + 'c'; row.append(extra); on_known += 1
         else:
             hosts.append([toi_host, ra, dec, None, 0, 'c', extra]); own += 1
-    mag = lambda r: r[3] if r[3] is not None else (r[6][0] if len(r) > 6 else None)
+    for r in hosts:
+        if len(r) == 6: r.append(None)
+        r.append(star_values(r))
+    mag = lambda r: r[3] if r[3] is not None else (r[6][0] if r[6] else None)
     hosts.sort(key=lambda r: (mag(r) is None, mag(r) or 0, r[0]))
     write_json('hosts.json', {'source': idx.get('source', 'NASA Exoplanet Archive') + ', via public/catalog (tools/build_catalog.py); TESS candidates: the archive\'s toi table (ExoFOP-TESS), via public/catalog-table/toi.json',
                               'catalogDate': idx.get('date'), 'toiDate': toi.get('date') if cand else None, 'built': today,
-                              'format': '[host name, ra_deg, dec_deg, V magnitude or null, number of confirmed planets, discovery groups, (candidates)], brightest first (V, else TESS T); groups: t transit, r radial velocity, i imaging, m microlensing, o other (TTV, astrometry, timing, ...), the one that found most planets first, then c (TESS candidates); candidates: [TESS magnitude, TIC, [[TOI, period d, error, epoch BJD_TDB, error, duration h, depth ppm, TFOPWG disposition]]]', 'hosts': hosts})
+                              'format': '[host name, ra_deg, dec_deg, V magnitude or null, number of confirmed planets, discovery groups, candidates or null, [Teff K, distance pc, spectral class, transits 0/1]], brightest first (V, else TESS T); groups: t transit, r radial velocity, i imaging, m microlensing, o other (TTV, astrometry, timing, ...), the one that found most planets first, then c (TESS candidates); candidates: [TESS magnitude, TIC, [[TOI, period d, error, epoch BJD_TDB, error, duration h, depth ppm, TFOPWG disposition]]]', 'hosts': hosts})
     print(f'{len(hosts)} hosts, {skipped} without a position, {sum(1 for r in hosts if r[3] is None)} without V, {sum(1 for r in hosts if not r[5])} without a discovery method')
     print(f'TESS candidates: {own} stars of their own, {on_known} stars with confirmed planets too')
+    print(f'star values: Teff {sum(1 for r in hosts if r[7][0] is not None)}, distance {sum(1 for r in hosts if r[7][1] is not None)}, class {sum(1 for r in hosts if r[7][2])}, transiting {sum(r[7][3] for r in hosts)} of {len(hosts)}')
     print('hosts coloured by:', {g: sum(1 for r in hosts if r[5][:1] == g) for g in 'trimoc'}, 'with the group at all:', {g: sum(1 for r in hosts if g in r[5]) for g in 'trimoc'}, 'mixed:', sum(1 for r in hosts if len(r[5]) > 1))

@@ -8,6 +8,7 @@
 //
 // This file is the DOM. The loop is agent.js, the tools are pages.js and tools.js, what is remembered is store.js.
 
+import { siteJson } from '../site/net.js';
 import './assistant.css';
 import { createTools, memoryFiles } from './tools.js';
 import { createSiteTools, pageOf, PAGES } from './pages.js';
@@ -60,7 +61,7 @@ function build({ root, launcher }) {
   const acts = chat.actions.slice(); // what the assistant changed: { page, name, summary, at, undone }
 
   // ---- what the tools need from the page ------------------------------------------------------------------------
-  const fetchJson = async (name) => { const r = await fetch(new URL('catalog/' + name, root)); if (!r.ok) throw new Error(`The parameter catalog could not be read (${name}: HTTP ${r.status}).`); return r.json(); };
+  const fetchJson = (name) => siteJson(new URL('catalog/' + name, root), "The site's catalogue");
   const FIG = { light_curve: '#lccanvas', corner: '#corner', oc: '#occanvas', periodogram: '#pgcanvas', limb_darkening: '#ldcanvas' };
   const hooks = {
     /** The rendered "Runs & model comparison" table of the Results tab: the page's own reading of the evidences. */

@@ -2,6 +2,7 @@
 // renderer and the labels need for one frame. The astronomy is in src/core/astro.js (tested against astropy).
 import * as A from '../core/astro.js';
 import { siteRoot } from '../site/nav.js';
+import { fetchOr, siteJson } from '../site/net.js';
 import { createSkyRenderer, bvToRgb } from './renderer.js';
 import { createAR, viewCentre } from './ar.js';
 import { createXR } from './xr.js';
@@ -11,6 +12,8 @@ import { horizonAt } from '../core/horizon.js';
 import * as O from '../core/observability.js';
 import * as DM from './discovery.js';
 import * as VIS from './visible.js';
+import * as HF from './hostFilter.js';
+import * as AST from '../core/asteroids.js';
 import { eventKind, eventInfo } from './events.js';
 
 const { RAD, DEG } = A;
@@ -59,8 +62,12 @@ const S = {
   disc: DM.parseFilter(DM.migrateFilter(store.get('esl.sky.disc', DM.GROUP_IDS))),     // the discovery groups whose host stars are shown (src/sky/discovery.js)
   eye: clamp(num('eye') ?? store.get('esl.sky.eye', 2), 0, 500),     // the observer's eye above the ground, metres (the terrain horizon)
   vis: { when: 'either', sort: 'alt', magMax: null, minPlanets: 0, minAlt: 0, ...store.get('esl.sky.vis', {}) },     // the Visible panel's settings
-  legendOpen: store.get('esl.sky.legend', null),     // the legend unfolded (null: unfolded on a wide screen, folded on a phone)
+  hf: HF.normalizeFilter(q.has('hf') ? HF.decodeFilter(q.get('hf')) : store.get('esl.sky.hf', {})),     // the host-star filter of the Filter panel (src/sky/hostFilter.js)
+  path: null,           // the path drawn for a moving object: { sel, span } (a key of PATH_SPANS)
 };
+if (q.has('disc')) S.disc = DM.parseFilter(q.get('disc'));
+// the Visible panel's magnitude and planet limits moved into the Filter panel's host filter
+if (S.vis.magMax != null || S.vis.minPlanets) { if (S.hf.magMax == null && S.vis.magMax != null) S.hf.magMax = S.vis.magMax; if (!S.hf.minPlanets) S.hf.minPlanets = S.vis.minPlanets || 0; S.vis.magMax = null; S.vis.minPlanets = 0; }
 // URL contract with the planner: planet, t, lat, lon, elev, transit=<ingress>,<mid>,<egress> (ISO UTC), err=<minutes>,
 // event=eclipse|phase|custom (the kind of window; a transit when absent)
 {
@@ -84,8 +91,10 @@ let F = null;     // the last computed frame
 
 // ---------------------------------------------------------------- data
 const dataUrl = (name) => new URL('sky/' + name, siteRoot()).href;
+/** A file of public/sky/, through the site's network notices (src/site/net.js). */
+const skyData = (name, as = 'json') => fetchOr(dataUrl(name), { what: 'Sky data (' + name + ')', as });
 async function loadStars() {
-  const buf = await (await fetch(dataUrl('stars.bin'))).arrayBuffer(), dv = new DataView(buf);
+  const buf = await skyData('stars.bin', 'arrayBuffer'), dv = new DataView(buf);
   if (dv.getUint32(0, false) !== 0x45534c53) throw new Error('stars.bin: not a star file');
   const hlen = dv.getUint32(4, true), head = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, hlen))), n = head.count, off = 8 + hlen;
   const s = { n, head, pos: new Float32Array(n * 3), mag: new Float32Array(n), color: new Float32Array(n * 3), bv: new Float32Array(n), hip: new Uint32Array(n), ra: new Float32Array(n), dec: new Float32Array(n) };
@@ -97,23 +106,23 @@ async function loadStars() {
   data.stars = s; R.setStars(s);
 }
 async function loadNames() {
-  const j = await (await fetch(dataUrl('starnames.json'))).json(); data.names = j.names;
+  const j = await skyData('starnames.json'); data.names = j.names;
   // stars that can be labelled: proper names first, then Bayer/Flamsteed designations, among the brightest 3000
   const s = data.stars; s.labelled = [];
   for (let i = 0; i < Math.min(s.n, 3000); i++) { const nm = j.names[s.hip[i]]; if (nm) { const [proper, des] = nm.split('|'); s.labelled.push({ i, proper, des }); } }
 }
-async function loadConstellations() { const j = await (await fetch(dataUrl('constellations.json'))).json(); data.con = j; R.setConstellations(j.lines); data.con.labelVec = j.labels.map((l) => A.sphToVec(l[2] * RAD, l[3] * RAD)); }
+async function loadConstellations() { const j = await skyData('constellations.json'); data.con = j; R.setConstellations(j.lines); data.con.labelVec = j.labels.map((l) => A.sphToVec(l[2] * RAD, l[3] * RAD)); }
 let hostsPromise = null;
 function loadHosts() {
   return hostsPromise ||= (async () => {
     setStatus('Loading host stars…');
     try {
-      const j = await (await fetch(dataUrl('hosts.json'))).json(), n = j.hosts.length, pos = new Float32Array(n * 3), mag = new Float32Array(n);
-      j.hosts.forEach((h, i) => { pos.set(A.sphToVec(h[1] * RAD, h[2] * RAD), i * 3); mag[i] = VIS.hostMag(h) ?? 15; });
+      const j = await skyData('hosts.json'), n = j.hosts.length, pos = new Float32Array(n * 3), mag = new Float32Array(n), magKnown = new Uint8Array(n);
+      j.hosts.forEach((h, i) => { pos.set(A.sphToVec(h[1] * RAD, h[2] * RAD), i * 3); const m = VIS.hostMag(h); mag[i] = m ?? 15; magKnown[i] = m == null ? 0 : 1; });
       data.hostIndex = new Map(j.hosts.map((h, i) => [h[0], i]));
       // the TESS candidates by name (TOI-1234.01), for the search box and links from the planner
       data.candIndex = new Map(); j.hosts.forEach((h, i) => { if (h[6]) for (const c of h[6][2]) data.candIndex.set(c[0], i); });
-      data.hosts = { list: j.hosts, pos, n, mag, meta: j }; data.hostGeom = R.setHosts(pos, n); data.hostLimit = null; setStatus('');
+      data.hosts = { list: j.hosts, pos, n, mag, magKnown, meta: j }; data.hostGeom = R.setHosts(pos, n); data.hostLimit = null; setStatus('');
     } catch (e) { hostsPromise = null; setStatus('Host stars could not be loaded: ' + e.message, true); S.layers.hosts = false; syncLayers(); throw e; }
   })();
 }
@@ -121,11 +130,9 @@ function loadHosts() {
 const GROUP_RGB = Object.fromEntries(DM.GROUPS.map((g) => [g.id, DM.rgb01(g.color)]));
 /** The group a host is drawn in under the filter, or null when the filter hides it. */
 const hostGroup = (i) => DM.shownGroup(data.hosts.list[i][5], S.disc);
-/** The magnitude a host is drawn by: V, else T (TESS candidates), else 15. */
-const hostMagOf = (i) => data.hosts.mag[i];
 // The catalogue beyond positions (names for the search box, the planets' values for the card): src/sky/targets.js,
 // imported on first use so that neither its code nor its tables are part of the page load.
-const fetchJson = async (file) => { const r = await fetch(new URL(file, siteRoot()).href); if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`); return r.json(); };
+const fetchJson = (file) => siteJson(new URL(file, siteRoot()).href, 'Catalogue file (' + file + ')');
 let targetsPromise = null;
 const loadTargets = () => (targetsPromise ||= import('./targets.js').then((T) => { data.T = T; data.cat = T.createCatalog(fetchJson); return T; }).catch((e) => { targetsPromise = null; throw e; }));
 /** The planet table, for the cards: fetched when the Exoplanets layer is switched on or a host card is opened. */
@@ -184,21 +191,72 @@ function compute() {
     sun: { ...sun, sprite: sunDisc * 4, disc: sunDisc, color: atm && hs < 8 ? [1, 0.82 + 0.14 * clamp(hs / 8, 0, 1), 0.55 + 0.27 * clamp(hs / 8, 0, 1), 1] : [1, 0.96, 0.82, 1] },
     moon: { ...moon, sprite: moonDisc * 1.5, disc: moonDisc, color: [0.96, 0.94, 0.88, 1], light },
   };
-  if (data.hosts && S.layers.hosts) {     // which host stars are shown follows the zoom
-    const lim = 6.5 + 5 * Math.log10(100 / fovEff) + S.magOffset;
-    if (data.hostLimit == null || Math.abs(lim - data.hostLimit) > 0.05 || data.hostDisc !== S.disc) {
-      // a ring per host bright enough for the zoom, in the colour of its discovery group; none when the filter hides it
-      data.hostLimit = lim; data.hostDisc = S.disc; const g = data.hostGeom, list = data.hosts.list, drawn = {};
-      for (let i = 0; i < list.length; i++) {
-        const gr = hostGroup(i), on = !!gr && data.hosts.mag[i] <= lim, c = GROUP_RGB[gr] || GROUP_RGB.o;
-        // alpha 0.9: the dashed ring of a candidate (renderer.js)
-        g.attributes.aSize.setX(i, on ? 5.5 : 0); g.attributes.aColor.setXYZW(i, c[0], c[1], c[2], gr === 'c' ? 0.9 : 0.95); if (on) drawn[gr] = (drawn[gr] || 0) + 1;
-      }
-      g.attributes.aSize.needsUpdate = g.attributes.aColor.needsUpdate = true; data.hostDrawn = drawn;
-    }
-  }
-  updateNight();
+  if (data.hosts && S.layers.hosts) updateHostMarkers(HOST_LIM0 + 5 * Math.log10(100 / fovEff) + S.magOffset);
+  if (S.layers.planets) F.asteroids = asteroidsNow(lat, lon).map((a) => ({ ...a, dir: dirOf(apparent(a.alt), a.az) }));
+  updateNight(); updatePath();
   return F;
+}
+// Which stars with planets are drawn: those of a discovery group that is on, that pass the host filter, and (unless
+// the filter sets a magnitude range) bright enough for the zoom: V (T for a TESS candidate) up to HOST_LIM0 at a
+// 100 degree field, a magnitude deeper for each factor 2.5 of zoom. Stars without a magnitude (most microlensing
+// hosts) count as HOST_UNKNOWN_MAG. Before 2026-11 the limit was 6.5, so that only bright (mostly radial-velocity)
+// hosts showed at a normal zoom: 1 transit host against 159 RV hosts.
+const HOST_LIM0 = 10, HOST_UNKNOWN_MAG = 12;
+function updateHostMarkers(lim) {
+  const test = hostFilterTest(), fkey = hostFilterKey();
+  if (data.hostLimit != null && Math.abs(lim - data.hostLimit) <= 0.05 && data.hostDisc === S.disc && data.hostFKey === fkey) return;
+  data.hostLimit = lim; data.hostDisc = S.disc; data.hostFKey = fkey;
+  const g = data.hostGeom, list = data.hosts.list, drawn = {}, byMag = !HF.activeParts(S.hf).mag, on = data.hostOn || (data.hostOn = new Uint8Array(list.length));
+  for (let i = 0; i < list.length; i++) {
+    const gr = hostGroup(i), m = data.hosts.magKnown[i] ? data.hosts.mag[i] : HOST_UNKNOWN_MAG;
+    const show = !!gr && (!byMag || m <= lim) && test(i), c = GROUP_RGB[gr] || GROUP_RGB.o;
+    on[i] = show ? 1 : 0;
+    // the marker: brighter stars a little larger; the shape and colour of the group it is drawn in (renderer.js HOST_FS)
+    g.attributes.aSize.setX(i, show ? (m <= 6 ? 11 : m <= 9 ? 10 : 9) : 0); g.attributes.aColor.setXYZW(i, c[0], c[1], c[2], 1); g.attributes.aShape.setX(i, DM.shapeCode(gr || 'o'));
+    if (show) drawn[gr] = (drawn[gr] || 0) + 1;
+  }
+  g.attributes.aSize.needsUpdate = g.attributes.aColor.needsUpdate = g.attributes.aShape.needsUpdate = true; data.hostDrawn = drawn;
+}
+/** Is host i drawn now (and so can be picked)? */
+const hostDrawnNow = (i) => !!(data.hostOn && data.hostOn[i]);
+// ---- the host filter's data: temperature, type, distance, transit flags (hostFilter.js), from the tables on demand
+let hfAttrPromise = null;
+function ensureHostAttrs() {
+  if (!data.hosts || !HF.needsTable(S.hf)) return;
+  // hosts.json carries the values (tools/build_sky_data.py); the tables are only the fallback for an older file
+  if (!data.hattr && data.hostsBaked == null) { const b = HF.bakedAttributes(data.hosts.list); data.hostsBaked = !!b; if (b) { data.hattr = { ...b, toi: true }; data.hattrV = (data.hattrV || 0) + 1; data.hattrStatus = 'ready'; } }
+  const wantToi = HF.needsToi(S.hf);
+  if (data.hattr && (data.hattr.toi || !wantToi)) return;
+  if (hfAttrPromise) return;
+  data.hattrStatus = 'loading';
+  hfAttrPromise = Promise.all([ensureTable().then(() => { if (data.tableError) throw new Error(data.tableError); }), wantToi ? fetchJson('catalog-table/toi.json').then(HF.toiStarValues) : null])
+    .then(([, toi]) => { data.hattr = { ...HF.hostAttributes(data.hosts.list, data.cat.rowsOfHost, toi), toi: !!toi }; data.hattrV = (data.hattrV || 0) + 1; data.hattrStatus = 'ready'; })
+    .catch((e) => { data.hattrStatus = 'error: ' + (e && e.message || e); })
+    .finally(() => { hfAttrPromise = null; data.hostLimit = null; visCache.key = ''; filterKey = ''; });
+}
+/** The transits tonight, for "with a transit tonight": the host indices (visTransits). */
+function tonightHosts() { if (!S.hf.transitTonight || !data.hosts) return null; return visTransits(darkHours()); }
+let hfTest = { key: '', fn: () => true };
+function hostFilterKey() { const tn = S.hf.transitTonight ? visTr.key : ''; return [HF.encodeFilter(S.hf), data.hattrV || 0, tn].join('|'); }
+/** The host filter as a test of a host index (cached until the filter, the tables or tonight change). */
+function hostFilterTest() {
+  if (!data.hosts) return () => true;
+  ensureHostAttrs(); const tn = tonightHosts(), key = hostFilterKey();
+  if (hfTest.key !== key) hfTest = { key, fn: HF.hostTest(data.hosts.list, S.hf, data.hattr, tn) };
+  return hfTest.fn;
+}
+/** Set the host filter (the Filter panel, the assistant): a partial object merged into it; null resets. */
+function setHostFilter(part) {
+  S.hf = HF.normalizeFilter(part === null ? {} : { ...S.hf, ...part }); store.set('esl.sky.hf', S.hf);
+  if (HF.activeParts(S.hf).any && !S.layers.hosts) toggleLayer('hosts');
+  data.hostLimit = null; visCache.key = ''; filterKey = ''; ensureHostAttrs(); if (F) compute();
+}
+// ---- the bright asteroids (src/core/asteroids.js), with the planets
+let astCache = { key: '', list: [] };
+function asteroidsNow(lat, lon) {
+  const key = [Math.round(S.time / 20000), lat, lon, S.elev].join('|');
+  if (astCache.key !== key) astCache = { key, list: AST.ASTEROIDS.map((o) => AST.asteroidPlace(o, S.time, lat, lon, S.elev)) };
+  return astCache.list;
 }
 const toWorld = (m, v) => A.matVec(m, v);
 /** The horizon's apparent altitude (radians) at an azimuth (radians): the terrain profile when it is on, else 0. */
@@ -216,10 +274,11 @@ const selKey = (s) => (s ? `${s.kind}:${s.i ?? s.id ?? s.name}` : '');
 function altAzAt(sel, ms) {
   const lat = S.lat * RAD, lon = S.lon * RAD;
   if (sel.kind === 'body') { const b = A.solarSystem(ms, lat, lon, S.elev).bodies.find((x) => x.id === sel.id); return { alt: b.alt, az: b.az }; }
+  if (sel.kind === 'ast') { const b = AST.asteroidPlace(AST.asteroidById(sel.id), ms, lat, lon, S.elev); return { alt: b.alt, az: b.az }; }
   const eq = sel.kind === 'host' ? data.hosts.list[sel.i].slice(1, 3) : sel.kind === 'pos' ? [sel.ra, sel.dec] : [data.stars.ra[sel.i], data.stars.dec[sel.i]];
   return A.fixedAltAz(eq[0] * RAD, eq[1] * RAD, ms, lat, lon);
 }
-const targetReady = (t) => !!t && (t.kind === 'body' || t.kind === 'pos' || (t.kind === 'host' ? !!data.hosts : t.kind === 'star' && !!data.stars));
+const targetReady = (t) => !!t && (t.kind === 'body' || t.kind === 'ast' || t.kind === 'pos' || (t.kind === 'host' ? !!data.hosts : t.kind === 'star' && !!data.stars));
 /** Keep data.night (the span, its samples and the track drawn on the sky) in step with the target, place and date. */
 function updateNight() {
   const tg = targetReady(S.target) ? S.target : null;
@@ -244,6 +303,86 @@ function updateNight() {
     for (let t = d.getTime() + 3600000; t < w.t1; t += 3600000) { const h = at(t); n.hours.push({ t, dir: dir(h), up: up(h) }); }
   } else { R.setTrack(null); R.setLine('transit', null); }
   data.night = n; nightKey = '';
+}
+// ---------------------------------------------------------------- the path of a moving object (the card's "Show path")
+// A satellite: its pass, across the sky as seen from here, every minute. The Moon, a planet, an asteroid: tonight
+// across the sky (hourly ticks, like the target's track), or its path among the stars over days or months (drawn in
+// the J2000 frame, so it turns with the stars; ticks every day, week or month, dated). Positions: satellites.js
+// (SGP4), astro.js (Sun, Moon, planets), core/asteroids.js.
+const PATH_SPANS = {
+  sat10: { label: '± 10 minutes', kinds: ['sat'], half: 600e3, step: 15e3, tick: 60e3, frame: 'world' },
+  sat30: { label: '± 30 minutes', kinds: ['sat'], half: 1800e3, step: 30e3, tick: 300e3, frame: 'world' },
+  night: { label: 'tonight, across the sky', kinds: ['body', 'ast'], night: true, step: 600e3, tick: 3600e3, frame: 'world' },
+  d3: { label: '± 3 days among the stars', kinds: ['moon'], half: 3 * 864e5, step: 3600e3, tick: 864e5 / 2, frame: 'j2000' },
+  d15: { label: '± 15 days among the stars', kinds: ['moon', 'body', 'ast'], half: 15 * 864e5, step: 6 * 3600e3, tick: 864e5, frame: 'j2000' },
+  d90: { label: '± 3 months among the stars', kinds: ['body', 'ast'], half: 90 * 864e5, step: 864e5, tick: 7 * 864e5, frame: 'j2000' },
+  y1: { label: '± 6 months among the stars', kinds: ['body', 'ast'], half: 182 * 864e5, step: 864e5, tick: 30 * 864e5, frame: 'j2000' },
+};
+const PATH_COLOR = '#d4a5ff';
+/** The kinds of span a selection can have ('moon' is its own kind: it moves too fast for months). [] when none. */
+function pathSpans(sel) {
+  if (!sel) return [];
+  const kind = sel.kind === 'sat' ? 'sat' : sel.kind === 'ast' ? 'ast' : sel.kind === 'body' && sel.id !== 'sun' ? (sel.id === 'moon' ? 'moon' : 'body') : null;
+  if (!kind) return [];
+  return Object.keys(PATH_SPANS).filter((k) => PATH_SPANS[k].kinds.includes(kind) || (kind === 'moon' && k === 'night'));
+}
+/** J2000 unit vector of a body at a time, as seen from here (topocentric: the Moon's parallax is a degree). */
+function bodyJ2000(sel, ms) {
+  const lat = S.lat * RAD, lon = S.lon * RAD;
+  if (sel.kind === 'ast') { const g = AST.asteroidGeocentric(AST.asteroidById(sel.id), ms); return A.sphToVec(g.ra, g.dec); }
+  const sys = A.solarSystem(ms, lat, lon, S.elev), b = sys.bodies.find((x) => x.id === sel.id);
+  return A.matVec(A.transpose(A.j2000ToDateMatrix(sys.T)), A.sphToVec(b.ra, b.dec));
+}
+let pathKey = '';
+/** Keep the drawn path (R.setLine('path')) and its ticks (data.path) in step with S.path, the place and the clock. */
+function updatePath() {
+  const P = S.path, spec = P && PATH_SPANS[P.span];
+  if (!P || !spec || (P.sel.kind === 'sat' && !(data.sats && data.satApi))) { if (pathKey) { R.setLine('path', null); data.path = null; pathKey = ''; } return; }
+  const lat = S.lat * RAD, lon = S.lon * RAD;
+  // the span: around the time shown (moved on when the clock leaves its middle half), or tonight's night
+  let t0, t1;
+  if (spec.night) { const w = nightWindow(S.time, lat, lon, S.elev, null); t0 = w.t0; t1 = w.t1; }
+  else { const c = Math.round(S.time / (spec.half / 2)) * (spec.half / 2); t0 = c - spec.half; t1 = c + spec.half; }
+  const key = [selKey(P.sel), P.span, t0, S.lat, S.lon, S.elev, S.layers.atmosphere, !!data.horizon && S.layers.terrain].join('|');
+  if (key === pathKey) return; pathKey = key;
+  const pts = [], ticks = [];
+  if (spec.frame === 'world') {
+    const sat = P.sel.kind === 'sat' ? data.sats.find((x) => x.name === P.sel.name) : null;
+    const track = (a, b, step) => { if (sat) return data.satApi.satelliteTrack(sat, a, b, step, lat, lon, S.elev); const o = []; for (let t = a; t <= b + 1; t += step) o.push({ t, ...altAzAt(P.sel, t) }); return o; };
+    const app = (a) => (S.layers.atmosphere ? a + A.refraction(a) : a), at = (p) => { const dir = dirOf(app(p.alt), p.az); return { t: p.t, dir, up: app(p.alt) > horizonRad(p.az) }; };
+    for (const p of track(t0, t1, spec.step)) pts.push(at(p));
+    const k0 = Math.ceil(t0 / spec.tick) * spec.tick;
+    if (k0 <= t1) for (const p of track(k0, t1, spec.tick)) ticks.push({ ...at(p), label: hhmm(p.t) });
+  } else {
+    for (let t = t0; t <= t1 + 1; t += spec.step) { const v = bodyJ2000(P.sel, t); pts.push({ v }); }
+    const day = (t) => { const d = new Date(t); return spec.tick < 864e5 ? `${d.getDate()} ${MONTHS[d.getMonth()]} ${hhmm(t)}` : `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
+    // ticks at local midnight (or noon too, for the Moon) and every tick span from it
+    const d0 = new Date(t0); d0.setHours(0, 0, 0, 0);
+    // by the calendar (a week is seven local midnights, also across a change of daylight-saving time)
+    for (const d = d0; d.getTime() <= t1; spec.tick >= 864e5 ? d.setDate(d.getDate() + spec.tick / 864e5) : d.setHours(d.getHours() + spec.tick / 3600e3)) { const t = d.getTime(); if (t >= t0) ticks.push({ t, v: bodyJ2000(P.sel, t), label: day(t) }); }
+  }
+  if (spec.frame === 'world') R.setLine('path', pts.map((p) => p.dir), { color: parseInt(PATH_COLOR.slice(1), 16), alpha: 0.95, order: 44, alphas: pts.slice(1).map((p, i) => (p.up && pts[i].up ? 1 : 0.35)) });
+  else R.setLine('path', pts.map((p) => p.v), { color: parseInt(PATH_COLOR.slice(1), 16), alpha: 0.95, order: 44, frame: 'j2000' });
+  data.path = { frame: spec.frame, ticks, t0, t1, span: P.span };
+}
+/** The ticks of the path, with their times or dates (the line itself is GL). */
+function drawPathMarks(inView) {
+  const P = data.path; if (!P) return;
+  const font = '10px Inter, system-ui, sans-serif', refr = (w) => { if (!S.layers.atmosphere) return w; const h = altAzOf(w); return dirOf(F.apparent(h.alt), h.az); };
+  let lastP = null;
+  for (const t of P.ticks) {
+    const w = t.dir || refr(toWorld(F.j2000ToWorld, t.v)), p = R.project(w); if (!inView(p)) continue;
+    const up = t.dir ? t.up : !hidden(w);
+    ctx.globalAlpha = up ? 1 : 0.45;
+    ctx.fillStyle = '#05070c'; ctx.strokeStyle = PATH_COLOR; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(p[0], p[1], 3.2, 0, 7); ctx.fill(); ctx.stroke();
+    if (!lastP || Math.hypot(p[0] - lastP[0], p[1] - lastP[1]) > 34) { text(t.label, p[0] + 6, p[1] - 8, '#e6d0ff', { font }); lastP = p; }
+  }
+  ctx.globalAlpha = 1;
+}
+/** Show, change or hide the path of a selection (span: a key of PATH_SPANS; null hides). */
+function setPath(sel, span) {
+  if (!sel || !span) { S.path = null; } else { const spans = pathSpans(sel); if (!spans.length) throw new Error('a path is for the Moon, the planets, the asteroids and satellites'); S.path = { sel: { ...sel }, span: spans.includes(span) ? span : spans[0] }; }
+  pathKey = '__'; cardKey = ''; updatePath();
 }
 /** Start, pause or resume the run through the night. */
 function playNight(restart) {
@@ -317,7 +456,7 @@ function drawLabels() {
     let n = 0; const list = data.hosts.list, lim = data.hostLimit - 1.5;
     for (let i = 0; i < list.length && n < 80; i++) {
       if (data.hosts.mag[i] > lim) break;
-      const gr = hostGroup(i); if (!gr) continue;
+      if (!hostDrawnNow(i)) continue; const gr = hostGroup(i);
       const w = toWorld(F.j2000ToWorld, [data.hosts.pos[i * 3], data.hosts.pos[i * 3 + 1], data.hosts.pos[i * 3 + 2]]); if (hidden(w)) continue;
       // the name and the letter of the discovery group, in its colour (the letter: so that colour is not the only cue)
       const p = R.project(w); if (inView(p)) { const G = DM.groupInfo(gr); text(`${list[i][0]} · ${G.short}`, p[0] + 9, p[1] - 8, G.color); n++; }
@@ -328,6 +467,10 @@ function drawLabels() {
     if ((b.id === 'uranus' || b.id === 'neptune') && b.mag > F.magLimit) continue;
     const off = b.id === 'sun' ? F.sun.disc + 6 : b.id === 'moon' ? F.moon.disc + 6 : 12;
     text(b.name, p[0] + off, p[1] + 1, b.id === 'sun' || b.id === 'moon' ? '#ffe2a8' : '#ffd08a', { font: '600 11px Inter, system-ui, sans-serif' });
+  }
+  if (L.planets && L.labels && F.asteroids) for (const a of F.asteroids) {
+    if (a.mag > F.magLimit + 0.5 || hidden(a.dir)) continue; const p = R.project(a.dir); if (!inView(p)) continue;
+    text(a.name, p[0] + 8, p[1] + 1, 'rgba(230,214,180,0.85)', { font: 'italic 10.5px Inter, system-ui, sans-serif' });
   }
   if (L.satellites && L.labels && F.sats) {
     const many = S.fov > 70;
@@ -340,7 +483,7 @@ function drawLabels() {
     text(name, p[0], p[1] + (main ? 13 : 11), main ? '#ffb454' : 'rgba(255,180,84,0.6)', { align: 'center', font: (main ? '700 15px' : '600 10px') + ' Inter, system-ui, sans-serif' });
   }
   if (L.altlimit) for (let az = 0; az < 360; az += 45) { const p = R.project(dirOf(30 * RAD, az * RAD)); if (inView(p)) text('30°', p[0], p[1] - 8, 'rgba(120,220,170,0.85)', { align: 'center', font: '10px Inter, system-ui, sans-serif' }); }
-  drawTrackMarks(inView);
+  drawTrackMarks(inView); drawPathMarks(inView);
   const sel = selectionInfo();
   if (sel && sel.dir && selKey(cardSel()) !== selKey(S.target)) { const p = R.project(sel.dir); if (p) { ctx.strokeStyle = '#5fd4ff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(p[0], p[1], sel.ring || 13, 0, 7); ctx.stroke(); } }
   drawReticle(W, H);
@@ -433,6 +576,13 @@ function infoOf(sel) {
     else if (b.id !== 'sun') rows.push(['Phase angle', `${(b.phase * DEG).toFixed(0)}°`]);
     return { title: b.name, sub: '', type: b.id === 'sun' ? 'Star' : b.id === 'moon' ? 'Moon' : 'Planet', alt: b.altApp, altTrue: b.alt, az: b.az, dir: b.dir, ra: b.ra, dec: b.dec, frame: 'of date, topocentric', rows, ring: b.id === 'sun' ? F.sun.disc + 6 : b.id === 'moon' ? F.moon.disc + 6 : 13 };
   }
+  if (sel.kind === 'ast') {
+    const o = AST.asteroidById(sel.id), a = o && (F.asteroids || []).find((x) => x.id === o.id) || (o && { ...AST.asteroidPlace(o, S.time, F.lat, F.lon, S.elev) }); if (!a) return null;
+    const dir = a.dir || dirOf(F.apparent(a.alt), a.az);
+    return { title: a.name, sub: `(${o.number}) ${a.name} · main-belt asteroid`, type: 'Asteroid', alt: F.apparent(a.alt), altTrue: a.alt, az: a.az, dir, ra: a.ra, dec: a.dec, frame: 'of date, topocentric',
+      rows: [['Magnitude', `V ${a.mag.toFixed(1)}`], ['Distance', `${a.dist.toFixed(3)} au`], ['From the Sun', `${a.r.toFixed(3)} au`], ['Phase angle', `${(a.phase * DEG).toFixed(0)}°`]], ring: 11,
+      note: `Two-body orbit from JPL SBDB elements (epoch ${new Date(A.fromJulianDate(o.epoch)).toISOString().slice(0, 10)}); against JPL Horizons within 1′ for 200 days from it, 2.5′ a year from it.` };
+  }
   if (sel.kind === 'sat') {
     const s = F.sats && F.sats.find((x) => x.name === sel.name); if (!s) return { title: sel.name, sub: 'not available at this time', type: 'Satellite', rows: [] };
     const eq = A.horizontalToEquatorial(s.alt, s.az, F.lat, F.sys.lst);
@@ -484,7 +634,7 @@ function drawInfo() {
   if (live !== infoKey) { $('cardLive').innerHTML = live; infoKey = live; }
   // everything that does not change with the clock is built once per selection (so that links and scrolling survive)
   const isTarget = selKey(sel) === selKey(S.target), cat = data.cat, table = s.host ? (!s.planets ? 'none' : data.tableError ? 'error' : cat ? cat.state.table : 'idle') : '';
-  const key = [selKey(sel), isTarget, table, isTarget && S.target.planet, isTarget && S.transit ? [S.transit.mid, S.transit.kind, S.lat, S.lon, S.elev, S.layers.atmosphere, !!data.horizon && S.layers.terrain].join() : '', $('rate').value === 'night' && S.playing].join('|');
+  const key = [selKey(sel), isTarget, table, isTarget && S.target.planet, isTarget && S.transit ? [S.transit.mid, S.transit.kind, S.lat, S.lon, S.elev, S.layers.atmosphere, !!data.horizon && S.layers.terrain].join() : '', $('rate').value === 'night' && S.playing, S.path ? selKey(S.path.sel) + S.path.span : ''].join('|');
   if (key !== cardKey) {
     cardKey = key;
     const rows = s.host && table === 'ready' ? cat.rowsOfHost(s.host) : null, T = data.T;
@@ -506,7 +656,9 @@ function drawInfo() {
     const canTarget = sel.kind !== 'sat' && !!s.dir, playing = $('rate').value === 'night' && S.playing;
     $('cardActions').innerHTML = (s.dir ? '<button class="btn" data-act="centre">Centre</button>' : '') + (isTarget ? `<button class="btn primary" data-act="night">${playing ? 'Pause' : 'Play the night'}</button><button class="btn" data-act="untarget">Unmark</button>` : canTarget ? '<button class="btn" data-act="target">Mark and follow</button>' : '')
       + (surveyable(sel, s) ? '<button class="btn" data-act="survey" title="A real image of this field from an open survey (DSS, 2MASS, Pan-STARRS, ...), with the Gaia stars around it">Survey image</button>' : '')
-      + (s.host ? `<a class="btn simbad" href="${escHtml(DM.simbadUrl(s.host))}" target="_blank" rel="noopener" title="This star in SIMBAD (CDS, the CfA mirror), in a new tab">SIMBAD ↗</a>` : '');
+      + (s.host ? `<a class="btn simbad" href="${escHtml(DM.simbadUrl(s.host))}" target="_blank" rel="noopener" title="This star in SIMBAD (CDS, the CfA mirror), in a new tab">SIMBAD ↗</a>` : '')
+      + pathControlsHtml(sel);
+    if (s.note) $('cardActions').insertAdjacentHTML('beforeend', `<p class="note card-note">${escHtml(s.note)}</p>`);
     // the same star again (the table arrived, the night started): the disclosures stay as the user left them
     const el2 = $('cardBody'), same = bodyFor.sel === selKey(sel), focus = isTarget ? S.target.planet || '' : '';
     const open = same ? new Set([...el2.querySelectorAll('details')].filter((d) => d.open).map((d) => d.dataset.k)) : null, had = same && !!el2.querySelector('details');
@@ -523,6 +675,13 @@ function drawInfo() {
     for (const slot of $('cardBody').querySelectorAll('.nxslot')) { const i = nx.findIndex((x) => x.planet === slot.dataset.pl); slot.innerHTML = i < 0 ? '' : nxHtml(nx[i], i, 'Next transit'); }
   }
   el.hidden = false;
+}
+/** The card's "Show path" toggle and, while it is on, the span (PATH_SPANS). */
+function pathControlsHtml(sel) {
+  const spans = pathSpans(sel); if (!spans.length) return '';
+  const on = !!S.path && selKey(S.path.sel) === selKey(sel);
+  const pick = on ? `<label class="pathspan">Path <select data-path-span aria-label="How long a path">${spans.map((k) => `<option value="${k}"${S.path.span === k ? ' selected' : ''}>${PATH_SPANS[k].label}</option>`).join('')}</select></label>` : '';
+  return `<button class="btn${on ? ' primary' : ''}" data-act="path" aria-pressed="${on}" title="${on ? 'Hide the path' : 'Draw where it moves: across the sky tonight, or among the stars over days and months (satellites: their pass)'}">${on ? 'Hide path' : 'Show path'}</button>${pick}`;
 }
 /** One transit (an item of nextTransits) with a button that marks it; i: its index in that list. */
 const nxHtml = (t, i, label) => `<div class="nx"><div>${label ? `<span class="k">${label}</span> ` : `<b>${escHtml(t.planet)}</b> `}${transitWords(t)}<small>${skyWords(t)}${t.err != null ? ` · ± ${t.err.toFixed(t.err < 10 ? 1 : 0)} min` : ''}</small></div><button class="btn" data-act="transit" data-i="${i}">Show</button></div>`;
@@ -606,8 +765,10 @@ function bindCard() {
     else if (act === 'retry') ensureTable();
     else if (act === 'survey') { openSurveyFor(sel).catch((err) => setStatus('The survey image could not be opened: ' + err.message, true)); return; }
     else if (act === 'transit') { const t = nextTransits(sel)[+e.target.closest('[data-i]').dataset.i]; if (t) showTransit(sel, t); }
+    else if (act === 'path') { const on = S.path && selKey(S.path.sel) === selKey(sel); setPath(on ? null : sel, on ? null : (sel.kind === 'sat' ? 'sat10' : 'night')); }
     cardKey = transitKey = ''; drawInfo();
   });
+  $('info').addEventListener('change', (e) => { const el = e.target.closest('[data-path-span]'); if (el && S.path) { setPath(S.path.sel, el.value); drawInfo(); } });
 }
 
 // ---------------------------------------------------------------- the target: search box, links from the planner
@@ -640,6 +801,7 @@ function clearTarget() { S.target = null; S.transit = null; S.nightPlay = false;
 function suggestions(text) {
   const k = norm(text), out = []; if (!k) return out;
   for (const [id, name, what] of BODIES) if (norm(name).startsWith(k)) out.push({ label: name, sub: what, sel: { kind: 'body', id, name } });
+  for (const o of AST.ASTEROIDS) if (norm(o.name).startsWith(k)) out.push({ label: o.name, sub: 'asteroid', sel: { kind: 'ast', id: o.id, name: o.name } });
   if (data.stars?.labelled) { let n = 0; for (const st of data.stars.labelled) if (st.proper && norm(st.proper).startsWith(k)) { out.push({ label: st.proper, sub: 'star' + (st.des ? ' · ' + st.des : ''), sel: { kind: 'star', i: st.i, name: st.proper } }); if (++n >= 4) break; } }
   if (data.cat) for (const c of data.cat.suggest(text, 9)) out.push({ label: c.label, sub: c.type === 'planet' ? `planet of ${c.host}` : c.type === 'alias' ? `host star ${c.host}` : 'host star', host: c.host, planet: c.planet });
   // TESS candidates: from hosts.json (the name index has the confirmed planets only)
@@ -661,6 +823,8 @@ async function chooseSuggestion(item, opts) {
 async function resolveTarget(name, opts) {
   const k = norm(name), b = BODIES.find((x) => norm(x[1]) === k);
   if (b) return setTarget({ kind: 'body', id: b[0], name: b[1] }, opts);
+  const ast = AST.ASTEROIDS.find((o) => norm(o.name) === k || norm(o.number + o.name) === k);
+  if (ast) return setTarget({ kind: 'ast', id: ast.id, name: ast.name }, opts);
   // a TESS candidate (TOI-1234.01) or a candidate star (TOI-1234): hosts.json knows them
   const toi = VIS.parseToi(name);
   if (toi) {
@@ -755,12 +919,13 @@ function pick(x, y, tol = 16, hostsOnly = false) {
     let w = R.unproject(x, y); if (hidden(w)) return null;
     if (S.layers.atmosphere) { const h = altAzOf(w); w = dirOf(h.alt - A.refractionFromApparent(h.alt), h.az); }
     const v = toWorld(F.worldToJ2000, w), cosTol = Math.cos(tol * R.pixelAngle), pos = data.hosts.pos; let bi = -1, bc = cosTol;
-    for (let i = 0; i < data.hosts.n; i++) { const c = pos[i * 3] * v[0] + pos[i * 3 + 1] * v[1] + pos[i * 3 + 2] * v[2]; if (c > bc && hostMagOf(i) <= data.hostLimit && hostGroup(i)) { bc = c; bi = i; } }
+    for (let i = 0; i < data.hosts.n; i++) { const c = pos[i * 3] * v[0] + pos[i * 3 + 1] * v[1] + pos[i * 3 + 2] * v[2]; if (c > bc && hostDrawnNow(i)) { bc = c; bi = i; } }
     return bi < 0 ? null : { kind: 'host', i: bi };
   }
   // the marked target can always be picked again, whatever layers are on
   if (targetReady(S.target)) { const ti = infoOf(S.target); if (ti && ti.dir) consider(S.target.kind, S.target, R.project(ti.dir), 16); if (best) { const { d, ...t } = best; return t; } }
   if (S.layers.planets) for (const b of [F.sun, F.moon, ...F.planets]) { if (hidden(b.dir)) continue; if ((b.id === 'uranus' || b.id === 'neptune') && b.mag > F.magLimit) continue; consider('body', { id: b.id }, R.project(b.dir), b.id === 'sun' ? F.sun.disc + 6 : b.id === 'moon' ? F.moon.disc + 6 : 8); }
+  if (S.layers.planets && F.asteroids) for (const a of F.asteroids) if (a.mag <= F.magLimit + 0.5 && !hidden(a.dir)) consider('ast', { id: a.id }, R.project(a.dir), 4);
   if (S.layers.satellites && F.sats) for (const s of F.sats) if (!hidden(s.dir)) consider('sat', { name: s.name }, R.project(s.dir), 3);
   if (best) return best;
   // stars and hosts: work in J2000, undoing refraction for the direction under the pointer
@@ -769,7 +934,7 @@ function pick(x, y, tol = 16, hostsOnly = false) {
   const v = toWorld(F.worldToJ2000, w), cosTol = Math.cos(tol * R.pixelAngle * 2 / (1 + (R.project(w)?.[2] ?? 1)));
   const scan = (pos, n, ok, weight) => { let bi = -1, bs = Infinity; for (let i = 0; i < n; i++) { const c = pos[i * 3] * v[0] + pos[i * 3 + 1] * v[1] + pos[i * 3 + 2] * v[2]; if (c < cosTol || !ok(i)) continue; const s = Math.acos(Math.min(1, c)) / Math.acos(cosTol) + weight(i); if (s < bs) { bs = s; bi = i; } } return bi < 0 ? null : { i: bi, s: bs }; };
   const st = data.stars && scan(data.stars.pos, data.stars.n, (i) => data.stars.mag[i] <= F.magLimit, (i) => 0.12 * data.stars.mag[i]);
-  const ho = S.layers.hosts && data.hosts && scan(data.hosts.pos, data.hosts.n, (i) => hostMagOf(i) <= data.hostLimit && !!hostGroup(i), () => 0.3);
+  const ho = S.layers.hosts && data.hosts && scan(data.hosts.pos, data.hosts.n, hostDrawnNow, () => 0.3);
   if (ho && (!st || ho.s < 0.75)) return { kind: 'host', i: ho.i };
   return st ? { kind: 'star', i: st.i } : null;
 }
@@ -798,13 +963,14 @@ function setTime(ms, keepLive) { S.time = ms; if (!keepLive) S.live = false; }
 function syncLayers() {
   for (const b of document.querySelectorAll('.layer')) { const on = !!S.layers[b.dataset.layer]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }
   store.set('esl.sky.layers', S.layers);
-  if ($('discBtn').hidden === S.layers.hosts) { $('discBtn').hidden = !S.layers.hosts; if (!S.layers.hosts) togglePanel('discPanel', false); requestAnimationFrame(resize); }
+  filterKey = '';
   if (S.layers.hosts) { loadHosts().catch(() => {}); if (layersAsked) ensureTable(); }
   if (S.layers.satellites) loadSats();
   if (S.layers.terrain) ensureTerrain(layersAsked); else dropTerrain();
 }
 let layersAsked = false;      // false while the stored layers are applied at start, true for the user's own switches
 function buildUI() {
+  buildFilterPanel();
   const bar = $('layers');
   for (const [id, label, title, icon] of LAYERS) {
     const b = document.createElement('button'); b.className = 'layer'; b.dataset.layer = id; b.title = title; b.innerHTML = ICON(icon) + `<span>${label}</span>`;
@@ -812,7 +978,7 @@ function buildUI() {
     bar.append(b);
   }
   syncLayers(); layersAsked = true;
-  bindCard(); bindSearch(); bindNight(); bindTonight(); bindDisc(); bindLegend(); bindVisible();
+  bindCard(); bindSearch(); bindNight(); bindTonight(); bindFilter(); bindVisible();
   $('terrainMore').onclick = () => { const b = $('terrainSources'); b.hidden = !b.hidden; $('terrainMore').setAttribute('aria-expanded', String(!b.hidden)); };
   $('back').innerHTML = ICON('<path d="M15 5l-7 7 7 7"/>'); $('fwd').innerHTML = ICON('<path d="M9 5l7 7-7 7"/>');
   $('back').onclick = () => setTime(S.time - S.step); $('fwd').onclick = () => setTime(S.time + S.step);
@@ -882,8 +1048,9 @@ function updateCalib() {
     b.onclick = () => { const cur = calibTargets().find((x) => x.name === o.name); if (cur && ar.calibrate(cur.az)) setStatus(`Compass set on ${o.name}: offset ${(ar.state.userOffset * DEG).toFixed(1)}°.`, true); }; box.append(b); }
 }
 function togglePanel(id, on) {
-  for (const p of ['locPanel', 'timePanel', 'tonightPanel', 'discPanel', 'visPanel']) { const el = $(p); el.hidden = p === id ? (on === undefined ? !el.hidden : !on) : true; }
-  $('discBtn').setAttribute('aria-expanded', String(!$('discPanel').hidden)); $('visBtn').setAttribute('aria-expanded', String(!$('visPanel').hidden)); $('visBtn').classList.toggle('on', !$('visPanel').hidden);
+  for (const p of ['locPanel', 'timePanel', 'tonightPanel', 'filterPanel']) { const el = $(p); if (el) el.hidden = p === id ? (on === undefined ? !el.hidden : !on) : true; }
+  $('filterBtn')?.setAttribute('aria-expanded', String(!$('filterPanel').hidden)); $('tonightBtn').setAttribute('aria-expanded', String(!$('tonightPanel').hidden));
+  if (!$('filterPanel').hidden) { filterKey = ''; drawFilter(); }
 }
 function setLocation(lat, lon) { S.lat = lat; S.lon = lon; S.elev = 0; S.hasLocation = true; store.set('esl.sky.location', { lat, lon }); showLocation(); if (S.layers.terrain) { dropTerrain(); ensureTerrain(true); } }
 function setEye(m) { S.eye = clamp(Number.isFinite(m) ? m : 2, 0, 500); store.set('esl.sky.eye', S.eye); if (S.layers.terrain) { dropTerrain(); ensureTerrain(true); } }
@@ -960,13 +1127,14 @@ function pickDir(w, tol = 1.6 * RAD) {
   if (targetReady(S.target)) { const ti = infoOf(S.target); if (ti && ti.dir) cands.push({ dir: ti.dir, bias: 0.4 * tol, sel: S.target }); }
   if (S.layers.planets) for (const b of [F.sun, F.moon, ...F.planets]) { if (hidden(b.dir) || ((b.id === 'uranus' || b.id === 'neptune') && b.mag > F.magLimit)) continue; cands.push({ dir: b.dir, bias: b.radius > 0 ? b.radius : 0.25 * tol, sel: { kind: 'body', id: b.id } }); }
   if (S.layers.satellites && F.sats) for (const s of F.sats) if (!hidden(s.dir)) cands.push({ dir: s.dir, bias: 0, sel: { kind: 'sat', name: s.name } });
+  if (S.layers.planets && F.asteroids) for (const a of F.asteroids) if (a.mag <= F.magLimit + 0.5 && !hidden(a.dir)) cands.push({ dir: a.dir, bias: 0, sel: { kind: 'ast', id: a.id } });
   const c = X.pickCandidates(w, cands, tol); if (c) return found(c.sel);
   if (hidden(w)) return null;
   // stars and hosts: in J2000, undoing refraction for the direction pointed at
   let u = w; if (S.layers.atmosphere) { const h = altAzOf(w); u = dirOf(h.alt - A.refractionFromApparent(h.alt), h.az); }
   const v = toWorld(F.worldToJ2000, u);
   const st = data.stars && X.scanCatalog(v, data.stars.pos, data.stars.n, tol, (i) => data.stars.mag[i] <= F.magLimit, (i) => 0.12 * data.stars.mag[i]);
-  const ho = S.layers.hosts && data.hosts && X.scanCatalog(v, data.hosts.pos, data.hosts.n, tol, (i) => hostMagOf(i) <= data.hostLimit && !!hostGroup(i), () => 0.3);
+  const ho = S.layers.hosts && data.hosts && X.scanCatalog(v, data.hosts.pos, data.hosts.n, tol, hostDrawnNow, () => 0.3);
   if (ho && (!st || ho.s < 0.75)) return found({ kind: 'host', i: ho.i });
   return st ? found({ kind: 'star', i: st.i }) : null;
 }
@@ -1071,6 +1239,7 @@ function act(id) {
   else if (id === 'nextTransit') { const t = nextTransits(sel)[0]; if (t) showTransit(sel, t); }
   else if (id.startsWith('disc:')) { const g = id.slice(5); setDiscoveryFilter(S.disc.includes(g) ? S.disc.replace(g, '') : S.disc + g); }
   else if (id.startsWith('vis:')) showHost(+id.slice(4));
+  else if (id === 'openFilter') togglePanel('filterPanel', true);
   else if (id === 'simbad') { const s = infoOf(sel); if (s && s.host) window.open(DM.simbadUrl(s.host), '_blank', 'noopener'); }
   cardKey = infoKey = tonightKey = '';
 }
@@ -1118,7 +1287,8 @@ function xrCard() {
   if (isTarget) rows.push([{ id: 'night', label: night ? 'Pause' : 'Play the night', on: night }, { id: 'unmark', label: 'Unmark' }]);
   else if (sel.kind !== 'sat' && s.dir) rows.push([{ id: 'mark', label: 'Mark and follow' }, ...(nx.length ? [{ id: 'nextTransit', label: 'Show next transit' }] : [])]);
   rows.push([...(s.host ? [{ id: 'simbad', label: 'SIMBAD (new tab)' }] : []), { id: 'close', label: 'Close' }]);
-  return { key: selKey(sel), type: s.type, title: s.title, sub, kv, notes, rows };
+  // dir: for "Turn to face it"; radec (degrees, fixed objects only): for the survey image (xr.js)
+  return { key: selKey(sel), type: s.type, title: s.title, sub, kv, notes, rows, dir: s.dir || null, radec: (s.frame === 'J2000' || s.frame === 'ICRS') && Number.isFinite(s.ra) ? [s.ra * DEG, s.dec * DEG] : null };
 }
 const LAYER_SHORT = { constellations: 'Lines', labels: 'Names', azgrid: 'Alt-az grid', eqgrid: 'Equatorial', ground: 'Ground', terrain: 'Terrain', satellites: 'Satellites', hosts: 'Exoplanets', planets: 'Solar system', altlimit: '30° limit', atmosphere: 'Atmosphere' };
 /** The menu of the immersive view. x: the state of the session (xr.js): grip mode, alignment, whether the menu is folded. */
@@ -1152,94 +1322,119 @@ function xrMenu(x) {
 /** Set the shown groups: 'tr', ['transit', 'rv'], ... (see discovery.js parseFilter). Returns discoveryCounts(). */
 function setDiscoveryFilter(v) {
   const f = DM.parseFilter(v); if (f === S.disc) return discoveryCounts();
-  S.disc = f; store.set('esl.sky.disc', f); data.hostLimit = null; cardKey = tonightKey = discKey = '';
+  S.disc = f; store.set('esl.sky.disc', f); data.hostLimit = null; cardKey = tonightKey = filterKey = '';
   if (S.hover && data.hosts && !hostGroup(S.hover.i)) S.hover = null;
   if (tonight.status !== 'idle') loadTonight();
   if (F) compute();
-  drawDisc(); return discoveryCounts();
+  drawFilter(); return discoveryCounts();
 }
-/** Per group: how many hosts have it, how many are coloured by it, how many rings are drawn now; and the filter. */
+/** Per group: how many hosts have it, how many are coloured by it, how many markers are drawn now; and the filters. */
 function discoveryCounts() {
   const list = data.hosts ? data.hosts.list : null, drawn = S.layers.hosts && data.hostDrawn && data.hostDisc === S.disc ? data.hostDrawn : null, up = list ? countsUp() : null;
   return {
     shown: DM.GROUPS.filter((g) => S.disc.includes(g.id)).map((g) => g.label), exoplanet_layer_on: !!S.layers.hosts, hosts_loaded: !!list,
-    groups: DM.GROUPS.map((g) => ({ method: g.label, key: g.key, letter: g.short, color: g.color, shown: S.disc.includes(g.id),
+    groups: DM.GROUPS.map((g) => ({ method: g.label, key: g.key, letter: g.short, shape: g.shape, color: g.color, shown: S.disc.includes(g.id),
       hosts_with_method: list ? list.filter((h) => (h[5] || 'o').includes(g.id)).length : null,
       hosts_coloured: list ? list.filter((h) => (h[5] || 'o')[0] === g.id).length : null,
       above_horizon_now: up ? up[g.id] || 0 : null,
       rings_drawn_now: drawn ? drawn[g.id] || 0 : null })),
     above_horizon_now: up ? up.all : null,
     rings_drawn_now: drawn ? Object.values(drawn).reduce((a, b) => a + b, 0) : null,
+    host_filter: HF.describeFilter(S.hf),
     how_mixed_systems_are_coloured: DM.MIXED_NOTE,
   };
 }
-let discKey = '';
-function drawDisc() {
-  const c = discoveryCounts(), key = S.disc + '|' + c.hosts_loaded; if (key === discKey) return; discKey = key;
-  $('discList').innerHTML = DM.GROUPS.map((g, k) => { const on = S.disc.includes(g.id), n = c.groups[k].hosts_with_method;
-    return `<button class="dmt" data-g="${g.id}" aria-pressed="${on}" style="--c:${g.color}"><i class="sw" aria-hidden="true">${g.short}</i><span class="l">${g.label}<small>${escHtml(g.note)}</small></span><span class="n" title="Stars with at least one planet found this way">${n == null ? '' : n.toLocaleString('en-US')}</span><span class="ck" aria-hidden="true">${on ? '✓' : ''}</span></button>`; }).join('');
-  $('discNote').textContent = DM.MIXED_NOTE + (c.hosts_loaded ? ` Methods from the NASA Exoplanet Archive (discoverymethod), snapshot ${data.hosts.meta.catalogDate || ''}; TESS candidates from its TOI table (TFOPWG PC and APC; known planets and false positives left out)${data.hosts.meta.toiDate ? ', snapshot ' + data.hosts.meta.toiDate : ''}. The legend, the Visible list and Tonight's transits follow this filter, planet by planet.` : '');
-  $('discBtn').classList.toggle('on', S.disc !== DM.GROUP_IDS);
-  $('discBtn').title = S.disc === DM.GROUP_IDS ? 'Colours of the stars with planets, by how their planets were found; show or hide each kind' : 'Showing ' + (c.shown.join(', ') || 'no kind') + ' only';
-}
-function bindDisc() {
-  $('discBtn').querySelector('.dots').innerHTML = DM.GROUPS.map((g) => `<i style="background:${g.color}"></i>`).join('');
-  $('discBtn').onclick = () => { togglePanel('discPanel'); if (!$('discPanel').hidden) loadHosts().then(() => { discKey = ''; drawDisc(); }).catch(() => {}); discKey = ''; drawDisc(); };
-  $('discPanel').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-g]'), all = e.target.closest('[data-disc]');
-    if (b) act('disc:' + b.dataset.g); else if (all) setDiscoveryFilter(all.dataset.disc === 'all' ? DM.GROUP_IDS : '');
-    drawTonight();
-  });
-}
-
-// The legend: always on the sky (top right, folded to the swatches on a phone), the colour, letter and name of each
-// discovery group with how many of its stars are above the horizon now; a tap shows or hides the group (the same
-// state as the Discovery panel and the filter of the Tonight and Visible lists).
-let legendKey = '', upCounts = null, upKey = '';
 /** Stars with planets above the horizon now (the terrain when it is on), per group: { t: n, ... }, or null before hosts.json. */
+let upCounts = null, upKey = '';
 function countsUp() {
   if (!data.hosts || !F) return null;
   const key = [Math.floor(S.time / 30000), S.lat, S.lon, !!data.horizon && S.layers.terrain].join('|');
   if (key !== upKey) { upKey = key; const r = VIS.visibleHosts(data.hosts.list, data.hosts.pos, { lat: S.lat * RAD, lon: S.lon * RAD, now: S.time, when: 'now', filter: '', j2000ToWorld: F.j2000ToWorld, apparent: F.apparent, horizon: horizonRad }); upCounts = { ...r.counts, all: r.up }; }
   return upCounts;
 }
-const legendOpen = () => (S.legendOpen == null ? !narrow.matches : S.legendOpen);
-function drawLegend() {
-  const el = $('legend'); el.hidden = S.ar;
-  if (S.ar) return;
-  const c = S.layers.hosts ? countsUp() : null, open = legendOpen(), key = [S.disc, open, S.layers.hosts, c && JSON.stringify(c), !!data.hosts].join('|');
-  if (key === legendKey) return; legendKey = key;
-  el.classList.toggle('folded', !open); el.classList.toggle('off', !S.layers.hosts);
-  $('legendHead').setAttribute('aria-expanded', String(open));
-  $('legendSum').textContent = !S.layers.hosts ? 'layer off' : c ? `${c.all.toLocaleString('en-US')} up` : 'loading…';
-  $('legendSum').title = !S.layers.hosts ? 'The Exoplanets layer is off: tap a kind to show the stars' : 'Stars with planets (or candidates) above the horizon now; the numbers count each star under every kind it has';
-  $('legendItems').innerHTML = DM.GROUPS.map((g) => {
-    const on = S.disc.includes(g.id), n = c ? c[g.id] || 0 : null;
-    return `<button class="lg" data-g="${g.id}" aria-pressed="${on}" style="--c:${g.color}" title="${escHtml(`${g.label}: ${g.note}. ${n == null ? '' : n.toLocaleString('en-US') + ' of these stars above the horizon now. '}Tap to ${on ? 'hide' : 'show'} them.`)}"><i class="sw${g.candidate ? ' dash' : ''}" aria-hidden="true">${g.short}</i><span class="l">${g.label}</span><span class="n">${n == null ? '' : n.toLocaleString('en-US')}</span></button>`;
-  }).join('');
+
+// ---------------------------------------------------------------- the Filter panel
+// One panel for what is on the sky: the stars with planets by discovery method (colour, shape, letter, how many are
+// up), by their own values (hostFilter.js: magnitude, temperature, type, distance, planets, transits), and the
+// layers (constellations, names, grids, satellites, ...), which were the bottom bar's buttons. Its markup is in
+// observe/index.html; the list of stars up now or tonight (once the Visible panel) is in the Tonight panel.
+let filterKey = '';
+const fmt = (n) => (n == null ? '' : n.toLocaleString('en-US'));
+/** The spectral-class chips of the Filter panel (their names and temperature ranges are hostFilter.js's). */
+function buildFilterPanel() {
+  $('fSpec').innerHTML = HF.SPEC_CLASSES.map((c) => `<button class="sc" data-spec="${c}" aria-pressed="false" title="${c === 'L' ? 'L, T, Y' : c}: ${escHtml(HF.SPEC_NOTE[c])}">${c === 'L' ? 'LTY' : c}</button>`).join('');
 }
-function bindLegend() {
-  $('legendHead').onclick = () => { S.legendOpen = !legendOpen(); store.set('esl.sky.legend', S.legendOpen); legendKey = ''; drawLegend(); };
-  $('legend').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-g]'), v = e.target.closest('[data-act=vislist]');
-    if (v) { togglePanel('visPanel', true); visKey = ''; drawVisible(); return; }
-    if (!b) return;
-    if (!S.layers.hosts) { toggleLayer('hosts'); return; }       // with the layer off, a tap first shows the stars
-    act('disc:' + b.dataset.g); legendKey = ''; drawLegend(); drawTonight();
+function drawFilter() {
+  const btn = $('filterBtn'); if (!btn) return;
+  const parts = HF.activeParts(S.hf), discOff = DM.GROUPS.length - S.disc.length, nOn = (parts.any ? HF.describeFilter(S.hf).filter((x) => x !== 'unknown values out').length : 0) + (discOff ? 1 : 0);
+  btn.classList.toggle('on', nOn > 0); const b = btn.querySelector('.badge'); b.hidden = !nOn; b.textContent = nOn;
+  btn.title = nOn ? 'Filter: ' + [discOff ? 'found by ' + (DM.GROUPS.filter((g) => S.disc.includes(g.id)).map((g) => g.label).join(', ') || 'none') : '', ...HF.describeFilter(S.hf)].filter(Boolean).join('; ') : 'What is drawn: the stars with planets by discovery method and by their own values, and the layers';
+  if ($('filterPanel').hidden) return;
+  $('magLabel').textContent = F ? `to V ${F.magLimit.toFixed(1)}` : '';
+  const c = discoveryCounts(), key = [S.disc, HF.encodeFilter(S.hf), c.hosts_loaded, data.hattrV, data.hattrStatus, S.layers.hosts, JSON.stringify(c.groups.map((g) => g.above_horizon_now)), visTr.key].join('|');
+  if (key === filterKey) return; filterKey = key;
+  $('discList').innerHTML = DM.GROUPS.map((g, k) => { const on = S.disc.includes(g.id), n = c.groups[k].hosts_with_method, up = c.groups[k].above_horizon_now;
+    return `<button class="dmt" data-g="${g.id}" aria-pressed="${on}" style="--c:${g.color}" title="${escHtml(`${g.label}: ${g.note}. ${n == null ? '' : `${fmt(n)} stars, ${fmt(up)} above the horizon now. `}Tap to ${on ? 'hide' : 'show'} them.`)}"><span class="sw2" aria-hidden="true">${DM.shapeSvg(g.id, { size: 20, color: g.color })}<b>${g.short}</b></span><span class="l">${g.label}</span><span class="n">${up == null ? '' : fmt(up)}</span></button>`; }).join('');
+  $('fHosts').textContent = S.layers.hosts ? 'shown · hide' : 'hidden · show'; $('fHosts').title = 'The Exoplanets layer: the stars with planets on the sky';
+  $('fDiscNote').textContent = DM.MIXED_NOTE + (c.hosts_loaded ? ` Methods from the NASA Exoplanet Archive (discoverymethod), snapshot ${data.hosts.meta.catalogDate || ''}; TESS candidates from its TOI table (TFOPWG PC and APC)${data.hosts.meta.toiDate ? ', snapshot ' + data.hosts.meta.toiDate : ''}. Each kind has its own shape on the sky. Tonight's transits and the list of stars up follow these filters.` : '');
+  const f = S.hf, set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v ?? ''; };
+  set('fMagMin', f.magMin); set('fMagMax', f.magMax); set('fTeffMin', f.teffMin); set('fTeffMax', f.teffMax); set('fDistMin', f.distMin); set('fDistMax', f.distMax);
+  $('fPl').value = String(f.minPlanets > 5 ? 5 : f.minPlanets); $('fUnk').value = f.unknown ? '1' : '0';
+  for (const b2 of $('fSpec').querySelectorAll('[data-spec]')) b2.setAttribute('aria-pressed', String(f.spec.includes(b2.dataset.spec)));
+  for (const b2 of $('filterPanel').querySelectorAll('.ftog [data-f]')) b2.setAttribute('aria-pressed', String(!!f[b2.dataset.f]));
+  // how many pass, and what is unknown
+  const list = data.hosts && data.hosts.list, notes = [];
+  if (list) {
+    const fc = HF.filterCounts(list, f, data.hattr, tonightHosts(), (i) => !!hostGroup(i));
+    $('fCount').textContent = parts.any ? `${fmt(fc.pass)} of ${fmt(fc.all)} stars` : `${fmt(fc.all)} stars`;
+    $('fSum').textContent = HF.describeFilter(f).join(' · ');
+    if (HF.needsTable(f) && !data.hattr) notes.push(data.hattrStatus && data.hattrStatus.startsWith('error') ? `The star values could not be loaded (${data.hattrStatus.slice(7)}).` : 'Loading the stars’ temperatures, types and distances (planet and TOI tables, about 8 MB, once: this host list is an older build without them)…');
+    if (data.hattr) { const A2 = data.hattr, n = A2.n; notes.push(`Known for the ${fmt(n)} stars: temperature ${fmt(A2.known.teff)}, type ${fmt(A2.known.spec)}, distance ${fmt(A2.known.dist)}${A2.toi ? '' : ' (the TOI table is loaded when a temperature, type or distance is set)'}; NASA Exoplanet Archive composite values, TOI table for stars with candidates only${A2.baked && data.hosts.meta.catalogDate ? ` (snapshot ${data.hosts.meta.catalogDate})` : ''}.`); }
+    const u = fc.unknownIn, un = [['magnitude', u.mag], ['temperature', u.teff], ['type', u.spec], ['distance', u.dist]].filter(([, k]) => k > 0);
+    if (f.unknown && un.length) notes.push(`Kept although unknown: ${un.map(([w, k]) => `${fmt(k)} without a ${w}`).join(', ')}.`);
+    if (!byMagNote()) notes.push(`Without a magnitude range, fainter stars appear as you zoom in (now to magnitude ${data.hostLimit != null ? data.hostLimit.toFixed(1) : '…'}).`);
+    else notes.push('With a magnitude range, every star in it is drawn at any zoom.');
+    if (f.transitTonight) notes.push(data.cat && data.cat.state.table === 'ready' ? 'Transit tonight: the linear ephemerides of the archive (TOI table for candidates), mid-transit in tonight’s dark hours.' : 'Transit tonight: candidates only until the planet table is loaded…');
+  } else { $('fCount').textContent = 'loading…'; }
+  $('fNote').textContent = notes.join(' ');
+}
+const byMagNote = () => HF.activeParts(S.hf).mag;
+function bindFilter() {
+  $('filterBtn').onclick = () => { togglePanel('filterPanel'); if (!$('filterPanel').hidden) { loadHosts().then(() => { filterKey = ''; drawFilter(); }).catch(() => {}); } filterKey = ''; drawFilter(); };
+  const P = $('filterPanel');
+  P.addEventListener('click', (e) => {
+    const g = e.target.closest('[data-g]'), all = e.target.closest('[data-disc]'), f = e.target.closest('[data-f]')?.dataset.f, sp = e.target.closest('[data-spec]')?.dataset.spec;
+    if (g) { if (!S.layers.hosts) toggleLayer('hosts'); act('disc:' + g.dataset.g); }
+    else if (all) { if (!S.layers.hosts) toggleLayer('hosts'); setDiscoveryFilter(all.dataset.disc === 'all' ? DM.GROUP_IDS : ''); }
+    else if (sp) setHostFilter({ spec: S.hf.spec.includes(sp) ? S.hf.spec.replace(sp, '') : S.hf.spec + sp });
+    else if (f === 'reset') { setHostFilter(null); setDiscoveryFilter(DM.GROUP_IDS); }
+    else if (f === 'hosts') toggleLayer('hosts');
+    else if (f === 'transiting' || f === 'transitTonight') setHostFilter({ [f]: !S.hf[f] });
+    else return;
+    filterKey = visKey = ''; drawFilter(); drawTonight();
   });
+  const numIn = (id, k) => { $(id).addEventListener('change', (e) => { setHostFilter({ [k]: e.target.value }); filterKey = visKey = ''; drawFilter(); }); };
+  numIn('fMagMin', 'magMin'); numIn('fMagMax', 'magMax'); numIn('fTeffMin', 'teffMin'); numIn('fTeffMax', 'teffMax'); numIn('fDistMin', 'distMin'); numIn('fDistMax', 'distMax');
+  $('fPl').onchange = (e) => { setHostFilter({ minPlanets: +e.target.value }); filterKey = visKey = ''; drawFilter(); };
+  $('fUnk').onchange = (e) => { setHostFilter({ unknown: e.target.value === '1' }); filterKey = visKey = ''; drawFilter(); };
+  P.addEventListener('keydown', (e) => e.stopPropagation());
 }
 
-// The Visible panel: the stars with planets above the limit now or in tonight's dark hours (src/sky/visible.js),
-// filtered by discovery group (the legend's state), magnitude and number of planets, sorted; a tap centres and opens the card.
+// The list of stars with planets up now or tonight, in the Tonight panel (src/sky/visible.js): under the Filter
+// panel's discovery and host filters, sorted; a tap centres and opens the card.
 let visKey = '', visCache = { key: '', res: null }, visTr = { key: '', map: null };
 /** Tonight's dark hours (the Sun below -12 deg, as the Tonight list): { t0, t1 } or null in a polar day. */
-function darkHours() { const tw = A.nightOf(S.time, S.lat * RAD, S.lon * RAD, S.elev).nautical; return tw.evening != null && tw.morning != null ? { t0: tw.evening, t1: tw.morning } : null; }
+let darkMemo = { key: '', v: null };
+function darkHours() {
+  const key = [Math.floor(S.time / 60000), S.lat, S.lon, S.elev].join('|'); if (darkMemo.key === key) return darkMemo.v;
+  const tw = A.nightOf(S.time, S.lat * RAD, S.lon * RAD, S.elev).nautical; darkMemo = { key, v: tw.evening != null && tw.morning != null ? { t0: tw.evening, t1: tw.morning } : null }; return darkMemo.v;
+}
 /** The soonest transit of each host tonight (confirmed planets once the planet table is loaded, and the candidates). */
 function visTransits(dark) {
-  const ready = data.cat && data.cat.state.table === 'ready', key = [dark && dark.t0, ready].join('|');
+  const ready = data.cat && data.cat.state.table === 'ready', key = [dark && dark.t0, ready, S.disc].join('|');
   if (visTr.key === key) return visTr.map;
   const map = new Map(); visTr = { key, map };
-  if (!dark) return map;
+  if (!dark || !data.hosts) return map;
   data.hosts.list.forEach((h, i) => {
     const pl = VIS.candidatesOf(h).filter((p) => DM.planetShown(p, S.disc));
     if (ready && h[4]) for (const r of data.cat.rowsOfHost(h[0]) || []) if (r.v.transit && DM.planetShown(r.v, S.disc)) pl.push({ name: r.name, per: r.v.per, tmid: r.v.tmid, t14: r.v.t14, perErr: sig(r.e.per), tmidErr: sig(r.e.tmid), hasErr: !!(r.e.per && r.e.tmid), depth: r.v.depth });
@@ -1247,38 +1442,37 @@ function visTransits(dark) {
   });
   return map;
 }
-/** The list as the panel shows it (also the immersive menu's and the assistant's). */
+/** The list as the Tonight panel shows it (also the immersive menu's and the assistant's). */
 function visibleNow() {
   if (!data.hosts || !F) return { rows: [], total: 0, counts: {} };
   const v = S.vis, dark = darkHours(), terrain = !!data.horizon && S.layers.terrain;
-  const key = [Math.floor(S.time / 60000), S.lat, S.lon, terrain, S.disc, v.when, v.sort, v.magMax, v.minPlanets, v.minAlt, dark && dark.t0, data.cat && data.cat.state.table].join('|');
+  if ((v.sort === 'transit' || S.hf.transitTonight) && S.layers.hosts && (!data.cat || data.cat.state.table === 'idle')) ensureTable();
+  const tr = visTransits(dark), test = hostFilterTest();
+  const key = [Math.floor(S.time / 60000), S.lat, S.lon, terrain, S.disc, v.when, v.sort, v.minAlt, dark && dark.t0, data.cat && data.cat.state.table, hfTest.key].join('|');
   if (visCache.key === key) return visCache.res;
-  if (v.sort === 'transit' && S.layers.hosts && (!data.cat || data.cat.state.table === 'idle')) ensureTable();
-  const tr = visTransits(dark);
-  const res = VIS.visibleHosts(data.hosts.list, data.hosts.pos, { lat: S.lat * RAD, lon: S.lon * RAD, now: S.time, dark, minAlt: (v.minAlt || 0) * RAD, filter: S.disc, magMax: v.magMax, minPlanets: v.minPlanets, when: v.when, sort: v.sort,
+  const res = VIS.visibleHosts(data.hosts.list, data.hosts.pos, { lat: S.lat * RAD, lon: S.lon * RAD, now: S.time, dark, minAlt: (v.minAlt || 0) * RAD, filter: S.disc, accept: test, when: v.when, sort: v.sort,
     transits: (i) => tr.get(i) || null, limit: 150, apparent: F.apparent, horizon: horizonRad,
     j2000ToWorld: F.j2000ToWorld });
   visCache = { key, res }; return res;
 }
-/** Two lines about a row of the Visible list: where it is (now, highest tonight), then magnitude and transit tonight. */
+/** Two lines about a row of the list: where it is (now, highest tonight), then magnitude and transit tonight. */
 const visWhere = (r) => [r.up ? `${(r.alt * DEG).toFixed(0)}° ${compass(r.az * DEG)}` : 'down now', Number.isFinite(r.maxAlt) ? `max ${(r.maxAlt * DEG).toFixed(0)}° ${hhmm(r.tMax)}` : ''].filter(Boolean).join(' · ');
 const visWhat = (r) => [r.mag != null ? `${r.band} ${r.mag.toFixed(1)}` : '', r.transit ? `transit ${hhmm(r.transit.mid)}${r.transit.candidate ? ' (TOI)' : ''}` : ''].filter(Boolean).join(' · ');
 const visSub = (r) => [visWhere(r), visWhat(r)].filter(Boolean).join(' · ');
 function drawVisible() {
-  if ($('visPanel').hidden) return;
+  if ($('tonightPanel').hidden) return;
   if (!data.hosts) { $('visList').innerHTML = '<p class="note">Loading the stars with planets…</p>'; loadHosts().catch(() => {}); return; }
   const res = visibleNow(), key = [visCache.key, selKey(S.selection)].join('|'); if (key === visKey) return; visKey = key;
   const pl = (r) => [r.planets ? `${r.planets} planet${r.planets === 1 ? '' : 's'}` : '', r.candidates ? `${r.candidates} TOI` : ''].filter(Boolean).join(' + ');
   $('visList').innerHTML = res.rows.map((r) => { const G = DM.groupInfo(r.group), on = S.selection && S.selection.kind === 'host' && S.selection.i === r.i;
-    return `<button class="vrow${on ? ' on' : ''}${r.up ? '' : ' down'}" data-act="vis:${r.i}" style="--c:${G.color}"><i class="sw${G.candidate ? ' dash' : ''}" aria-hidden="true">${G.short}</i><span class="vn"><b>${escHtml(r.name)}</b><small>${escHtml(pl(r))}</small></span><span class="vd">${escHtml(visWhere(r))}<br>${escHtml(visWhat(r))}</span></button>`; }).join('')
-    || `<p class="note">No star with planets meets these limits${S.disc === DM.GROUP_IDS ? '' : ' and the discovery filter'}.</p>`;
-  const dark = darkHours();
+    return `<button class="vrow${on ? ' on' : ''}${r.up ? '' : ' down'}" data-act="vis:${r.i}" style="--c:${G.color}"><span class="sw2" aria-hidden="true">${DM.shapeSvg(r.group, { size: 18, color: G.color })}<b>${G.short}</b></span><span class="vn"><b>${escHtml(r.name)}</b><small>${escHtml(pl(r))}</small></span><span class="vd">${escHtml(visWhere(r))}<br>${escHtml(visWhat(r))}</span></button>`; }).join('')
+    || '<p class="note">No star with planets meets these limits and the filters.</p>';
+  const dark = darkHours(), fl = [S.disc === DM.GROUP_IDS ? '' : 'found by ' + (DM.GROUPS.filter((g) => S.disc.includes(g.id)).map((g) => g.short).join(', ') || 'none'), ...HF.describeFilter(S.hf)].filter(Boolean);
+  $('visFilt').innerHTML = fl.length ? `Filter: ${escHtml(fl.join(' · '))} <button class="linklike" data-act="openFilter">change</button>` : 'All stars with planets. <button class="linklike" data-act="openFilter">Filter</button>';
   $('visNote').textContent = `${res.total.toLocaleString('en-US')} star${res.total === 1 ? '' : 's'}${res.total > res.rows.length ? `, the first ${res.rows.length} shown` : ''}. ${dark ? `Dark hours (Sun below −12°) ${hhmm(dark.t0)}–${hhmm(dark.t1)}, local time of this browser.` : 'The Sun does not get 12° below the horizon tonight.'} Altitudes ${S.layers.atmosphere ? 'with refraction' : 'airless'}${data.horizon && S.layers.terrain ? ', above the terrain horizon' : ''}. Magnitudes are V, or T (TESS) for candidates.${S.vis.sort === 'transit' && !(data.cat && data.cat.state.table === 'ready') ? ' Loading the planet table for the transits of confirmed planets…' : ''}`;
-  for (const [id, k] of [['visWhen', 'when'], ['visSort', 'sort'], ['visMinPl', 'minPlanets'], ['visMinAlt', 'minAlt']]) if (document.activeElement !== $(id)) $(id).value = String(S.vis[k]);
-  if (document.activeElement !== $('visMag')) $('visMag').value = S.vis.magMax ?? '';
-  $('visDisc').innerHTML = DM.GROUPS.map((g) => `<button class="lgc" data-g="${g.id}" aria-pressed="${S.disc.includes(g.id)}" style="--c:${g.color}" title="${escHtml(g.label)}"><i class="sw${g.candidate ? ' dash' : ''}" aria-hidden="true">${g.short}</i></button>`).join('');
+  for (const [id, k] of [['visWhen', 'when'], ['visSort', 'sort'], ['visMinAlt', 'minAlt']]) if (document.activeElement !== $(id)) $(id).value = String(S.vis[k]);
 }
-/** Centre a host and open its card (the Visible list, the immersive menu, the assistant). */
+/** Centre a host and open its card (the list, the immersive menu, the assistant). */
 function showHost(i) {
   if (!data.hosts || !data.hosts.list[i]) return;
   if (!S.layers.hosts) toggleLayer('hosts');
@@ -1287,16 +1481,9 @@ function showHost(i) {
   drawInfo(); visKey = '';
 }
 function bindVisible() {
-  $('visBtn').onclick = () => { togglePanel('visPanel'); visKey = ''; drawVisible(); };
   const set = (k, v) => { S.vis[k] = v; store.set('esl.sky.vis', S.vis); visKey = ''; drawVisible(); };
   $('visWhen').onchange = (e) => set('when', e.target.value); $('visSort').onchange = (e) => set('sort', e.target.value);
-  $('visMinPl').onchange = (e) => set('minPlanets', +e.target.value); $('visMinAlt').onchange = (e) => set('minAlt', +e.target.value);
-  $('visMag').oninput = (e) => set('magMax', e.target.value === '' || !Number.isFinite(+e.target.value) ? null : +e.target.value);
-  $('visPanel').addEventListener('click', (e) => {
-    const g = e.target.closest('[data-g]'), a = e.target.closest('[data-act]')?.dataset.act;
-    if (g) { act('disc:' + g.dataset.g); visKey = legendKey = ''; drawVisible(); drawLegend(); return; }
-    if (a && a.startsWith('vis:')) { act(a); if (narrow.matches) togglePanel('visPanel', false); }
-  });
+  $('visMinAlt').onchange = (e) => set('minAlt', +e.target.value);
 }
 
 // The Tonight panel of the flat page: the same list and the same actions as the immersive menu.
@@ -1311,8 +1498,8 @@ function drawTonight() {
   $('magLabel').textContent = F ? `to V ${F.magLimit.toFixed(1)}` : '';
 }
 function bindTonight() {
-  $('tonightBtn').onclick = () => { togglePanel('tonightPanel'); tonightKey = ''; if (!$('tonightPanel').hidden) { tonight.key = tonight.status === 'error' ? '' : tonight.key; loadTonight(); } drawTonight(); };
-  $('tonightPanel').addEventListener('click', (e) => { const a = e.target.closest('[data-act]')?.dataset.act; if (!a) return; act(a); if (a.startsWith('tn:') && matchMedia('(max-width: 1024px)').matches) togglePanel('tonightPanel', false); drawInfo(); drawTonight(); });
+  $('tonightBtn').onclick = () => { togglePanel('tonightPanel'); tonightKey = visKey = ''; if (!$('tonightPanel').hidden) { tonight.key = tonight.status === 'error' ? '' : tonight.key; loadTonight(); } drawTonight(); };
+  $('tonightPanel').addEventListener('click', (e) => { const a = e.target.closest('[data-act]')?.dataset.act; if (!a) return; act(a); if ((a.startsWith('tn:') && matchMedia('(max-width: 1024px)').matches) || (a.startsWith('vis:') && narrow.matches)) togglePanel('tonightPanel', false); drawInfo(); drawTonight(); visKey = ''; drawVisible(); });
   $('magOffset').oninput = (e) => { S.magOffset = +e.target.value; tonightKey = ''; };
 }
 
@@ -1378,7 +1565,7 @@ function frame(t) {
   R.draw(F);
   if (xr.presenting) return;       // nothing of the page is visible from inside the headset
   drawLabels(); drawReadout(); drawNight();
-  if (t - slow > 250) { slow = t; syncNightBar(); drawInfo(); drawTonight(); if (!$('discPanel').hidden) drawDisc(); drawLegend(); drawVisible(); drawSurveyChip(); if (S.ar) updateCalib(); }
+  if (t - slow > 250) { slow = t; syncNightBar(); drawInfo(); drawTonight(); drawFilter(); drawVisible(); drawSurveyChip(); if (S.ar) updateCalib(); }
 }
 buildUI(); bindView(); resize();
 { const b = document.createElement('button'); b.id = 'surveyChip'; b.className = 'chip survey-chip'; b.hidden = true; wrap.appendChild(b); }
@@ -1430,7 +1617,7 @@ if (q.get('planet')) {
 R.renderer.setAnimationLoop(frame);
 
 // for the headless checks and the console
-window.__sky = { S, A, R, data, ar, xr, frame: () => F, compute, pick, select: (sel) => { S.selection = sel; infoKey = cardKey = ''; drawInfo(); }, info: selectionInfo, infoOf, setTime, setLocation, setTarget, clearTarget, resolveTarget, playNight, suggestions, ensureTable, ensureTerrain, xrLabels, horizonRad, X, pickDir, act, xrCard, xrMenu, alignTargets, nextTransits, tonight, loadTonight, cycleTarget, adjustMag, setDiscoveryFilter, discoveryCounts, DM, openSurveyFor, survey: () => surveyMod && surveyMod.currentSurvey() };
+window.__sky = { S, A, R, data, ar, xr, frame: () => F, compute, pick, select: (sel) => { S.selection = sel; infoKey = cardKey = ''; drawInfo(); }, info: selectionInfo, infoOf, setTime, setLocation, setTarget, clearTarget, resolveTarget, playNight, suggestions, ensureTable, ensureTerrain, xrLabels, horizonRad, X, pickDir, act, xrCard, xrMenu, alignTargets, nextTransits, tonight, loadTonight, cycleTarget, adjustMag, setDiscoveryFilter, discoveryCounts, DM, openSurveyFor, setHostFilter, HF, setPath, visibleNow, AST, drawFilter, survey: () => surveyMod && surveyMod.currentSurvey() };
 
 // ---- window.__esl.observe: what the site's assistant drives (the contract is at the top of src/assistant/pages.js)
 {
@@ -1464,20 +1651,50 @@ window.__sky = { S, A, R, data, ar, xr, frame: () => F, compute, pick, select: (
         if (pause ? running : !running) playNight(pause ? undefined : !S.nightPlay);
         return { playing: !!(S.nightPlay && S.playing), night: night() || undefined };
       } },
-    { name: 'observe_discovery_filter', description: 'Show only the stars whose planets were found by some methods (the colours of the Exoplanets layer and its legend, and the Tonight and Visible lists). Methods: transit, rv (radial velocity), imaging, microlensing, other (timing, astrometry, ...), toi (TESS candidates, not confirmed). All six shows everything. Switches the Exoplanets layer on.',
+    { name: 'observe_discovery_filter', description: 'Show only the stars whose planets were found by some methods (the colours and shapes of the Exoplanets layer, the Filter panel, and the lists of the Tonight panel; the host filter by magnitude, temperature, type and distance is in observe_list_visible). Methods: transit, rv (radial velocity), imaging, microlensing, other (timing, astrometry, ...), toi (TESS candidates, not confirmed). All six shows everything. Switches the Exoplanets layer on.',
       parameters: obj({ methods: { type: 'array', description: 'The methods to show.', items: T('A method.', { enum: DM.GROUPS.map((g) => g.key) }) } }, ['methods']),
       async run({ methods }) { if (!S.layers.hosts) toggleLayer('hosts'); await loadHosts(); setDiscoveryFilter(methods); compute(); return discoveryCounts(); } },
     { name: 'observe_discovery_counts', readOnly: true, description: 'How many stars with planets there are per discovery method, which methods are shown, and how many of their rings are drawn at the present zoom.', parameters: obj({}),
       async run() { await loadHosts(); compute(); return discoveryCounts(); } },
-    { name: 'observe_list_visible', readOnly: true, description: 'The stars with planets (and TESS candidates) that can be seen from the site now or in tonight\'s dark hours (Sun below -12 deg), as the Visible panel lists them: under the discovery filter, with altitude now, highest altitude tonight, magnitude, planets and the next transit tonight. Changes the panel\'s settings when given.',
-      parameters: obj({ when: T('now, tonight (dark hours) or either.', { enum: Object.keys(VIS.WHEN) }), sort: T('Sort key.', { enum: Object.keys(VIS.SORTS) }), min_altitude: N('Lowest altitude in degrees (0, 20, 30 or 45).', { minimum: 0, maximum: 80 }), mag_max: N('Faintest magnitude (V, T for candidates); 0 for any.'), min_planets: { type: 'integer', description: 'At least this many planets and candidates.', minimum: 0, maximum: 9 }, limit: { type: 'integer', description: 'How many to return (default 15).', minimum: 1, maximum: 60 } }),
+    { name: 'observe_list_visible', readOnly: true, description: 'The stars with planets (and TESS candidates) that can be seen from the site now or in tonight\'s dark hours (Sun below -12 deg), as the Tonight panel lists them: under the discovery filter and the host filter of the Filter panel, with altitude now, highest altitude tonight, magnitude, planets and the next transit tonight. Arguments change those settings (they stay, and the sky shows the same stars); omit one to keep it. Temperature, type and distance come from the NASA Exoplanet Archive (TOI table for candidate-only stars); stars without the value are kept unless unknown is "exclude".',
+      parameters: obj({ when: T('now, tonight (dark hours) or either.', { enum: Object.keys(VIS.WHEN) }), sort: T('Sort key.', { enum: Object.keys(VIS.SORTS) }), min_altitude: N('Lowest altitude in degrees (0, 20, 30 or 45).', { minimum: 0, maximum: 80 }),
+        mag_min: N('Brightest magnitude (V, T for candidates); omit or null for no limit.'), mag_max: N('Faintest magnitude (V, T for candidates); 0 for any.'), min_planets: { type: 'integer', description: 'At least this many planets and candidates.', minimum: 0, maximum: 9 },
+        teff_min: N('Lowest effective temperature, K (0 for none).'), teff_max: N('Highest effective temperature, K (0 for none).'), spectral_types: { type: 'array', description: 'Spectral classes to keep (O, B, A, F, G, K, M, L for L/T/Y); [] for all.', items: T('A class.', { enum: HF.SPEC_CLASSES }) },
+        dist_max_pc: N('Farthest distance, parsecs (0 for none).'), dist_min_pc: N('Nearest distance, parsecs (0 for none).'), transiting: { type: 'boolean', description: 'Only stars with a transiting planet or a TESS candidate.' }, transit_tonight: { type: 'boolean', description: 'Only stars with a transit in tonight\'s dark hours.' },
+        unknown: T('Stars without a value a limit needs: include or exclude.', { enum: ['include', 'exclude'] }), reset_filter: { type: 'boolean', description: 'Clear the host filter first (not the discovery filter).' }, limit: { type: 'integer', description: 'How many to return (default 15).', minimum: 1, maximum: 60 } }),
       async run(a) {
         await loadHosts(); if (!S.layers.hosts) toggleLayer('hosts');
-        if (a.when) S.vis.when = a.when; if (a.sort) S.vis.sort = a.sort; if (a.min_altitude !== undefined) S.vis.minAlt = a.min_altitude; if (a.mag_max !== undefined) S.vis.magMax = a.mag_max > 0 ? a.mag_max : null; if (a.min_planets !== undefined) S.vis.minPlanets = a.min_planets;
-        store.set('esl.sky.vis', S.vis); compute(); const r = visibleNow(), d = darkHours();
-        return { site: `${S.lat.toFixed(3)}, ${S.lon.toFixed(3)}`, at_utc: isoMin(S.time), dark_hours_utc: d ? `${isoMin(d.t0)} to ${isoMin(d.t1)}` : 'none tonight', filter: DM.GROUPS.filter((g) => S.disc.includes(g.id)).map((g) => g.label), settings: { ...S.vis }, total: r.total,
-          stars: r.rows.slice(0, a.limit || 15).map((x) => ({ name: x.name, kind: DM.groupInfo(x.group).label, up_now: x.up, altitude_now_deg: +(x.alt * DEG).toFixed(1), direction: compass(x.az * DEG), highest_tonight_deg: Number.isFinite(x.maxAlt) ? +(x.maxAlt * DEG).toFixed(1) : undefined, highest_at_utc: Number.isFinite(x.tMax) ? isoMin(x.tMax) : undefined, magnitude: x.mag != null ? `${x.band} ${x.mag.toFixed(1)}` : null, planets: x.planets, tess_candidates: x.candidates, transit_tonight: x.transit ? { planet: x.transit.planet, mid_utc: isoMin(x.transit.mid) } : undefined })),
+        if (a.when) S.vis.when = a.when; if (a.sort) S.vis.sort = a.sort; if (a.min_altitude !== undefined) S.vis.minAlt = a.min_altitude;
+        store.set('esl.sky.vis', S.vis);
+        const pos = (v) => (v > 0 ? v : null), part = {};
+        if (a.reset_filter) setHostFilter(null);
+        if (a.mag_min !== undefined) part.magMin = a.mag_min; if (a.mag_max !== undefined) part.magMax = a.mag_max > 0 ? a.mag_max : null; if (a.min_planets !== undefined) part.minPlanets = a.min_planets;
+        if (a.teff_min !== undefined) part.teffMin = pos(a.teff_min); if (a.teff_max !== undefined) part.teffMax = pos(a.teff_max); if (Array.isArray(a.spectral_types)) part.spec = a.spectral_types.join('');
+        if (a.dist_min_pc !== undefined) part.distMin = pos(a.dist_min_pc); if (a.dist_max_pc !== undefined) part.distMax = pos(a.dist_max_pc);
+        if (a.transiting !== undefined) part.transiting = a.transiting; if (a.transit_tonight !== undefined) part.transitTonight = a.transit_tonight; if (a.unknown) part.unknown = a.unknown === 'include';
+        setHostFilter(part);
+        if (HF.needsTable(S.hf)) { ensureHostAttrs(); for (let k = 0; k < 600 && !data.hattr && !(data.hattrStatus || '').startsWith('error'); k++) await new Promise((r) => setTimeout(r, 50)); }
+        if (S.hf.transitTonight || S.vis.sort === 'transit') { await ensureTable(); visTr.key = ''; }
+        compute(); visCache.key = ''; const r = visibleNow(), d = darkHours(), fc = HF.filterCounts(data.hosts.list, S.hf, data.hattr, tonightHosts(), (i) => !!hostGroup(i));
+        return { site: `${S.lat.toFixed(3)}, ${S.lon.toFixed(3)}`, at_utc: isoMin(S.time), dark_hours_utc: d ? `${isoMin(d.t0)} to ${isoMin(d.t1)}` : 'none tonight', filter: DM.GROUPS.filter((g) => S.disc.includes(g.id)).map((g) => g.label),
+          host_filter: HF.describeFilter(S.hf), host_filter_status: HF.needsTable(S.hf) ? (data.hattr ? 'star values loaded' : data.hattrStatus || 'loading') : undefined,
+          stars_passing_filters: fc.pass, of_stars: fc.all, kept_with_unknown_values: S.hf.unknown ? fc.unknownIn : undefined, settings: { ...S.vis }, total_up: r.total,
+          stars: r.rows.slice(0, a.limit || 15).map((x) => ({ name: x.name, kind: DM.groupInfo(x.group).label, up_now: x.up, altitude_now_deg: +(x.alt * DEG).toFixed(1), direction: compass(x.az * DEG), highest_tonight_deg: Number.isFinite(x.maxAlt) ? +(x.maxAlt * DEG).toFixed(1) : undefined, highest_at_utc: Number.isFinite(x.tMax) ? isoMin(x.tMax) : undefined, magnitude: x.mag != null ? `${x.band} ${x.mag.toFixed(1)}` : null,
+            teff_K: data.hattr && Number.isFinite(data.hattr.teff[x.i]) ? Math.round(data.hattr.teff[x.i]) : undefined, distance_pc: data.hattr && Number.isFinite(data.hattr.dist[x.i]) ? +data.hattr.dist[x.i].toFixed(1) : undefined, spectral_class: data.hattr && data.hattr.spec[x.i] ? HF.SPEC_CLASSES[data.hattr.spec[x.i] - 1] : undefined,
+            planets: x.planets, tess_candidates: x.candidates, transit_tonight: x.transit ? { planet: x.transit.planet, mid_utc: isoMin(x.transit.mid) } : undefined })),
           note: 'observe_set_target marks one; TESS candidates are not confirmed planets.' };
+      } },
+    { name: 'observe_show_path', description: 'Draw the path of a moving object on the sky with time ticks: a satellite (its pass, needs the Satellites layer), the Moon, a planet or a bright asteroid (Ceres, Pallas, Juno, Vesta, Hebe, Iris, Hygiea, Eunomia): tonight across the sky, or among the stars over days or months. An empty name hides it.',
+      parameters: obj({ name: T('The object, e.g. "Mars", "Moon", "Vesta", "ISS (ZARYA)"; "" to hide.'), span: T('sat10, sat30 (satellites); night, d3 (Moon), d15, d90, y1.', { enum: Object.keys(PATH_SPANS) }) }, ['name']),
+      async run({ name, span }) {
+        if (!String(name).trim()) { setPath(null); return { path: 'none' }; }
+        const k = norm(name), b = BODIES.find((x) => norm(x[1]) === k), ast = AST.ASTEROIDS.find((o) => norm(o.name) === k), sat = data.sats && data.sats.find((x) => norm(x.name) === k || norm(x.name).startsWith(k));
+        const sel = b ? { kind: 'body', id: b[0], name: b[1] } : ast ? { kind: 'ast', id: ast.id, name: ast.name } : sat ? { kind: 'sat', name: sat.name } : null;
+        if (!sel) throw new Error(`"${name}" is not the Moon, a planet, one of the bright asteroids or a loaded satellite${S.layers.satellites ? '' : ' (the Satellites layer is off)'}`);
+        if (sel.kind !== 'sat' && !S.layers.planets) toggleLayer('planets');
+        setPath(sel, span || (sel.kind === 'sat' ? 'sat10' : 'night')); S.selection = sel; S.hover = null; cardKey = infoKey = ''; compute(); drawInfo();
+        const P = data.path;
+        return { object: sel.name, span: PATH_SPANS[S.path.span].label, from_utc: P ? isoMin(P.t0) : undefined, to_utc: P ? isoMin(P.t1) : undefined, ticks: P ? P.ticks.length : 0, frame: P && P.frame === 'j2000' ? 'among the stars (turns with them)' : 'across the sky from this site' };
       } },
     { name: 'observe_survey_image', description: 'Open a real survey image (DSS2, 2MASS, Pan-STARRS, SDSS, Legacy Surveys or AllWISE) of the marked target\'s field, with the Gaia DR3 stars around it, and list the possible comparison stars: Gaia stars whose G is within a range of the target\'s (not flagged variable, beyond 10 arcsec), optionally only those inside a detector outline. Needs a star or exoplanet host as the target. close: true closes it.',
       parameters: obj({ survey: T('The survey.', { enum: ['dss', 'dssred', '2mass', 'ps1', 'sdss', 'legacy', 'wise'] }), width_arcmin: N('Width of the image, arcmin.', { enum: [5, 10, 15, 30, 60] }), dg_min: N('Brightest comparison, magnitudes relative to the target (e.g. -1).'), dg_max: N('Faintest comparison, magnitudes relative to the target (e.g. 1).'), detector_arcmin: { type: 'array', description: 'Detector outline [width, height] in arcmin; only stars inside count. [] for none.', items: { type: 'number' } }, close: { type: 'boolean', description: 'Close the survey image.' } }),
@@ -1494,7 +1711,8 @@ window.__sky = { S, A, R, data, ar, xr, frame: () => F, compute, pick, select: (
     { name: 'observe_where', readOnly: true, description: 'Where the marked target is in the sky at the time shown (altitude, azimuth), the span of its night and its transit when one was passed from the planner.', parameters: obj({}),
       run() { if (!S.target) throw new Error('no target is marked (observe_set_target)'); compute(); return { target: S.target.name, at_utc: isoMin(S.time), now: where(), night: night() || undefined }; } },
   ];
-  (window.__esl = window.__esl || {}).observe = { tools, ready: () => !!F, setDiscoveryFilter, discoveryCounts,
+  (window.__esl = window.__esl || {}).observe = { tools, ready: () => !!F, setDiscoveryFilter, discoveryCounts, setHostFilter,
     state: () => [`Seen from ${S.lat.toFixed(3)}°, ${S.lon.toFixed(3)}° (north, east positive)${S.hasLocation ? '' : ' (the default: no location was set)'}; showing ${isoMin(S.time)} UTC${S.live ? ' (following the clock)' : ''}.`, S.target ? `Target marked: ${S.target.name}${S.transit ? `, with a ${eventInfo(S.transit.kind).word} ${isoMin(S.transit.ingress)} to ${isoMin(S.transit.egress)} UTC` : ''}${S.nightPlay && S.playing ? '; the night is playing' : ''}.` : 'No target is marked.',
-      S.disc === DM.GROUP_IDS ? 'Stars with planets: all discovery methods shown.' : `Stars with planets: only ${DM.GROUPS.filter((g) => S.disc.includes(g.id)).map((g) => g.label).join(', ') || 'none'} shown (discovery filter).`] };
+      S.disc === DM.GROUP_IDS ? 'Stars with planets: all discovery methods shown.' : `Stars with planets: only ${DM.GROUPS.filter((g) => S.disc.includes(g.id)).map((g) => g.label).join(', ') || 'none'} shown (discovery filter).`,
+      HF.activeParts(S.hf).any ? `Host filter: ${HF.describeFilter(S.hf).join(', ')}.` : 'No host filter.', S.path ? `Path drawn: ${S.path.sel.name || S.path.sel.id}, ${PATH_SPANS[S.path.span].label}.` : ''].filter(Boolean) };
 }

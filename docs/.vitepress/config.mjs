@@ -6,6 +6,7 @@ import { defineConfig } from 'vitepress';
 
 const base = process.env.DOCS_BASE || '/docs/';
 const site = process.env.SITE_URL || base.replace(/docs\/$/, '');
+const appRoot = base.replace(/docs\/$/, '');   // the app's root path on the host, where sw.js is
 const repo = 'https://github.com/pearsonkyle/Exoplanet-Science-Lab';
 
 export default defineConfig({
@@ -16,7 +17,9 @@ export default defineConfig({
   lastUpdated: true,
   srcExclude: ['**/references.bib', 'ROADMAP.md'],
   ignoreDeadLinks: [/^https?:\/\/localhost/, /^\.\.\//, /^\/(plan|observe|analyze|search|methods)\//],
-  head: [['link', { rel: 'icon', href: base + 'favicon.svg' }], ['meta', { name: 'theme-color', content: '#0b0f18' }]],
+  head: [['link', { rel: 'icon', href: base + 'favicon.svg' }], ['meta', { name: 'theme-color', content: '#0b0f18' }],
+    // built docs only: the app's service worker (dist/sw.js, tools/sw/) also keeps the docs for offline reading
+    ...(process.argv.includes('build') ? [['script', {}, `if('serviceWorker'in navigator&&(location.protocol==='https:'||/^(localhost|127\\.0\\.0\\.1|\\[::1\\])$/.test(location.hostname))&&!/[?&]nosw/.test(location.search))addEventListener('load',function(){navigator.serviceWorker.register(${JSON.stringify(appRoot + 'sw.js')},{scope:${JSON.stringify(appRoot)}}).catch(function(){})})`]] : [])],
   appearance: 'dark',
   markdown: { math: true, lineNumbers: false },
   vite: { define: { __SITE_URL__: JSON.stringify(site) } },

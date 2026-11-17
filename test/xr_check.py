@@ -37,6 +37,8 @@ HELPERS = r"""
     lookAt(point) { const o = [dev.position.x, dev.position.y, dev.position.z]; T.look(X.norm(point.map((v, i) => v - o[i]))); },
     /** The centre of a button of a panel, in the reference space. */
     button(panel, id) { const p = k.xr[panel], r = p.rects.find((x) => x.id === id); return r ? X.panelPoint(p.geom, (r.x + r.w / 2) / p.pw, (r.y + r.h / 2) / p.height) : null; },
+    /** A point of a window by (u, v) in 0..1 (v from the top), in the reference space. */
+    at(panel, u, v) { const p = k.xr[panel]; return X.panelPoint(p.geom, u, v); },
     ray(i) { const p = k.xr.pointers[i]; return X.rayOfMatrix(p.controller.matrixWorld.elements); },
     pointer(hand) { return k.xr.pointers.find((p) => p.source && p.source.handedness === hand); },
     state() { const s = k.xr.state; return { frames: s.frames, selects: s.selects, haptics: s.haptics, heading: s.heading, grip: s.grip, aligning: s.aligning, menuOpen: s.menuOpen, lastHit: s.lastHit, refType: s.refType, features: s.features, frameRate: s.frameRate, kind: s.kind, rate: s.rate }; },
@@ -100,6 +102,30 @@ with sync_playwright() as p:
     check('trigger selects the star: the in-world card names it', r['title'] == 'Vega' and r['visible'] and r['sel'] and r['sel']['kind'] == 'star' and r['sel']['i'] == vega['i'], f"{r['type']} {r['title']}; {'; '.join(k + ' ' + v for k, v in r['kv'])}")
     check('one select event, one haptic pulse', s1['selects'] - s0['selects'] == 1 and s1['haptics'] > s0['haptics'], f"selects +{s1['selects'] - s0['selects']}, pulses +{s1['haptics'] - s0['haptics']}")
     check('the card has the page card\'s actions', 'mark' in r['buttons'] and 'close' in r['buttons'], ', '.join(r['buttons']))
+    check('the card has the immersive actions: turn to face it, survey image', 'xr:face' in r['buttons'] and 'xr:survey' in r['buttons'])
+    ev("__t.look([0.6, 0, -0.8])"); frames(4)
+    click_button('card', 'xr:face')
+    fc = ev("(() => { const X = __sky.X, s = __sky.infoOf(__sky.S.selection), d = X.worldToRef(s.dir, __sky.xr.state.heading); return { az: X.refAzimuth(d) * 180 / Math.PI, want: X.refAzimuth([0.6, 0, -0.8]) * 180 / Math.PI }; })()")
+    check('"Turn to face it" turns the sky so that the star is where you look', abs(fc['az'] - fc['want']) < 1e-3, f"Vega at {fc['az']:.4f} deg, gaze at {fc['want']:.4f} deg (reference azimuth)")
+    ev("(() => { __sky.xr.setHeading(Math.PI); __t.look([0, 0, -1]); })()"); frames(4)
+    click_button('card', 'xr:survey')
+    try: pg.wait_for_function("__sky.xr.state.survey && __sky.xr.state.survey.status !== 'loading'", timeout=40000)
+    except Exception: pass
+    sv = ev("(() => { const s = __sky.xr.state.survey; return s && { status: s.status, error: s.error || '', name: s.name, fov: s.fov, radec: s.radec, vis: __sky.xr.survey.mesh.visible, img: s.img ? [s.img.width, s.img.height] : null }; })()")
+    check('"Survey image" opens a window with the DSS2 field of the star (needs the network: CDS hips2fits)', sv and sv['vis'] and sv['name'] == 'Vega' and sv['status'] in ('ready', 'error'), json.dumps(sv))
+    if sv and sv['status'] == 'ready':
+        frames(6); shot('02b-survey-window', ev("(() => { const g = __sky.xr.survey.geom, o = [__xrDevice.position.x, __xrDevice.position.y, __xrDevice.position.z]; return __sky.X.norm(g.centre.map((v, i) => v - o[i])); })()"))
+        ev("__t.look([0, 0, -1])"); frames(3)
+    if sv and sv['status'] != 'ready':        # no network: draw a stand-in image the way a loaded one is drawn
+        stand = ev("(() => { const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d'); g.fillStyle = '#123'; g.fillRect(0, 0, 512, 512); g.fillStyle = '#fff'; g.beginPath(); g.arc(256, 256, 30, 0, 7); g.fill(); if (!__sky.xr.state.survey) return 'no survey (presenting ' + __sky.xr.presenting + ', error ' + __sky.xr.state.error + ')'; Object.assign(__sky.xr.state.survey, { status: 'ready', img: c }); __sky.xr.survey.key = ''; })()")
+        if stand: print('     ', stand)
+        frames(8)
+        si = ev("({ h: __sky.xr.survey.height, img: !!(__sky.xr.survey.model && __sky.xr.survey.model.image), err: __sky.xr.state.error })")
+        check('the survey window draws an image (a stand-in: CDS was not reachable)', si['img'] and si['h'] > 700 and not si['err'], json.dumps(si))
+        shot('02b-survey-window-standin', ev("(() => { const g = __sky.xr.survey.geom, o = [__xrDevice.position.x, __xrDevice.position.y, __xrDevice.position.z]; return __sky.X.norm(g.centre.map((v, i) => v - o[i])); })()"))
+        ev("__t.look([0, 0, -1])"); frames(3)
+    click_button('survey', 'xr:surveyClose'); frames(4)
+    check('the survey window closes', not ev("__sky.xr.survey.mesh.visible"))
     shot('02-vega-selected', d)
     shot('03-card-panel', ev("(() => { const g = __sky.xr.card.geom, o = [__xrDevice.position.x, __xrDevice.position.y, __xrDevice.position.z]; return __sky.X.norm(g.centre.map((v, i) => v - o[i])); })()"))
 
@@ -124,6 +150,7 @@ with sync_playwright() as p:
     rate = ev("__sky.xr.state.rate"); ev("__xrDevice.controllers.left.updateAxes('thumbstick', 0, 0)"); frames(4)
     t4 = ev("__sky.S.time")
     check('half deflection to the left (either hand): backwards, cubic', abs(rate + 7200 * (0.35 / 0.85) ** 3) < 1e-6 and t4 < t3, f"{rate:.1f} s/s")
+    ev("(() => { __sky.setTime(Date.parse('2026-07-15T05:00:00Z')); __sky.S.playing = false; })()"); frames(4)     # back to the night: by day the limit is the sky's, whatever the offset
     m0 = ev("({ off: __sky.S.magOffset, lim: __sky.frame().magLimit, w: performance.now() })")
     ev("__xrDevice.controllers.right.updateAxes('thumbstick', 0, -1)"); frames(30)
     ev("__xrDevice.controllers.right.updateAxes('thumbstick', 0, 0)"); frames(4)
@@ -158,12 +185,16 @@ with sync_playwright() as p:
 
     # ---- the menu, hit by the ray of the left controller
     ev("__xrDevice.controllers.left.position.set(-0.25, 1.3, -0.2)")
+    tabs = ev("__sky.xr.menu.model.tabs")
+    click_button('menu', 'xr:tab:Show', 'left'); frames(4)
+    check('the menu shows one tab at a time', tabs and len(tabs) >= 4 and ev("__sky.xr.state.menuTab") == 'Show' and ev("!!__t.button('menu', 'layer:azgrid') && !__t.button('menu', 'xr:align')"), ', '.join(tabs or []) + f"; menu {ev('__sky.xr.menu.geom.h').__round__(3)} m tall")
     rows = ev("__sky.xr.menu.rects.filter((r) => r.id).map((r) => r.id)")
     g0 = ev("__sky.S.layers.azgrid"); ok1 = click_button('menu', 'layer:azgrid', 'left'); g1 = ev("__sky.S.layers.azgrid")
     check('menu: trigger on "Alt-az grid" switches the layer', ok1 and g0 != g1, f"{len(rows)} buttons: {', '.join(rows[:8])} ...; last hit {ev('__t.state().lastHit')}")
     click_button('menu', 'layer:altlimit', 'left')
     check('menu: the 30 degree ring', ev("__sky.S.layers.altlimit") is True)
     pg.wait_for_function("__sky.tonight.status === 'ready' || __sky.tonight.status === 'error'", timeout=90000); frames(20)
+    click_button('menu', 'xr:tab:Transits tonight', 'left'); frames(4)
     tn = ev("({ status: __sky.tonight.status, n: __sky.tonight.n, err: __sky.tonight.error, ev: __sky.tonight.events.map((e) => [e.planet, new Date(e.ingress).toISOString().slice(11, 16), new Date(e.egress).toISOString().slice(11, 16), Math.round(e.alt * 180 / Math.PI)]) })")
     check('tonight\'s observable transits are on the menu', tn['status'] == 'ready' and len(tn['ev']) > 0 and ev("!!__t.button('menu', 'tn:0')"), f"{tn['n']} found, shown: " + '; '.join(f"{e[0]} {e[1]}-{e[2]} UTC at {e[3]} deg" for e in tn['ev']) + ' ' + tn['err'])
     shot('04-menu-with-tonight', [0, -0.45, -0.9])
@@ -187,6 +218,7 @@ with sync_playwright() as p:
 
     # ---- compass alignment: the sky is off by 25 degrees; point at where the object "really" is
     al = ev("__sky.alignTargets().map((t) => t.name)")
+    click_button('menu', 'xr:tab:Compass', 'left'); frames(4)
     click_button('menu', 'xr:align', 'left'); frames(4)
     a = ev("({ aligning: __sky.xr.state.aligning, target: __sky.alignTargets()[__sky.xr.state.alignIndex % __sky.alignTargets().length] })")
     real = ev("([t, off]) => { const d = __t.refDir(t.alt, t.az), c = Math.cos(off), s = Math.sin(off); return [c * d[0] - s * d[2], d[1], s * d[0] + c * d[2]]; }", [a['target'], 25 * 3.141592653589793 / 180])
@@ -198,12 +230,52 @@ with sync_playwright() as p:
     ev("__sky.xr.setHeading(Math.PI)")
 
     # ---- A folds the menu and brings it back in front of the head
+    ev("__t.look([0, 0, -1])"); frames(4)       # the menu in view (the last picture looked up at the target)
     press('right', 'a-button'); frames(8)
-    folded = ev("({ open: __sky.xr.state.menuOpen, ids: __sky.xr.menu.rects.filter((r) => r.id).map((r) => r.id) })")
+    folded = ev("({ open: __sky.xr.state.menuOpen, ids: __sky.xr.pill.rects.filter((r) => r.id).map((r) => r.id), pill: __sky.xr.pill.mesh.visible, menu: __sky.xr.menu.mesh.visible })")
     ev("__t.look([0.8, 0, -0.6])"); frames(4); press('right', 'a-button'); frames(8)
     back = ev("(() => { const g = __sky.xr.menu.geom, o = [__xrDevice.position.x, __xrDevice.position.y, __xrDevice.position.z], d = __sky.X.norm(g.centre.map((v, i) => v - o[i])); return { open: __sky.xr.state.menuOpen, az: Math.atan2(d[0], -d[2]) * 180 / Math.PI, n: __sky.xr.menu.rects.length }; })()")
-    check('A folds the menu, A again brings it in front of where you look', (not folded['open']) and folded['ids'] == ['xr:show'] and back['open'] and abs(back['az'] - 53.13) < 0.5, f"menu at {back['az']:.1f} deg to the right, head turned 53.1 deg")
-    ev("__t.look([0, 0, -1])"); frames(4); press('right', 'a-button'); press('right', 'a-button'); frames(6)
+    check('A folds the menu to two buttons (Menu, Exit), A again brings it in front of where you look', (not folded['open']) and folded['ids'] == ['xr:show', 'xr:exit'] and folded['pill'] and not folded['menu'] and back['open'] and abs(back['az'] - 53.13) < 0.5, f"menu at {back['az']:.1f} deg to the right, head turned 53.1 deg; folded: {json.dumps(folded)}")
+    ev("__t.look([0, 0, -1])"); frames(4); press('right', 'a-button'); frames(6)
+    fr = ev("(() => { const g = __sky.xr.menu.geom, o = [__xrDevice.position.x, __xrDevice.position.y, __xrDevice.position.z], d = __sky.X.norm(g.centre.map((v, i) => v - o[i])); return { open: __sky.xr.state.menuOpen, az: Math.atan2(d[0], -d[2]) * 180 / Math.PI }; })()")
+    check('A with the menu out of view brings it back in front (does not fold it)', fr['open'] and abs(fr['az']) < 0.5, f"menu at {fr['az']:.2f} deg")
+
+    # ---- windows: move by the title bar, resize by the corner, move with the grip
+    ev("__xrDevice.controllers.right.position.set(0.25, 1.35, -0.25)")
+    g0 = ev("({ ...__sky.xr.menu.geom })")
+    vt = ev("32 / __sky.xr.menu.height")        # the middle of the title bar, left of its buttons
+    grab = ev("v => __t.at('menu', 0.3, v)", vt); ev("pt => __t.aimAt('right', pt)", grab); frames(4)
+    hz = ev("(() => { const p = __t.pointer('right'), h = __sky.xr.menu.hit(__t.ray(p.i)); return h && h.zone; })()")
+    ev("__xrDevice.controllers.right.updateButtonValue('trigger', 1)"); frames(3)
+    d0 = ev("__t.ray(__t.pointer('right').i).dir")
+    for kstep in range(1, 7):
+        ev("([d, a]) => { const c = Math.cos(a), s = Math.sin(a); __t.aim('right', [c * d[0] - s * d[2], d[1] + 0.02 * a, s * d[0] + c * d[2]]); }", [d0, kstep * 4 * 3.141592653589793 / 180]); frames(2)
+    mv = ev("v => { const p = __t.pointer('right'), r = __t.ray(p.i), h = __sky.X.rayPanel(r.origin, r.dir, __sky.xr.menu.geom); return { u: h && h.u, v: h && h.v, held: __sky.xr.holds.size, c: __sky.xr.menu.geom.centre }; }", vt)
+    ev("__xrDevice.controllers.right.updateButtonValue('trigger', 0)"); frames(3)
+    moved = sum((a - b) ** 2 for a, b in zip(mv['c'], g0['centre'])) ** 0.5
+    check('trigger held on the title bar moves the menu: the point grabbed stays under the ray', hz == 'title' and mv['held'] == 1 and mv['u'] is not None and abs(mv['u'] - 0.3) < 1e-3 and abs(mv['v'] - vt) < 1e-3 and moved > 0.2 and ev("__sky.xr.holds.size") == 0, f"zone {hz}; moved {moved:.3f} m for a 24 deg sweep; grabbed point at u {mv['u']:.4f}, v {mv['v']:.4f}")
+    g1 = ev("({ ...__sky.xr.menu.geom })")
+    corner = ev("__t.at('menu', 0.985, 0.985)"); ev("pt => __t.aimAt('right', pt)", corner); frames(4)
+    hz = ev("(() => { const p = __t.pointer('right'), h = __sky.xr.menu.hit(__t.ray(p.i)); return h && h.zone; })()")
+    ev("__xrDevice.controllers.right.updateButtonValue('trigger', 1)"); frames(3)
+    target = ev("pt => { const g = __sky.xr.menu.geom; return pt.map((v, i) => v + g.right[i] * 0.2); }", corner)
+    ev("pt => __t.aimAt('right', pt)", target); frames(4)
+    ev("__xrDevice.controllers.right.updateButtonValue('trigger', 0)"); frames(3)
+    g2 = ev("({ ...__sky.xr.menu.geom, tl: __t.at('menu', 0, 0) })"); tl1 = ev("g => __sky.X.panelPoint(g, 0, 0)", g1)
+    tlmove = sum((a - b) ** 2 for a, b in zip(g2['tl'], tl1)) ** 0.5
+    check('trigger held on the corner handle resizes the menu, its top-left corner stays', hz == 'resize' and abs(g2['w'] - g1['w'] - 0.2) < 2e-3 and tlmove < 2e-3, f"zone {hz}; width {g1['w']:.3f} -> {g2['w']:.3f} m (dragged 0.2 m), top-left moved {tlmove * 1000:.2f} mm")
+    body = ev("__t.at('menu', 0.5, 0.6)"); ev("pt => __t.aimAt('right', pt)", body); frames(4); h0 = ev("__sky.xr.state.heading")
+    ev("__xrDevice.controllers.right.updateButtonValue('squeeze', 1)"); frames(3)
+    d0 = ev("__t.ray(__t.pointer('right').i).dir")
+    for kstep in range(1, 5):
+        ev("([d, a]) => { const c = Math.cos(a), s = Math.sin(a); __t.aim('right', [c * d[0] - s * d[2], d[1], s * d[0] + c * d[2]]); }", [d0, -kstep * 4 * 3.141592653589793 / 180]); frames(2)
+    ev("__xrDevice.controllers.right.updateAxes('thumbstick', 0, -1)"); frames(20); ev("__xrDevice.controllers.right.updateAxes('thumbstick', 0, 0)")
+    sq = ev("(() => { const p = __t.pointer('right'), r = __t.ray(p.i), h = __sky.X.rayPanel(r.origin, r.dir, __sky.xr.menu.geom); return { hit: !!h, t: h && h.t, c: __sky.xr.menu.geom.centre, heading: __sky.xr.state.heading, held: [...__sky.xr.holds.values()].map((x) => x.type) }; })()")
+    ev("__xrDevice.controllers.right.updateButtonValue('squeeze', 0)"); frames(3)
+    moved = sum((a - b) ** 2 for a, b in zip(sq['c'], g2['centre'])) ** 0.5
+    check('grip on a window moves it (not the sky); the thumbstick pushes it away', sq['held'] == ['move'] and sq['hit'] and moved > 0.1 and sq['heading'] == h0, f"moved {moved:.3f} m, now {sq['t']:.2f} m along the ray")
+    shot('04b-menu-moved-resized', ev("(() => { const g = __sky.xr.menu.geom, o = [__xrDevice.position.x, __xrDevice.position.y, __xrDevice.position.z]; return __sky.X.norm(g.centre.map((v, i) => v - o[i])); })()"))
+    ev("__t.look([0, 0, -1])"); frames(3)
 
     # ---- hands: a pinch selects
     ev("__xrDevice.primaryInputMode = 'hand'"); frames(20)
@@ -227,11 +299,13 @@ with sync_playwright() as p:
     # ---- no controllers, no hands: gaze and dwell
     ev("(() => { const d = __xrDevice; d.primaryInputMode = 'controller'; d.controllers.left.connected = false; d.controllers.right.connected = false; if (d.hands.left) d.hands.left.connected = false; if (d.hands.right) d.hands.right.connected = false; __sky.S.selection = null; })()"); frames(20)
     nsrc = ev("__sky.xr.pointers.filter((p) => p.source).length")
+    ev("__sky.xr.state.menuTab = 'Show'"); frames(4)
     e0 = ev("__sky.S.layers.eqgrid")
     ev("__t.lookAt(__t.button('menu', 'layer:eqgrid'))"); frames(20)
     mid = ev("({ on: __sky.S.layers.eqgrid, vis: __sky.xr.pointers.every((p) => !p.line.visible) })")
+    gz = ev("(() => { const r = { origin: [__xrDevice.position.x, __xrDevice.position.y, __xrDevice.position.z] }; const b = __t.button('menu', 'layer:eqgrid'); r.dir = __sky.X.norm(b.map((v, i) => v - r.origin[i])); return [__sky.xr.menu, __sky.xr.card, __sky.xr.survey, __sky.xr.pill].map((p) => { const h = p.hit(r); return p.name + ':' + (h ? h.zone + '/' + (h.item && h.item.id) + '@' + h.t.toFixed(2) : '-'); }).join(' '); })()")
     pg.wait_for_timeout(1600); frames(4); e1 = ev("__sky.S.layers.eqgrid"); pg.wait_for_timeout(1700); frames(4); e2 = ev("__sky.S.layers.eqgrid")
-    check('gaze and dwell presses a menu button once', nsrc == 0 and mid['on'] == e0 and e1 != e0 and e2 == e1 and mid['vis'], f"no input sources; not yet after 20 frames, pressed after 1.3 s, not again after 3 s")
+    check('gaze and dwell presses a menu button once', nsrc == 0 and mid['on'] == e0 and e1 != e0 and e2 == e1 and mid['vis'], f"no input sources; not yet after 20 frames, pressed after 1.3 s, not again after 3 s; gaze ray meets {gz}")
     ev("d => __t.look(d)", d); pg.wait_for_timeout(1800); frames(4)
     check('gaze and dwell on a star selects it', ev("__sky.xr.card.model && __sky.xr.card.model.title") == 'Vega')
     shot('07-gaze-dwell-vega')
@@ -255,11 +329,18 @@ with sync_playwright() as p:
     ev("d => __t.aim('right', d, [0.25, 1.35, -0.25])", d); frames(8); press('right')
     check('passthrough: the trigger selects as in VR', ev("__sky.xr.card.model && __sky.xr.card.model.title") == 'Vega')
     shot('09-passthrough', [0.3, 0.25, -0.9])
-    ev("__sky.xr.stop()"); pg.wait_for_function("!__sky.xr.presenting", timeout=10000); pg.wait_for_timeout(500)
     ev("__xrDevice.controllers.right.updateButtonValue('trigger', 0)")
+    ev("__xrDevice.controllers.left.updateButtonValue('y-button', 1)"); frames(3); pg.wait_for_timeout(550)
+    mid = ev("({ presenting: __sky.xr.presenting, exit: __sky.xr.state.exit })")
+    try: pg.wait_for_function("!__sky.xr.presenting", timeout=5000)
+    except Exception: pass
+    ev("__xrDevice.controllers.left.updateButtonValue('y-button', 0)"); pg.wait_for_timeout(500)
+    check('Y held for a second leaves passthrough (the menu shows the countdown first)', mid['presenting'] and mid['exit'] > 0.2 and not ev("__sky.xr.presenting"), f"countdown at {mid['exit']:.2f} after 0.5 s")
     check('passthrough ended', ev("__sky.R.mode") == 'stereo' and ev("__sky.R.renderer.getClearAlpha()") == 1)
 
-    bad = [e for e in errs if e.startswith('PAGEERROR') or e.startswith('console.error')]
+    net = [e for e in errs if 'Failed to load resource' in e]
+    if net: print('network errors (not counted: the survey servers were not reachable):', len(net))
+    bad = [e for e in errs if (e.startswith('PAGEERROR') or e.startswith('console.error')) and e not in net]
     check('no page errors', not bad, '; '.join(bad[:3]))
     warn = [e for e in errs if e.startswith('console.warning')]
     if warn: print('warnings:', len(warn), '; '.join(sorted(set(w[:160] for w in warn))[:6]))

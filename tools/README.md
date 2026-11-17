@@ -154,7 +154,7 @@ live `systemFromRows` / `suggestPriors`, and the manifest's checksums, sizes and
     python3 tools/build_sky_data.py [--cache DIR] [--maglim 8.0]
 
 Writes `public/sky/stars.bin` (stars to V = 8, 16 bytes each), `starnames.json`, `constellations.json` and
-`hosts.json` (position, V and number of planets of every host star). Stars, names and constellation lines come
+`hosts.json` (position, V, number of planets, TESS candidates, and Teff, distance, spectral class and transit flag of every host star, from the local nea.json and toi.json snapshots). Stars, names and constellation lines come
 from the data folder of d3-celestial (BSD 3-Clause, Olaf Frohn; stars from XHIP, Anderson & Francis 2012); the
 hosts come from `public/catalog/`, so run it after `build_catalog.py`. Standard library only; downloads are cached
 in `$TMPDIR/esl-sky-cache`.

@@ -4,12 +4,13 @@ Browser app for modelling and fitting exoplanet light curves. Vite + three.js, p
 Read `HANDOFF.md` first: it has the current state, what has never been run, and the roadmap.
 
 ## Commands
-- `npm install` then `npm run dev` (Vite) · `npm run build` · `npm test` (75 Node suites, about 13 min) · `npm run test:stress` (sampler, all problems)
+- `npm install` then `npm run dev` (Vite) · `npm run build` · `npm test` (78 Node suites, about 14 min) · `npm run test:stress` (sampler, all problems)
 - Reference scripts (`test/make_*.py`) run with `.venv/bin/python` (numpy, scipy); other references have their own `.venv-*` (HANDOFF.md, Environments)
 - Docs (VitePress, `docs/`): `npm run docs:dev`; `npm run pages:build` builds app + docs into `dist/` as GitHub Pages serves them (`.github/workflows/pages.yml`). Reference pages are generated from the code (`tools/docs/`), not edited.
 - `npm run build:python` rebuilds the Python package's bundle (committed: pip installs from git); `cd python && ../.venv-py/bin/pytest` · `cd mcp && node test.mjs`
 - Browser checks need Python + Playwright + Chrome and a static server on :8765:
   `python3 -m http.server 8765` then `python3 test/features_check.py /tmp/esl` and `python3 test/export_check.py /tmp/esl`
+- Offline: the build writes `dist/sw.js` (`tools/sw/`, a service worker caching the whole site, versioned by content); `.venv/bin/python test/offline_check.py --serve dist` checks every page with the server stopped. `?nosw` removes the worker. External services go through `fetchOr` / `siteJson` in `src/site/net.js`, which show a notice instead of failing.
 
 ## Site
 - Pages are folders with their own `index.html`: `plan/`, `observe/`, `analyze/`, `analyze/photometry/`,

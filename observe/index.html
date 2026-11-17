@@ -8,6 +8,8 @@
 <meta name="esl-root" content="../">
 <!-- the site theme before first paint (src/site/theme.js) -->
 <script>try{var t=localStorage.getItem('esl.theme');if(t&&t!=='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<!-- opened as a file: browsers do not run the site's modules from file://; say how to open it (docs/guide/getting-started.md) -->
+<script>if(location.protocol==='file:')addEventListener('DOMContentLoaded',function(){var d=document.createElement('div');d.setAttribute('role','alert');d.style.cssText='position:fixed;inset:auto 12px 12px 12px;z-index:999;padding:14px 16px;border-radius:8px;background:#1a2133;color:#dfe6f3;border:1px solid #ffb454;font:14px/1.5 system-ui;max-width:640px';d.innerHTML='<b>This page needs a local web server.</b> Browsers do not run the site\u2019s scripts from a file. In the folder that holds it, run <code>npx serve</code> or <code>python3 -m http.server</code> and open the address it prints (for example http://localhost:8000/).';document.body.appendChild(d)})</script>
 <link rel="stylesheet" href="../src/site/site.css">
 <link rel="stylesheet" href="../src/sky/sky.css">
 </head>
@@ -28,10 +30,9 @@
       <ul id="findList" class="findlist" role="listbox" hidden></ul>
     </div>
     <span class="grow"></span>
-    <button id="discBtn" class="chip" title="Colours of the stars with planets, by how their planets were found; show or hide each kind" aria-controls="discPanel" aria-expanded="false" aria-label="Discovery methods: colours and filter" hidden><span class="dots" aria-hidden="true"></span><span class="lbl">Discovery</span></button>
-    <button id="visBtn" class="chip" title="The stars with planets you can see now or tonight: filter and sort them" aria-controls="visPanel" aria-expanded="false">Visible</button>
-    <button id="tonightBtn" class="chip" title="Tonight's transits, the next and previous target, how many stars are drawn">Tonight</button>
-    <button id="vrBtn" class="chip" title="Stand inside the sky in a VR headset (WebXR)">VR</button>
+    <button id="filterBtn" class="chip" title="What is drawn: the stars with planets by discovery method and by their own values, and the layers" aria-controls="filterPanel" aria-expanded="false"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg><span class="lbl">Filter</span><span class="badge" hidden></span></button>
+    <button id="tonightBtn" class="chip" title="Tonight's transits, the next and previous target, the stars with planets that are up">Tonight</button>
+    <button id="vrBtn" class="chip" title="Stand inside the sky in a VR headset (WebXR). To leave: Exit VR on the floating menu, or hold B/Y for a second">VR</button>
     <button id="ptBtn" class="chip" title="The sky over the camera image, on devices with WebXR passthrough" hidden>Passthrough</button>
     <button id="arBtn" class="chip" title="Follow where the phone points" hidden>AR</button>
   </div>
@@ -56,24 +57,24 @@
     <div id="cardTransit" class="card-transit"></div>
     <div id="cardBody" class="card-body"></div>
   </div>
-  <div id="discPanel" class="panel disc" hidden>
-    <h3>Stars with planets, by discovery method</h3>
-    <div id="discList" class="disc-list" role="group" aria-label="Show the stars whose planets were found by"></div>
-    <div class="row"><button class="btn" data-disc="all">Show all</button><button class="btn" data-disc="none">Hide all</button></div>
-    <p id="discNote" class="note"></p>
-  </div>
-  <div id="visPanel" class="panel vis" hidden>
-    <h3>Stars with planets you can see</h3>
-    <div class="fields">
-      <label>Up <select id="visWhen"><option value="either">now or tonight</option><option value="now">now</option><option value="tonight">in tonight's dark hours</option></select></label>
-      <label>Sort by <select id="visSort"><option value="alt">altitude now</option><option value="maxalt">highest tonight</option><option value="transit">transit tonight</option><option value="mag">brightest</option><option value="planets">most planets</option><option value="name">name</option></select></label>
-      <label>Above <select id="visMinAlt"><option value="0">the horizon</option><option value="20">20°</option><option value="30">30°</option><option value="45">45°</option></select></label>
-      <label>Planets <select id="visMinPl"><option value="0">any</option><option value="2">2 or more</option><option value="3">3 or more</option><option value="5">5 or more</option></select></label>
-      <label>Brighter than mag <input id="visMag" type="number" step="0.5" min="-2" max="20" placeholder="any" inputmode="decimal"></label>
-      <div class="vis-disc"><span class="lbl">Found by</span><div id="visDisc" class="lgc-row" role="group" aria-label="Show the stars whose planets were found by"></div></div>
-    </div>
-    <div id="visList" class="vis-list"></div>
-    <p id="visNote" class="note"></p>
+  <div id="filterPanel" class="panel filter" role="dialog" aria-label="Filter" hidden>
+    <div class="fhead"><h3>Filter</h3><span id="fSum" class="fsum"></span><button class="btn" data-f="reset" title="Every kind of star with planets, no limits">Reset</button></div>
+    <section><h4><span>Found by <small title="How many of these stars are above the horizon now">· up now</small></span><button id="fHosts" class="linklike" data-f="hosts"></button></h4>
+      <div id="discList" class="disc-list" role="group" aria-label="Show the stars whose planets were found by"></div>
+      <div class="row"><button class="btn" data-disc="all">All kinds</button><button class="btn" data-disc="none">None</button></div></section>
+    <section><h4><span>Host stars</span><small id="fCount"></small></h4>
+      <div class="frange"><span class="k" title="V magnitude; T (TESS) for stars that only have candidates">Magnitude</span><input id="fMagMin" type="number" inputmode="decimal" step="0.5" min="-2" max="20" placeholder="brightest"><i>to</i><input id="fMagMax" type="number" inputmode="decimal" step="0.5" min="-2" max="20" placeholder="faintest"></div>
+      <div class="frange"><span class="k" title="Effective temperature of the star, kelvin">Temperature K</span><input id="fTeffMin" type="number" inputmode="decimal" step="100" min="500" max="60000" placeholder="from"><i>to</i><input id="fTeffMax" type="number" inputmode="decimal" step="100" min="500" max="60000" placeholder="to"></div>
+      <div class="frow"><span class="k" title="Spectral class: the archive's spectral type, else from the temperature (Pecaut &amp; Mamajek 2013)">Type</span><div id="fSpec" class="fspec" role="group" aria-label="Spectral classes"></div></div>
+      <div class="frange"><span class="k" title="Distance from the Sun, parsecs (1 pc = 3.26 light years)">Distance pc</span><input id="fDistMin" type="number" inputmode="decimal" step="10" min="0" max="100000" placeholder="from"><i>to</i><input id="fDistMax" type="number" inputmode="decimal" step="10" min="0" max="100000" placeholder="to"></div>
+      <div class="frow"><span class="k">Planets</span><select id="fPl" aria-label="Number of planets and candidates"><option value="0">any number</option><option value="2">2 or more</option><option value="3">3 or more</option><option value="4">4 or more</option><option value="5">5 or more</option></select></div>
+      <div class="ftog"><button class="tg" data-f="transiting" aria-pressed="false" title="A planet or TESS candidate of the star transits">Transiting</button><button class="tg" data-f="transitTonight" aria-pressed="false" title="A transit (of a planet of a shown kind) whose middle is in tonight's dark hours, Sun below −12°">Transit tonight</button></div>
+      <div class="frow"><span class="k">Unknown values</span><select id="fUnk" aria-label="Stars without the value"><option value="1">kept</option><option value="0">left out</option></select></div>
+      <p id="fNote" class="note"></p></section>
+    <section><h4><span>Show on the sky</span></h4>
+      <div id="layers" class="layers" role="toolbar" aria-label="Layers"></div>
+      <label>Faintest stars drawn <small id="magLabel"></small><input id="magOffset" type="range" min="-4" max="3" step="0.5" value="0" aria-label="Limiting magnitude, relative to the automatic one"></label></section>
+    <p id="fDiscNote" class="note"></p>
   </div>
   <div id="tonightPanel" class="panel tonight" hidden>
     <h3>Target</h3>
@@ -81,16 +82,19 @@
     <h3>Transits tonight</h3>
     <div id="tonightList" class="tonight-list"></div>
     <p class="note">Whole transits of stars brighter than magnitude 13 (V; T for TESS candidates, marked TOI), above 30° with the Sun below −12°, in the night the clock is in. <span id="tonightNote"></span></p>
-    <label>Faintest stars drawn <small id="magLabel"></small><input id="magOffset" type="range" min="-4" max="3" step="0.5" value="0" aria-label="Limiting magnitude, relative to the automatic one"></label>
+    <h3 class="vis-h">Stars with planets up</h3>
+    <div class="fields tvis">
+      <label>Up <select id="visWhen"><option value="either">now or tonight</option><option value="now">now</option><option value="tonight">in tonight's dark hours</option></select></label>
+      <label>Sort by <select id="visSort"><option value="alt">altitude now</option><option value="maxalt">highest tonight</option><option value="transit">transit tonight</option><option value="mag">brightest</option><option value="planets">most planets</option><option value="name">name</option></select></label>
+      <label>Above <select id="visMinAlt"><option value="0">the horizon</option><option value="20">20°</option><option value="30">30°</option><option value="45">45°</option></select></label>
+    </div>
+    <p id="visFilt" class="note"></p>
+    <div id="visList" class="vis-list"></div>
+    <p id="visNote" class="note"></p>
     <p class="note">Keys: N and P step through targets, [ and ] change the faintest stars. In a headset the same list is on the menu.</p>
   </div>
   <div id="xrOverlay" class="xr-overlay" hidden><span class="note">Tap the sky or the menu. To line the sky up: menu, “Point &amp; set”.</span><button id="xrExit" class="chip">Exit</button></div>
   <div class="sky-corner">
-    <div id="legend" class="legend" role="group" aria-label="Stars with planets: what the colours mean; tap one to show or hide it">
-      <button id="legendHead" class="lg-h" aria-expanded="true" title="Fold or unfold the legend"><span class="t">Found by</span><span id="legendSum" class="s"></span><i class="chev" aria-hidden="true"></i></button>
-      <div id="legendItems" class="lg-items"></div>
-      <button class="lg-more linklike" data-act="vislist" title="The stars you can see now or tonight, as a list">List the visible stars</button>
-    </div>
     <div id="terrainNote" class="terrain-note" hidden>
       <button id="terrainMore" class="linklike" aria-expanded="false">Terrain: Mapzen, USGS and others</button>
       <div id="terrainSources" class="panel terrain-sources" hidden></div>
@@ -123,7 +127,6 @@
   </div>
 
   <footer class="sky-bar">
-    <div id="layers" class="layers" role="toolbar" aria-label="Layers"></div>
     <div class="timebox">
       <button id="back" class="tbtn" title="Step back"></button>
       <button id="play" class="tbtn" title="Pause"></button>

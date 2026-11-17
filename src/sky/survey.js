@@ -7,6 +7,7 @@ import * as G from '../core/skyfield.js';
 import { hipsTileUrl } from '../core/healpix.js';
 import { gaiaConeUrl, parseGaia, atEpoch } from '../core/platesolve.js';
 import { parseASU, VIZIER_MIRRORS } from '../core/rvsources.js';
+import { reportDown, reportUp } from '../site/net.js';
 
 const IRSA = 'https://irsa.ipac.caltech.edu/data/hips/CDS', ESAC = 'https://skies.esac.esa.int', CDS = 'https://alasky.cds.unistra.fr', CDS2 = 'https://alaskybis.cds.unistra.fr';
 /** The surveys offered: HiPS id (for hips2fits), deepest tile order, tile mirrors (all send CORS headers), credit. */
@@ -77,7 +78,8 @@ async function cellFromHips2fits(sv, plane, i, j) {
 async function fetchText(url) { const r = await fetch(url, { signal: timeout(30000) }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); }
 async function gaiaCone(ra, dec, radius) {
   let last;
-  for (const base of VIZIER_MIRRORS) { try { return parseGaia(await fetchText(gaiaConeUrl(base, ra, dec, radius, { gmax: 19, max: 3000 })), parseASU); } catch (e) { last = e; } }
+  for (const base of VIZIER_MIRRORS) { try { const r = parseGaia(await fetchText(gaiaConeUrl(base, ra, dec, radius, { gmax: 19, max: 3000 })), parseASU); reportUp('VizieR (Gaia DR3)'); return r; } catch (e) { last = e; } }
+  reportDown('VizieR (Gaia DR3)', last);
   throw last;
 }
 
@@ -129,8 +131,8 @@ export function openSurvey(host, target, { year = 2026, onClose } = {}) {
     const cell = { i, j, state: 'loading', canvas: null, source: '', err: '' }, sv = survey(), plane = V.plane; V.cells.set(key, cell);
     (async () => {
       try { Object.assign(cell, await cellFromTiles(sv, plane, i, j)); }
-      catch (e1) { try { Object.assign(cell, await cellFromHips2fits(sv, plane, i, j)); } catch { throw e1; } }
-    })().then(() => { cell.state = 'ok'; }).catch((e) => { cell.state = 'error'; cell.err = String(e.message || e); })
+      catch (e1) { try { Object.assign(cell, await cellFromHips2fits(sv, plane, i, j)); } catch { reportDown('Sky survey images (CDS HiPS)', e1); throw e1; } }
+    })().then(() => { cell.state = 'ok'; reportUp('Sky survey images (CDS HiPS)'); }).catch((e) => { cell.state = 'error'; cell.err = String(e.message || e); })
       .finally(() => { if (V.plane === plane) { credit(); draw(); } });
   }
   function loadGaia(i, j) {

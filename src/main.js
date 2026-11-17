@@ -1,3 +1,4 @@
+import { fetchOr, siteJson } from './site/net.js';
 import { activeParams, STAR_PARAMS, toTransitParams, buildProblem, infoCriteria, autoSupersample, A1_PRIOR_WIDTH, PLANET_FIELDS, planetKey, jitterKey, lcJitterKey, ECC_PARAMS } from './core/model.js';
 import { RV_SOURCES, sourceById, findRadialVelocities as searchRVArchives } from './core/rvsources.js';
 import { projectHandle, fitRecord } from './site/project.js';
@@ -184,6 +185,22 @@ function ldFromStar(teff, feh) {
   const [w0, w1] = bandRange(), prof = greyProfile(teff, w0, w1), fit = fitLaw(S.ldLaw, prof);
   return { coeffs: fit.coeffs, source: 'grey', prof, rms: fit.rms };
 }
+/**
+ * A range for limb-darkening coefficient i from the star: T eff and [Fe/H] drawn from their uncertainties (100 K and 0.1 dex
+ * when none are given), the coefficients of the current law recomputed from the same table or grey atmosphere as the
+ * sliders, and the range set to the nominal value ± max(3 × their spread, 0.1). The 0.1 stands for the models' own
+ * systematic error, larger than the stellar one for most stars. The current value is always inside. null when the
+ * coefficients cannot be computed for this star.
+ */
+function ldPriorRange(i, v) {
+  try {
+    const st = S.star, nom = ldFromStar(st.teff, st.feh).coeffs[i]; if (!Number.isFinite(nom)) return null;
+    const rng = makeRng(17), te = st.teffErr > 0 ? st.teffErr : 100, fe = st.fehErr > 0 ? st.fehErr : 0.1, xs = [];
+    for (let k = 0; k < 40; k++) { const c = ldFromStar(st.teff + te * rng.normal(), st.feh + fe * rng.normal()).coeffs[i]; if (Number.isFinite(c)) xs.push(c); }
+    const m = xs.reduce((a, x) => a + x, 0) / xs.length, sd = Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / Math.max(1, xs.length - 1)), half = Math.max(0.1, 3 * sd);
+    return { lo: Math.min(nom - half, v - 0.02), hi: Math.max(nom + half, v + 0.02), note: `from the star: ${nom.toFixed(3)} ± ${half.toFixed(3)} (T eff ± ${te} K, [Fe/H] ± ${fe}; at least ± 0.1 for the models' own error)` };
+  } catch { return null; }
+}
 function tieSpec(free) {
   if (S.ldMode !== 'star' || S.ldLaw === 'uniform') return null;
   const g = gridFor(S.ldLaw), rng = (key, fallback) => {
@@ -343,9 +360,12 @@ function defaultPrior(key) {
     case 'omega': return { type: 'uniform', a: r(v - 30), b: r(v + 30) };
     case 'teff': return { type: 'normal', a: v, b: S.star.teffErr > 0 ? S.star.teffErr : 100 };
     case 'feh': return { type: 'normal', a: v, b: S.star.fehErr > 0 ? S.star.fehErr : 0.1 };
-    default:
+    default: {
       if (S.ldLaw === 'kipping') return { type: 'uniform', a: 0, b: 1 };
+      const est = /^ld[0-3]$/.test(base) ? ldPriorRange(Number(base[2]), v) : null;
+      if (est) return { type: 'uniform', a: r(est.lo), b: r(est.hi), from: est.note };
       return { type: 'uniform', a: r(v - 0.3), b: r(v + 0.3) };
+    }
   }
 }
 function resetPriors(keys) { for (const k of keys) S.priors[k] = defaultPrior(k); }
@@ -517,12 +537,8 @@ function detrendBlock(el) {
 
 // ---- radial velocities from the archives (src/core/rvsources.js) -------------------------------------------------
 /** Text of a URL, with a time limit; the archives answer within seconds or not at all. */
-async function fetchArchive(url) {
-  const ac = typeof AbortController === 'function' ? new AbortController() : null, tm = ac ? setTimeout(() => ac.abort(), 30000) : 0;
-  try { const r = await fetch(url, ac ? { signal: ac.signal } : {}); if (!r.ok) throw new Error(`HTTP ${r.status}`); return await r.text(); }
-  catch (err) { throw new Error(err && err.name === 'AbortError' ? 'no answer within 30 s' : (err && err.message) || String(err)); }
-  finally { clearTimeout(tm); }
-}
+/** A velocity archive's answer as text; an outage is reported by the site's network notice (src/site/net.js) and thrown, so the mirror loop tries the next. */
+const fetchArchive = (url) => fetchOr(url, { what: 'VizieR (radial velocities)', as: 'text', timeout: 30000 });
 const rvSetId = (src, set) => `${src.id}:${set.name}`;
 /** The sets a search found, one row each, in the form the API returns them. */
 function rvSearchRows(R = S.rvSearch) {
@@ -706,11 +722,11 @@ async function hostPosition() {
 /** A TOI as a candidate system (src/ui/intro.js sessionFromTOI), from the TOI snapshot that Plan and Observe read. */
 let toiRecords = null;
 async function toiSession(name) {
-  if (!toiRecords) { const r = await fetch(new URL(TOI_SOURCE.file, ROOT)); if (!r.ok) throw new Error(`the TOI snapshot could not be read (HTTP ${r.status})`); const j = await r.json(); toiRecords = { ...TOI_SOURCE.records(j), date: j.date }; }
+  if (!toiRecords) { const j = await siteJson(new URL(TOI_SOURCE.file, ROOT), 'The TOI snapshot'); toiRecords = { ...TOI_SOURCE.records(j), date: j.date }; }
   return sessionFromTOI(toiRecords.records, name, toiRecords.date);
 }
-const fetchText = async (path) => { const r = await fetch(new URL(path, ROOT)); if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`); return r.text(); };
-const fetchCatalog = async (name) => { const r = await fetch(new URL('catalog/' + name, ROOT)); if (!r.ok) throw new Error(`The parameter catalog could not be read (${name}: HTTP ${r.status}).`); return r.json(); };
+const fetchText = (path) => fetchOr(new URL(path, ROOT).href, { what: path, as: 'text' });
+const fetchCatalog = (name) => siteJson(new URL('catalog/' + name, ROOT), "The site's catalogue");
 
 // ---- sessions as documents: export, import, local saves (docs/FORMAT.md) -----------------------------------
 const SOFTWARE = { name: 'exoplanet-science-lab', version: '0.2.0', commit: null };
@@ -1898,13 +1914,26 @@ function buildFitTab() {
       args.innerHTML = '';
       const pr = S.priors[key];
       for (const [f, name] of PRIOR_TYPES[pr.type].args) {
-        const i = h('input', { type: 'number', step: 'any', value: pr[f] ?? '', disabled: !S.free[key], 'aria-label': `${prm.label} prior ${name}` });
-        i.addEventListener('change', () => { pushUndo(); pr[f] = Number(i.value); err.textContent = S.free[key] ? validatePrior(pr) || '' : ''; if (S.range === 'prior') { buildSystemTab(); refresh(); } });
+        const i = h('input', { type: 'number', step: 'any', inputmode: 'decimal', value: pr[f] ?? '', disabled: !S.free[key], 'aria-label': `${prm.label} prior ${name}`, ...(name === 'std' ? { min: '0' } : {}) });
+        // a value that would make the prior impossible (σ ≤ 0, max ≤ min, not a number) is refused while typing and on leaving
+        const check = () => { const trial = { ...pr, [f]: Number(i.value) }, bad = i.value.trim() === '' || !Number.isFinite(Number(i.value)) ? 'a number is needed' : validatePrior(trial); i.classList.toggle('bad', !!bad); i.setAttribute('aria-invalid', bad ? 'true' : 'false'); return bad; };
+        i.addEventListener('input', () => { const bad = check(); err.textContent = bad ? `${name}: ${bad}` : ''; });
+        i.addEventListener('change', () => {
+          const bad = check();
+          if (bad) { i.value = pr[f] ?? ''; i.classList.remove('bad'); i.setAttribute('aria-invalid', 'false'); err.textContent = `${name} not changed: ${bad}.`; return; }
+          pushUndo(); S.priors[key] = { ...pr, [f]: Number(i.value), user: true, from: undefined }; renderArgs(); if (S.range === 'prior') { buildSystemTab(); refresh(); }
+        });
         args.append(h('label', { class: 'arg' }, h('span', {}, name), i));   // says whether the box is a min/max or a mean/std
       }
       err.textContent = S.free[key] ? validatePrior(pr) || '' : '';
+      if (pr.from && S.free[key]) args.title = `Range ${pr.from}`;
     };
-    cb.addEventListener('change', () => { pushUndo(); S.free[key] = cb.checked; tr.className = cb.checked ? '' : 'off'; renderArgs(); countFree(); });
+    cb.addEventListener('change', () => {
+      pushUndo(); S.free[key] = cb.checked; tr.className = cb.checked ? '' : 'off';
+      // freeing a limb-darkening coefficient: its range from the star, unless the user set one
+      if (cb.checked && /^ld[0-3]$/.test(baseKey(key)) && !(S.priors[key] && S.priors[key].user)) S.priors[key] = defaultPrior(key);
+      renderArgs(); countFree();
+    });
     sel.addEventListener('change', () => {
       pushUndo();
       const v = paramValue(key), old = S.priors[key];

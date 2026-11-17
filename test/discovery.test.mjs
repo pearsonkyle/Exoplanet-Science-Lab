@@ -101,5 +101,12 @@ check('SIMBAD link, identifier URL-encoded', D.simbadUrl('HD 209458') === 'https
   check('window colours are the planner\'s (KIND_COLOUR)', same && k.length === Object.keys(KIND_COLOUR).length, k.map((x) => `${x} ${E.EVENT_KINDS[x].color}`).join(', '));
   check('every kind names its window and its three times', k.every((x) => E.EVENT_KINDS[x].title && E.EVENT_KINDS[x].marks.length === 3 && E.EVENT_KINDS[x].rows.length === 3) && E.EVENT_KINDS.transit.marks.join() === 'Ingress,Mid-transit,Egress', k.map((x) => `${E.EVENT_KINDS[x].title}: ${E.EVENT_KINDS[x].marks.join(' / ')}`).join('; '));
 }
+// --- shapes: colour is not the only cue (the Night theme turns every colour red): six groups, six markers
+{
+  const shapes = D.GROUPS.map((g) => g.shape), codes = D.GROUPS.map((g) => D.shapeCode(g.id));
+  check('each group its own marker shape (sky shader code and page SVG)', new Set(shapes).size === D.GROUPS.length && new Set(codes).size === D.GROUPS.length && codes.every((c) => c >= 0 && c <= 5)
+    && D.GROUPS.every((g) => /^<svg[^>]*class="shape"/.test(D.shapeSvg(g.id))) && D.shapeSvg('c').includes('stroke-dasharray') && D.shapeSvg('t').includes('<path') && D.shapeCode('x') === D.shapeCode('o'),
+  D.GROUPS.map((g) => `${g.short} ${g.shape}`).join(', '));
+}
 
 console.log(ok ? '\ndiscovery: all passed' : '\ndiscovery: FAILED'); process.exit(ok ? 0 : 1);

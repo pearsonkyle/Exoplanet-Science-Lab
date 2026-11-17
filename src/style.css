@@ -512,3 +512,17 @@ table.res tr:focus-visible { outline-offset: -2px; }
 .cx-read { font-size: 12px; line-height: 1.5; color: var(--dim); }
 .cx-read b { color: var(--text); font-weight: 600; }
 @media (pointer: coarse) { .cx-ctl button, .cx-ctl select { min-height: 40px; } }
+
+/* the plot's tools in their own strip above the plot at every size (laid over the plot they hid its title and the
+   fitted values in some aspect ratios); right-aligned when there is room, scrolling sideways when there is not */
+.lctools { left: 0; right: 0; top: 0; display: block; height: var(--tool-h); }
+.lcrow { display: flex; gap: 6px; align-items: center; justify-content: flex-end; height: 100%; padding: 0 10px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+.lcrow::-webkit-scrollbar { display: none; }
+.lcrow > * { flex: none; }
+.lcrow .lchint { margin-right: auto; }
+#lccanvas { top: var(--tool-h); height: calc(100% - var(--tool-h)); }
+.lcmenu { top: calc(var(--tool-h) + 2px); right: 8px; }
+.viewpop { right: 8px; }
+@container lc (max-width: 820px) { .lcrow { justify-content: flex-start; } }
+/* a prior argument that would make the prior impossible (σ ≤ 0, max ≤ min): refused, and shown while typing */
+.args input.bad { border-color: var(--bad); box-shadow: 0 0 0 1px color-mix(in srgb, var(--bad) 60%, transparent); }

@@ -614,13 +614,16 @@ export const SECTIONS = [
 
   // =================================================================================================================
   {
-    id: 'observability', title: 'Observability and sky positions', code: ['src/core/observability.js', 'src/core/astro.js', 'src/core/horizon.js', 'src/core/skyfield.js', 'src/core/healpix.js'],
+    id: 'observability', title: 'Observability and sky positions', code: ['src/core/observability.js', 'src/core/astro.js', 'src/core/asteroids.js', 'src/core/horizon.js', 'src/core/skyfield.js', 'src/core/healpix.js'],
     body: [
       r`Two modules compute positions; both take UT1 = UTC and use the algorithms of [@meeus1998]: IAU 1976 precession, the mean sidereal time of 1982, a four-term nutation, the low-precision Sun (chapter 25) and a truncated lunar theory (chapter 47). The sky view ({{astro.js}}) adds the planets from the Keplerian elements of [@standish] with light-time iteration, apparent sidereal time, and refraction for display by the formulas of Bennett and Sæmundsson as given by [@meeus1998] (see also [@bennett1982]). The planner ({{observability.js}}) uses mean sidereal time for the target, topocentric parallax for the Moon, and the airmass of [@kasten1989].`,
       { h: 'Which transits are observable' },
       r`Transit $n$ is at $T_n = T_0 + nP$, converted from $\mathrm{BJD}_\mathrm{TDB}$ to UTC, with ingress and egress at $T_n \mp T_{14}/2$. Its mid-time uncertainty is`,
       { eq: r`\sigma_n = \sqrt{\sigma_{T_0}^2 + (n\,\sigma_P)^2}` },
       r`which assumes $T_0$ and $P$ uncorrelated. A transit is listed as observable in full when the whole region of interest, from one hour before ingress to one hour after egress, has the target above 30° altitude with the Sun below −18°; complete transits with a shorter baseline, and partial ones, are listed as such. All three limits are settings. Rise, set and twilight times are found by sampling every 10 minutes and bisecting.`,
+      { h: 'Bright asteroids and paths' },
+      r`The sky view draws eight bright asteroids (Ceres, Pallas, Juno, Vesta, Hebe, Iris, Hygiea, Eunomia) from osculating elements of the JPL Small-Body Database bundled in {{asteroids.js}} (epoch JD 2461200.5 TDB, ecliptic J2000), propagated as two-body orbits about the Sun (Kepler's equation as for the planets), with light-time iteration and the Earth of {{astro.js}}; magnitudes are the IAU $H, G$ system of Bowell et al. (1989) with $H$ and $G$ from the same database. A card's "Show path" draws where a satellite (SGP4), the Moon, a planet or an asteroid goes: across the sky tonight, or among the stars over ±3 days to ±6 months (drawn in J2000, so it turns with the stars), with time or date ticks.`,
+      r`Against JPL Horizons (geocentric astrometric RA and Dec, five dates from 200 days before the epoch to a year after, {{test/asteroids.test.mjs}}): at most 56″ within 200 days of the epoch and 138″ a year after it (Hygiea; the other seven under 40″), magnitudes within 0.003 mag. Perturbations by the planets are not modelled, so the error keeps growing away from the epoch; the elements are refreshed by {{test/make_asteroid_reference.py}}.`,
       { h: 'Terrain horizon' },
       r`The horizon profile is traced through elevation tiles (Mapzen/Tilezen Terrarium) along great circles out to 150 km on a spherical Earth, with terrestrial refraction through an effective radius $R/(1 - k)$, $k$ = 0.13.`,
       { h: 'Survey image of a field' },

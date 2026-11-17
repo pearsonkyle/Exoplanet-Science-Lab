@@ -8,6 +8,8 @@
 <meta name="esl-root" content="../">
 <!-- the site theme before first paint (src/site/theme.js) -->
 <script>try{var t=localStorage.getItem('esl.theme');if(t&&t!=='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<!-- opened as a file: browsers do not run the site's modules from file://; say how to open it (docs/guide/getting-started.md) -->
+<script>if(location.protocol==='file:')addEventListener('DOMContentLoaded',function(){var d=document.createElement('div');d.setAttribute('role','alert');d.style.cssText='position:fixed;inset:auto 12px 12px 12px;z-index:999;padding:14px 16px;border-radius:8px;background:#1a2133;color:#dfe6f3;border:1px solid #ffb454;font:14px/1.5 system-ui;max-width:640px';d.innerHTML='<b>This page needs a local web server.</b> Browsers do not run the site\u2019s scripts from a file. In the folder that holds it, run <code>npx serve</code> or <code>python3 -m http.server</code> and open the address it prints (for example http://localhost:8000/).';document.body.appendChild(d)})</script>
 <link rel="stylesheet" href="../src/site/site.css">
 <link rel="stylesheet" href="../src/validation/validation.css">
 <link rel="stylesheet" href="../src/methods/methods.css">

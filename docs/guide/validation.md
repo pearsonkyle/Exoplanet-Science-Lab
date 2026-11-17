@@ -878,6 +878,34 @@ on show (the best fit after a fit, the live draw while sampling), not a per-pixe
 convention: the hemisphere facing the observer has sub-observer longitude −(phase − 0.5) × 360° and latitude 90° − i
 at eight phases for i = 90° and 83.5° (error below 10⁻⁶°), and the substellar point faces the star.
 
+**Offline.** `tools/sw/build.mjs` writes `dist/sw.js` after every build (a Vite plugin, and again in
+`tools/docs/assemble.mjs` once the docs are in): the template `tools/sw/template.js` with the list of every file
+of `dist/` and the first 16 hex digits of its SHA-256. The version is the hash of that list, the cache is
+`esl-<version>`. Install saves the shell (147 files, 8.0 MB: every page, script, style, worker, image, the sky data,
+observatories, validation data and the catalogue index) and fails if any of it fails; the rest (500 files, 62.9 MB:
+catalogue shards and snapshots, examples, sample FITS, the docs) is saved in the background when a page has been idle
+4 s, three files at a time, unless the browser's Save-Data is on. Every download is checked against the manifest
+hash, so a file from a newer deploy never enters an older version's cache; a file with the same hash is copied from
+the previous version's cache instead of downloaded. Same-origin requests are answered cache first; revalidation is
+per version (the browser re-checks `sw.js` on navigation, at most every 5 min from the worker), and a new version waits
+until the page accepts the "Reload" notice or no tab is open, then deletes the old cache. Other origins are not
+intercepted. `src/site/net.js` puts "Offline: using the saved copy" in the site bar when `navigator.onLine` is false or
+a same-origin file fails, and `fetchOr(url, { what, fallback })` turns a failed request into a notice naming the
+service. `src/site/offline.js` registers the worker only in a production build over https or localhost; `?nosw`
+removes it. `test/offline_check.py` (Chromium, Playwright) serves a built copy itself, saves the site (647 of 647
+files), then stops the server and cuts the connection, and opens home, Plan, Observe, Analyze (start page,
+`?skipintro`, the eclipse-map example), Photometry (and the WASP-18 TESS sample), Spectroscopy, Search (rows loaded),
+Methods (and Validation ready), the docs home, a guide, the 4.4 MB METHODS page and a redirect stub: all render, with
+no page error, and show the offline pill; an unknown address gets a page that says it is not saved; a TESS search on
+Photometry shows "You are offline: The MAST archive (its AWS bucket) needs the internet". With `--update` it changes
+one file and regenerates `sw.js`: the new version installs next to the old one, Reload switches to it, the old cache
+is deleted, and only `index.html` and `sw.js` are downloaded again (no catalogue, example or docs request). Not
+checked: Firefox and Safari (Safari may evict the cache after weeks without a visit), a real flaky network (a server
+that hangs rather than refuses), storage quota prompts, and the live services' notices other than MAST's (VizieR,
+SIMBAD and the RV, sky and assistant calls in files not yet moved to `fetchOr`). `file://` does not work (Chromium
+blocks module scripts and stylesheets with `crossorigin` from origin `null`, checked); each page then shows how to
+start a local server.
+
 Page checks without the interactive browser: `.venv/bin/python tools/shot.py '<path>' out.png [w h] --wait ms
 --eval "<js>"` takes a headless screenshot and prints console errors.
 
@@ -916,9 +944,10 @@ a link to SIMBAD (CfA mirror); the planets sit in a folded "Planets (n)" list, e
 radius, mass, discovery method, year and facility, its next transit, links to Analyze, Plan and Search).
 Hosts are coloured by discovery method (Okabe–Ito: transit, radial velocity, imaging, microlensing, other, plus
 TOI candidates), each with a letter on its label; a host found by several methods takes the colour of the method
-that found most of its planets. An always-visible legend counts the hosts of each kind above the horizon and
-toggles them; the "Visible" panel lists what is up now or during tonight's dark hours, filtered by kind,
-altitude, magnitude and number of planets, sorted by altitude, magnitude, transit tonight or name. Per-method
+that found most of its planets. The Filter panel (it replaced the legend, the Discovery panel and the Visible
+button in 2026-11) counts the hosts of each kind above the horizon and toggles them; the Tonight panel lists what
+is up now or during tonight's dark hours under the same filters, sorted by altitude, magnitude, transit tonight or
+name. Per-method
 counts equal a live archive query (planets: transit 4799, RV 1205, imaging 98, microlensing 294, other 74);
 every one of the 64 filter combinations keeps a mixed system while any of its methods is on
 (`test/discovery.test.mjs`, `test/visible.test.mjs`). A
@@ -932,6 +961,37 @@ which made a 24° false horizon); tiles are cached in IndexedDB. Against an inde
 (WGS84 geodesics) on the same tiles: 0.021° rms at Kitt Peak, 0.020° at Mauna Kea; against tiles one zoom finer
 0.036° and 0.028° rms. No published horizon profile was compared; buildings and trees are not in the data.
 
+**Host markers, the Filter panel and paths (2026-11-16).** Each discovery method now has its own marker shape
+as well as its colour (transit: a ring crossed by a bar; radial velocity: a ring; imaging: a square;
+microlensing: a diamond; other: a triangle; TOI candidate: a dashed ring), drawn with a 1.7 px line and a dark rim
+so that the Night theme's red-only filter keeps them apart. Before, hosts were drawn only down to V = 6.5 at a
+100° field, which left 1 transit host against 159 radial-velocity hosts (transit hosts are faint Kepler and TESS
+stars); the limit is now V = 10 at 100° (a magnitude deeper per factor 2.5 of zoom): 227 transit, 673 RV, 34
+imaging, 2 other and 531 TOI-candidate markers in the same view (counted by `discoveryCounts()` on the page,
+2026-11-17 04:00 UTC from 40° N 105° W, az 90°, alt 40°). Hosts without a magnitude (273 of the 284
+microlensing hosts) count as V = 12, so they appear below a field of about 63°. Checked by eye in Dark and Night
+at 1440 × 900 and 390 × 844 (headless Chromium, SwiftShader); not on a real phone or under a real red filter.
+The Filter panel's host filter (`src/sky/hostFilter.js`, `test/hostfilter.test.mjs`, 17 checks) limits the stars
+by magnitude, effective temperature, spectral class, distance, number of planets, transiting and transit
+tonight, with stars lacking a value kept or left out. The values are baked into `public/sky/hosts.json` by
+`tools/build_sky_data.py` (1.09 MB, was 0.88 MB) from the planet table snapshot (NASA Exoplanet Archive composite:
+`st_teff`, `st_spectype`, `sy_dist`, `tran_flag`) and, for the 4,968 stars with TESS candidates only, from the TOI
+table (`st_teff`, `st_dist`); the baked values equal those columns read independently in the test (0 differences
+in Teff, distance, class or transit flag), and with a temperature filter set the page fetches no catalogue table
+(network log, headless). An older hosts.json falls back on loading both tables (about 8 MB). Known
+for 9,403 of 9,830 stars (Teff), 9,645 (distance), 9,436 (class); without the TOI table only 4,564 and 4,834. The
+values the page builds equal the snapshot's raw columns for every host (4,565 Teff, 4,834 distances, 0
+differences), and every limit, with unknowns in and out, equals a brute-force pass written out in the test (12
+filters, 0 disagreements). Spectral class is the archive's spectral type, else Teff on the dwarf scale of Pecaut &
+Mamajek (2013): 22 cases. A card's "Show path" draws the path of a satellite (its pass, ±10 or ±30 min, SGP4),
+the Moon, a planet or one of eight bright asteroids: tonight across the sky with hourly ticks, or among the stars
+over ±3 days to ±6 months with dated ticks. The asteroids are two-body orbits from bundled JPL SBDB elements
+(`src/core/asteroids.js`); against JPL Horizons geocentric astrometric positions (`test/asteroids.test.mjs`,
+reference from `test/make_asteroid_reference.py`, 8 asteroids × 5 dates): at most 56″ within 200 days of the
+epoch (2026-06-09) and 138″ a year after (Hygiea; the others under 40″), distance within 0.11%, magnitude within
+0.003 mag. The paths were checked by eye only (Vesta's retrograde loop, the Moon's ±15 days, Jupiter tonight, a
+satellite pass); the planets' and Moon's positions are those of `astro.js`, checked above.
+
 **Immersive mode (WebXR).** *VR* puts you inside the sky, *Passthrough* draws it over the camera image. Point a
 controller at a star, planet or host and pull the trigger for its card; the thumbstick runs time (left/right, up
 to 2 h/s) and the magnitude limit (up/down); grip and sweep turns the sky, or after B/Y scrubs time at 15° per
@@ -940,9 +1000,29 @@ exit). Hands work by pinch; without controllers a 1.3 s gaze presses. A headset 
 choose a bright object and "Point & set". The pointing, picking, menu and alignment maths are pure functions
 (`src/sky/xrInput.js`, 39 checks in `test/xr.test.mjs`); `test/xr_check.py` drives the page against Meta's WebXR
 emulator (iwer, emulated Quest 3): a controller aimed where `astro.js` puts Vega selects Vega, a 30° grip sweep
-turns the sky 30.000°, a 15° scrub gives 60.000 min (38 checks). Not checked: any real headset or phone;
+turns the sky 30.000°, a 15° scrub gives 60.000 min (49 checks). Not checked: any real headset or phone;
 passthrough compositing, comfort, legibility, frame rate and haptics. Controller models load from jsdelivr; a
 plain pointer is shown without them.
+
+*Windows and exits in the headset.* The menu, the selection's card and a survey image (DSS2 colour from CDS
+hips2fits, 5′ to 60′ across) are floating windows: hold the trigger, a pinch or a gaze-and-pinch on the title bar
+to move one (the thumbstick then pushes it away or pulls it in), on the bottom-right corner to resize it, or grip
+anywhere on it. The menu shows one tab at a time (Transits tonight, Visible, Show, Stars with planets, Compass),
+0.49 m tall instead of about 1 m. The card adds "Turn to face it" (VR only) and "Survey image". Exits: "Exit VR" on
+the menu's title bar and on the folded menu, B or Y held for 1 s (a countdown shows; a tap still switches the
+grip), and the browser's own. A or X, or a hand's palm turned up and looked at for 0.5 s, brings the menu in front
+of you (or folds it when it is already there). A pinch held and dragged on the sky turns it, as the grip does.
+Vision Pro's gaze-and-pinch (`transient-pointer`) presses and drags; once one is seen the 1.3 s dwell is turned
+off. Where a browser tracks hands but sends no select event, a pinch read from the joints (closes under 15 mm,
+opens over 30 mm, and only if no select event comes within 250 ms) stands in. The geometry (a grabbed point stays
+under the ray to 1e-14 in u, v and metres over a 48° sweep; a resize keeps the top-left corner and the aspect), the hit zones, the
+tabs and the gesture state machines are pure functions in `src/sky/xrPanel.js` with 31 checks on synthetic poses
+in `test/xrpanel.test.mjs`. The emulator run adds: title-bar drag (the grabbed point stays at u 0.3000), corner
+resize (0.840 → 1.040 m for a 0.2 m drag, top-left fixed to 0.00 mm), grip-move of a window, tabs, the folded
+menu, "Turn to face it" (to 0.001°) and Y held to leave passthrough. Not checked: the survey image against the
+live CDS server (unreachable when this was run; a stand-in image is drawn instead), the joint pinch, palm up and
+`transient-pointer` input on any device (iwer emulates Quest controllers and hands only), Cardboard-style gaze
+selects, and how the windows feel to move and read in a real headset.
 
 Accuracy of `src/core/astro.js` against astropy/ERFA with DE432s (`test/astro.test.mjs`, 65 instants 1975 to
 2050, five sites): sidereal time 0.3″, star altitude and azimuth 25″ (annual aberration is not modelled), Sun
