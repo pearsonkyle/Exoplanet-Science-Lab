@@ -1116,16 +1116,27 @@ the others or elongated) and lists the runners-up with their reasons. Once frame
 into one line. The assistant has `photometry_examine_star` and `photometry_focus_map`. The analyzer also opens FITS
 light-curve tables (TESS, Kepler, K2: PDCSAP or the first corrected flux, quality-flagged cadences left out).
 
-Checks (`imexam` 26, `lcfits` 10): binned profiles and curves of growth equal photutils `RadialProfile` /
+Checks (`imexam` 36, `lcfits` 10): binned profiles and curves of growth equal photutils `RadialProfile` /
 `CurveOfGrowth` to 6e-15 on six stars of the HAT-P-32 b frame; the binned Gaussian FWHM equals photutils'
 `gaussian_fwhm` (0.000%), the Moffat FWHM scipy `curve_fit` (0.33%); region statistics equal astropy
 `sigma_clipped_stats` to 1e-14. On synthetic stars: the Gaussian FWHM of a pixel-integrated Gaussian 0.00% from
 2.3548 √(σ² + 1/12), the half-flux diameter 0.94% from it, a Moffat star's FWHM 0.37% and β 2.75 against 2.70,
 major-axis angles to 0.001° and ellipticity to 0.005. On synthetic fields of 70 to 80 stars: cell FWHMs within
 1.2%, curvature 25.4% against 25.7% true, the sharpest point within 1 px of the centre, a tilt of 31% with the
-right worst corner, trailed stars at 59.9° against 60°, and an evenly focused field called even. On EXOTIC's
-HAT-P-32 b frames (MicroObservatory) the focus map measures 35 stars at 2.37 px (12.3″) median FWHM and finds them
-43% elongated, 82% in the same direction: trailing, which the frames show by eye. FITS tables written by astropy
+right worst corner, trailed stars at 59.9° against 60°, and an evenly focused field called even.
+
+The 2-D shape (`psfMoments`): the centroid, second moments and coma vector of Gaussian mixtures equal their analytic
+values to 4e-14; with the Gaussian weight, an elongated star's moments equal (S⁻¹ + I/σ_w²)⁻¹ to 7e-7 and a round
+star has no coma; a core with a tail toward 120° gives a coma toward 118.8°; the 180° asymmetry is 0.0018 for a
+symmetric star (bilinear rotation gave 0.013, hence cubic convolution) and 0.0621 against 0.0620 from the analytic
+rotated image. Focus map additions on synthetic fields: a tip/tilt plane of 45.4% toward 0.5° against 45.1% toward
+0°; with S/N ≥ 150, 28 of 68 stars measured and the other 40 reported as faint; a clipped star in a float frame
+without SATURATE rejected as saturated; tails toward 210° on every star found as a field-wide coma toward 209.7°
+(coherence 1.00, median 0.40, round stars 0.043). On the first HAT-P-32 b frame of EXOTIC's sample (MicroObservatory,
+cut to the field around the three stars) the map measures 13 of 68 detected stars at S/N ≥ 30 (54 fainter, 1
+crowded): median FWHM 2.38 px, elongation 43.6%, 87% in one direction, which is the trailing the frames show by eye;
+their coma (0.50) is far above the 0.04 of round stars, as uneven trailing gives. The noise floors (0.04 coma, 0.03
+asymmetry) and the verdict thresholds come from synthetic fields only; no measured optical system has been compared. FITS tables written by astropy
 in the SPOC and Kepler layouts (one gzipped) are read to 1e-6 d and 1e-9 in relative error with the flagged and
 blank rows left out.
 

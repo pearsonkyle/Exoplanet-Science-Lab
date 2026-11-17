@@ -94,6 +94,12 @@ progress { width: 100%; height: 6px; accent-color: var(--model); margin-top: 8px
 @media (max-width: 480px) { .vbar.tools .tlab { display: none; } .seg { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; } }
 .seg .btn { flex: none; }
 .iplot { display: block; width: 100%; margin: 4px 0 8px; border-radius: 6px; }
+/* the radial profile and the star in two dimensions side by side, each half the panel */
+.iplots2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.iplots2 > .iplot { min-width: 0; }
+/* what the marks on the image mean (Focus) */
+.flegend { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 10px; font-size: 12px; align-items: center; }
+.flegend svg { display: block; }
 table.kv { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.kv th { text-align: left; color: var(--dim); font-weight: 500; padding: 3px 8px 3px 0; vertical-align: top; white-space: nowrap; }
 table.kv td { font-family: var(--mono); padding: 3px 0; overflow-wrap: anywhere; }

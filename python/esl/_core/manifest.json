@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "5f27a6a3d5457f2f",
+ "sourceHash": "8d422ff7b2401a2e",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1334211,
-   "sha256": "b494593a13f28fd29a77fd118c6d814cafcbe01a578d74a9a7eaefa26e0a4459"
+   "bytes": 1344925,
+   "sha256": "858e60ca6f08a69ecb86446e12f3fa601d634c8ae4dd0c5650669a7dc41dcac7"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -395,6 +395,7 @@
    "seff"
   ],
   "imexam": [
+   "bicubic",
    "bilinear",
    "focusMap",
    "gainFromSky",
@@ -402,6 +403,7 @@
    "lmFit",
    "optimalAperture",
    "pixelTable",
+   "psfMoments",
    "psfShape",
    "radialProfile",
    "rankComparisons",

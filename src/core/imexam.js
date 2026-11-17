@@ -150,6 +150,16 @@ export function bilinear(data, w, h, x, y) {
   return (1 - fy) * ((1 - fx) * data[i] + fx * data[i + 1]) + fy * ((1 - fx) * data[i + w] + fx * data[i + w + 1]);
 }
 
+/** Cubic convolution at (x, y) (Keys 1981, a = -0.5), from the 4 x 4 pixels around it; NaN where they leave the image. */
+export function bicubic(data, w, h, x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  if (ix < 1 || iy < 1 || ix + 2 > w - 1 || iy + 2 > h - 1) return bilinear(data, w, h, x, y);
+  const k = (t) => { t = Math.abs(t); return t <= 1 ? (1.5 * t - 2.5) * t * t + 1 : t < 2 ? ((-0.5 * t + 2.5) * t - 4) * t + 2 : 0; };
+  const kx = [k(1 + fx), k(fx), k(1 - fx), k(2 - fx)], ky = [k(1 + fy), k(fy), k(1 - fy), k(2 - fy)];
+  let v = 0; for (let j = 0; j < 4; j++) { const row = (iy - 1 + j) * w + ix - 1; v += ky[j] * (kx[0] * data[row] + kx[1] * data[row + 1] + kx[2] * data[row + 2] + kx[3] * data[row + 3]); }
+  return v;
+}
+
 /** Values along the segment (x0, y0) -> (x1, y1), sampled every `step` px (imexam 'l' and 'c' along any direction). */
 export function lineProfile(data, w, h, x0, y0, x1, y1, step = 0.5) {
   const L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(2, Math.floor(L / step) + 1), s = new Float64Array(n), v = new Float64Array(n), px = new Float64Array(n), py = new Float64Array(n);
@@ -203,44 +213,156 @@ export function psfShape(fit) {
 }
 
 // ---------------------------------------------------------------------------------------------------------
+// Shape and asymmetry of one star from its moments
+
+/**
+ * The 2-D light distribution of a star described by its moments, for the asymmetry a single radial profile hides.
+ * Sky-subtracted pixels whose centres lie within `radius` of the centroid are used without weighting (the centroid is
+ * iterated inside that circle). With F = sum I:
+ *   centroid       xc = sum I x / F
+ *   second moments Ixx = sum I dx^2 / F, Iyy, Ixy: the eigenvalues l1 >= l2 give the axes a = sqrt(l1), b = sqrt(l2);
+ *                  ellipticity 1 - b/a (as psfShape, so the two are comparable) and the major axis at
+ *                  0.5 atan2(2 Ixy, Ixx - Iyy), counter-clockwise from +x (y up)
+ *   coma           C = (Ixxx + Ixyy, Ixxy + Iyyy) / s^3 with s^2 = (Ixx + Iyy) / 2: the dipole (m = 1) part of the
+ *                  third moments, dimensionless; it points from the core toward the side where the light trails, so a
+ *                  pattern of C across the field reads tilt or decentring (coma) the way FWHM reads focus
+ *   asymmetry      A = sum |I - I180| / (2 sum |I|), I180 the image rotated by 180 degrees about the centroid (cubic
+ *                  convolution, Keys 1981: bilinear interpolation alone gives 0.01 for a perfectly symmetric 4 px star),
+ *                  0 for any point-symmetric star (Abraham et al. 1996; Conselice et al. 2000); noise raises it, so
+ *                  compare stars of similar signal to noise
+ * With opts.weight = sigma_w every pixel is also weighted by exp(-r^2 / 2 sigma_w^2) about the centroid (iterated to its
+ * fixed point), as in adaptive-moment shape measurement: the faint wings, where noise dominates the third moments,
+ * count less. For a Gaussian star of covariance S the weighted moments are those of (S^-1 + sigma_w^-2 I)^-1.
+ * @param opts { radius = 10, background = 0, recentre = true, weight (sigma_w, px; none by default) }
+ * @returns { x, y, flux, ixx, iyy, ixy, a, b, ellipticity, angle, fwhm (2.3548 sqrt((a^2 + b^2) / 2)), coma: { x, y, size,
+ *            angle }, asymmetry, n, stamp: { x0, y0, nx, ny, v (sky subtracted, row 0 = lowest y) } } or null
+ */
+export function psfMoments(data, w, h, x0, y0, opts = {}) {
+  const R = opts.radius ?? 10, bg = opts.background ?? 0, sw = opts.weight > 0 ? opts.weight : 0, k2 = sw ? 0.5 / (sw * sw) : 0;
+  let xc = x0, yc = y0;
+  // every pixel inside R, its value times the weight about the current centroid (1 without one)
+  const each = (fn) => {
+    const xa = Math.max(0, Math.ceil(xc - R)), xb = Math.min(w - 1, Math.floor(xc + R)), ya = Math.max(0, Math.ceil(yc - R)), yb = Math.min(h - 1, Math.floor(yc + R));
+    for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) { const dx = x - xc, dy = y - yc, r2 = dx * dx + dy * dy; if (r2 > R * R) continue; const v = data[y * w + x]; if (v === v) fn(x, y, (v - bg) * (sw ? Math.exp(-k2 * r2) : 1), dx, dy); }
+  };
+  for (let it = 0; it < (opts.recentre === false ? 0 : 40); it++) {
+    let F = 0, sx = 0, sy = 0; each((x, y, v) => { F += v; sx += v * x; sy += v * y; });
+    if (!(F > 0)) return null;
+    const nx = sx / F, ny = sy / F, moved = Math.hypot(nx - xc, ny - yc); xc = nx; yc = ny;
+    if (moved < 1e-6) break;
+  }
+  let F = 0, n = 0, Sxx = 0, Syy = 0, Sxy = 0, Sxxx = 0, Sxyy = 0, Sxxy = 0, Syyy = 0, Fx = 0, Fy = 0;
+  each((x, y, v, dx, dy) => { F += v; n++; Fx += v * dx; Fy += v * dy; });
+  if (!(F > 0) || n < 5) return null;
+  // moments about the centroid of these very pixels (a residual offset after the last iteration is removed exactly)
+  const ox = Fx / F, oy = Fy / F;
+  each((x, y, v, dx0, dy0) => { const dx = dx0 - ox, dy = dy0 - oy; Sxx += v * dx * dx; Syy += v * dy * dy; Sxy += v * dx * dy; Sxxx += v * dx * dx * dx; Sxyy += v * dx * dy * dy; Sxxy += v * dx * dx * dy; Syyy += v * dy * dy * dy; });
+  xc += ox; yc += oy;
+  const ixx = Sxx / F, iyy = Syy / F, ixy = Sxy / F, tr = ixx + iyy, dif = Math.hypot((ixx - iyy) / 2, ixy);
+  const l1 = tr / 2 + dif, l2 = Math.max(0, tr / 2 - dif), a = Math.sqrt(l1), b = Math.sqrt(l2);
+  const angle = ((0.5 * Math.atan2(2 * ixy, ixx - iyy) * 180 / Math.PI) + 180) % 180, s3 = Math.pow(tr / 2, 1.5);
+  const cx = (Sxxx + Sxyy) / F / s3, cy = (Sxxy + Syyy) / F / s3;
+  // 180-degree rotational asymmetry about the centroid
+  let num = 0, den = 0;
+  each((x, y, v, dx, dy) => { const r = bicubic(data, w, h, 2 * xc - x, 2 * yc - y), wt = sw ? Math.exp(-k2 * (dx * dx + dy * dy)) : 1; if (r === r) { num += Math.abs(v - (r - bg) * wt); den += Math.abs(v); } });   // the weight is the same at a pixel and its mirror
+  // the stamp, for drawing
+  const sx0 = Math.max(0, Math.floor(xc - R)), sx1 = Math.min(w - 1, Math.ceil(xc + R)), sy0 = Math.max(0, Math.floor(yc - R)), sy1 = Math.min(h - 1, Math.ceil(yc + R));
+  const snx = sx1 - sx0 + 1, sny = sy1 - sy0 + 1, sv = new Float64Array(snx * sny);
+  for (let y = sy0; y <= sy1; y++) for (let x = sx0; x <= sx1; x++) sv[(y - sy0) * snx + (x - sx0)] = data[y * w + x] - bg;
+  return {
+    x: xc, y: yc, flux: F, ixx, iyy, ixy, a, b, ellipticity: a > 0 ? 1 - b / a : 0, angle, fwhm: FWHM_SIGMA * Math.sqrt(tr / 2),
+    coma: { x: cx, y: cy, size: Math.hypot(cx, cy), angle: ((Math.atan2(cy, cx) * 180 / Math.PI) + 360) % 360 },
+    asymmetry: den > 0 ? num / (2 * den) : NaN, n, stamp: { x0: sx0, y0: sy0, nx: snx, ny: sny, v: sv },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------------
 // Focus across the field
 
 const median = (arr) => { const a = Float64Array.from(arr).sort(), n = a.length; return n ? (n & 1 ? a[n >> 1] : 0.5 * (a[(n >> 1) - 1] + a[n >> 1])) : NaN; };
 
 /**
  * Measure every usable star of a frame and describe the focus across the field, as CCDInspector-style tools do.
- * Stars are found with detectSources; saturated stars, stars with a neighbour within 2.5 box half-widths and
- * failed fits are dropped. Each star is fitted with a rotated Gaussian (fitPsf, two passes: the second with a box
- * scaled to the median width). The field is divided into nx x ny cells (each with the median FWHM, ellipticity and
+ * Stars are found with detectSources. A star is measured only when it is bright enough for its shape to mean
+ * something and does not distort it; every other detected star is returned in `rejected` with the reason:
+ *   'saturated'  peak at or above 90% of the saturation level (non-linear before it clips); without a level (a
+ *                floating-point frame without SATURATE), a flat top: peak within 5% of the frame's maximum with at
+ *                least 3 pixels of the 5 x 5 around it within 2% of the peak
+ *   'edge'       the fitting box leaves the frame
+ *   'faint'      signal to noise below minSnr, S/N = F / sqrt(F / gain + N sigma^2) with F the fitted flux (the
+ *                detection's flux when the fit failed) and N the pixels of a circle of radius 1.5 FWHM: a faint star's
+ *                width is mostly noise (and reads as soft)
+ *   'fit'        the rotated-Gaussian fit failed or wandered
+ *   'crowded'    a neighbour brighter than 5% of the star within the fitting box's half-width + 3 sigma, or a blend: an
+ *                elongation above 0.3 and above the field's median by 0.2 (two stars too close to be separated)
+ * (checked in this order, so a faint star is reported as faint whatever else applies)
+ * Each star is fitted with a rotated Gaussian (fitPsf, two passes: the second with a box scaled to the median width)
+ * and described by its moments (psfMoments: coma vector and 180-degree asymmetry) inside 3 FWHM, with a Gaussian
+ * weight of sigma 0.7 FWHM: unweighted, the noise of the faint wings gives round stars of S/N 50 to 250 a coma of 1.8
+ * (median); weighted, 0.04. The field is divided into nx x ny cells (each with the median FWHM, ellipticity and
  * the mean elongation direction), and a quadratic surface FWHM(x, y) is fitted with one 3-sigma rejection.
  * Elongation pattern: <cos 2(angle - radial direction)> weighted by ellipticity is +1 for stars stretched along the
  * radius from the centre, -1 for tangential stretching (both point to optics: field curvature, coma, astigmatism,
  * tilt), while a large |<exp(2 i angle)>| means all stars point the same way (tracking or guiding, wind shake).
- * @param opts { nx = 3, ny = 3, max = 250, nsigma = 8, saturation = Infinity, pixelScale (arcsec/px, for the summary) }
- * @returns { stars: [{ x, y, fwhm, fwhmMajor, fwhmMinor, ellipticity, angle, peak, flux }], cells: [{ ix, iy, x0, x1,
- *            y0, y1, n, fwhm, ellipticity, angle, coherence }], surface (polySurface result or null), summary: { n,
- *            fwhm (median), fwhmCentre, fwhmCorners [lower left, lower right, upper left, upper right], curvature,
- *            tilt, worstCorner, best: {x, y} or null, ellipticity (median), radial, coherence, angle, verdict: [] } }
+ * Tip/tilt: a plane FWHM = f0 + gx (x - xc) + gy (y - yc) is fitted to the stars by least squares (one 3-sigma
+ * rejection); a tilted sensor makes one side of the frame softer, so `plane` gives the change of FWHM across the frame
+ * along the gradient, its direction (toward the softer side, counter-clockwise from +x) and its significance.
+ * Coma pattern: the coma vectors (psfMoments) averaged as for elongation: `comaCoherence` |sum C| / sum |C| near 1 when
+ * every star trails the same way (a decentred or tilted optic), `comaRadial` <C . r_hat> / <|C|> over the outer stars,
+ * +1 when tails point away from the centre and -1 toward it.
+ * @param opts { nx = 3, ny = 3, max = 250, nsigma = 8, saturation = Infinity, minSnr = 30, gain = 1, pixelScale }
+ * @returns { stars: [{ x, y, fwhm, fwhmMajor, fwhmMinor, ellipticity, angle, peak, flux, snr, coma, asymmetry }],
+ *            rejected: [{ x, y, peak, flux, reason }], cells: [{ ix, iy, x0, x1, y0, y1, n, fwhm, ellipticity, angle,
+ *            coherence }], surface (polySurface result or null), summary: { n, rejected: { reason: count }, minSnr,
+ *            fwhm (median), fwhmCentre, fwhmCorners [lower left, lower right, upper left, upper right], curvature, tilt,
+ *            worstCorner, plane: { f0, gx, gy, across, fraction, angle, sigma, n } or null, best: {x, y} or null,
+ *            ellipticity (median), radial, coherence, angle, coma (median |C|), comaCoherence, comaAngle, comaRadial,
+ *            asymmetry (median), verdict: [] } }
  */
 export function focusMap(data, w, h, opts = {}) {
-  const { nx = 3, ny = 3, max = 250, nsigma = 8, saturation = Infinity } = opts;
+  const { nx = 3, ny = 3, max = 250, nsigma = 8, saturation = Infinity, minSnr = 30, gain = 1 } = opts;
   const det = detectSources(data, w, h, { nsigma, max, border: 6, minSep: 4, saturation, half: 6 });
   const src = det.sources;
-  const fitAll = (half, s0) => {
-    const out = [];
-    for (let i = 0; i < src.length; i++) {
-      const s = src[i]; if (s.saturated) continue;
-      let crowded = false; for (let j = 0; j < src.length && !crowded; j++) if (j !== i && Math.hypot(src[j].x - s.x, src[j].y - s.y) < 2.5 * half && src[j].flux > 0.05 * s.flux) crowded = true;
-      if (crowded) continue;
-      if (s.x < half || s.y < half || s.x > w - 1 - half || s.y > h - 1 - half) continue;
-      const f = fitPsf(data, w, h, s.x, s.y, half, { model: 'gaussian', rotate: true, sigma: s0 });
-      if (!f.ok || !(f.amp > 5 * det.sigma) || !(f.sx > 0.35 && f.sy > 0.35) || f.sx > half || f.sy > half || Math.hypot(f.x - s.x, f.y - s.y) > 2) continue;
-      out.push({ x: f.x, y: f.y, ...psfShape(f), peak: s.peak, flux: f.flux });
-    }
-    return out;
+  // saturation: 90% of a known level; without one, a flat top at the frame's maximum
+  let fmax = -Infinity; for (let i = 0; i < data.length; i++) if (data[i] > fmax) fmax = data[i];
+  const flatTop = (s) => {
+    if (!(s.peak >= 0.95 * fmax)) return false;
+    const cx = Math.round(s.x), cy = Math.round(s.y); let k = 0;
+    for (let y = cy - 2; y <= cy + 2; y++) for (let x = cx - 2; x <= cx + 2; x++) if (x >= 0 && y >= 0 && x < w && y < h && data[y * w + x] >= 0.98 * s.peak) k++;
+    return k >= 3;
   };
-  let stars = fitAll(7, 1.5);
-  if (stars.length) { const sg = median(stars.map((s) => s.fwhm)) / FWHM_SIGMA, half = Math.max(5, Math.min(25, Math.round(4 * sg))); if (half !== 7) stars = fitAll(half, sg); }
+  const isSat = (s) => (Number.isFinite(saturation) ? s.peak >= 0.9 * saturation : flatTop(s));
+  const fitAll = (half, s0) => {
+    const out = [], rej = [];
+    for (let i = 0; i < src.length; i++) {
+      const s = src[i], no = (reason) => rej.push({ x: s.x, y: s.y, peak: s.peak, flux: s.flux, reason });
+      // in this order, so that a faint star is called faint whatever else is wrong with it (and is not marked)
+      if (s.saturated || isSat(s)) { no('saturated'); continue; }
+      if (s.x < half || s.y < half || s.x > w - 1 - half || s.y > h - 1 - half) { no('edge'); continue; }
+      const f = fitPsf(data, w, h, s.x, s.y, half, { model: 'gaussian', rotate: true, sigma: s0 });
+      const fitOk = f.ok && f.amp > 5 * det.sigma && f.sx > 0.35 && f.sy > 0.35 && f.sx <= half && f.sy <= half && Math.hypot(f.x - s.x, f.y - s.y) <= 2;
+      const sh = fitOk ? psfShape(f) : null, fwhm0 = sh ? sh.fwhm : FWHM_SIGMA * s0, F0 = fitOk ? f.flux : s.flux;
+      const snr = F0 / Math.sqrt(Math.max(0, F0) / gain + Math.PI * (1.5 * fwhm0) ** 2 * det.sigma * det.sigma);
+      if (!(snr >= minSnr)) { no('faint'); continue; }
+      if (!fitOk) { no('fit'); continue; }
+      // crowded: a neighbour brighter than 5% of the star whose light reaches the fitting box (box half-width + 3 sigma)
+      let crowded = false; const rc = half + 3 * s0; for (let j = 0; j < src.length && !crowded; j++) if (j !== i && Math.hypot(src[j].x - s.x, src[j].y - s.y) < rc && src[j].flux > 0.05 * s.flux) crowded = true;
+      if (crowded) { no('crowded'); continue; }
+      out.push({ x: f.x, y: f.y, ...sh, peak: s.peak, flux: f.flux, snr });
+    }
+    return { out, rej };
+  };
+  let pass = fitAll(7, 1.5);
+  if (pass.out.length) { const sg = median(pass.out.map((s) => s.fwhm)) / FWHM_SIGMA, half = Math.max(5, Math.min(25, Math.round(4 * sg))); if (half !== 7) pass = fitAll(half, sg); }
+  // blends: a star far more elongated than the field's stars (two stars too close to be separated) is crowded too
+  let stars = pass.out; const rejected = pass.rej;
+  if (stars.length >= 5) { const me = median(stars.map((s) => s.ellipticity)), lim = Math.max(0.3, me + 0.2); for (const s of stars) if (s.ellipticity > lim) rejected.push({ x: s.x, y: s.y, peak: s.peak, flux: s.flux, reason: 'crowded', blend: true }); stars = stars.filter((s) => s.ellipticity <= lim); }
+  // moments of each measured star inside 3 FWHM, sky from an annulus just outside
+  for (const s of stars) {
+    const R = Math.max(4, 3 * s.fwhm), sky = annulusBackground(data, w, h, s.x, s.y, R + 2, R + 6)[0];
+    const m = psfMoments(data, w, h, s.x, s.y, { radius: R, background: Number.isFinite(sky) ? sky : det.background, weight: 0.7 * s.fwhm });
+    s.coma = m ? m.coma : null; s.asymmetry = m ? m.asymmetry : NaN;
+  }
   // cells
   const cells = [];
   for (let iy = 0; iy < ny; iy++) for (let ix = 0; ix < nx; ix++) {
@@ -274,18 +396,53 @@ export function focusMap(data, w, h, opts = {}) {
     const a = c['20'] || 0, b = c['11'] || 0, d = c['02'] || 0, gx = c['10'] || 0, gy = c['01'] || 0, det2 = 4 * a * d - b * b;
     if (a > 0 && det2 > 0) { const ux = (-2 * d * gx + b * gy) / det2, uy = (b * gx - 2 * a * gy) / det2, bx = surface.xc + ux, by = surface.yc + uy; if (bx >= 0 && by >= 0 && bx <= w - 1 && by <= h - 1) best = { x: bx, y: by }; }
   }
+  // tip/tilt: a plane through FWHM(x, y), one 3-sigma rejection
+  let plane = null;
+  if (stars.length >= 8) {
+    const fitPlane = (use) => {
+      const A = new Float64Array(9), b = new Float64Array(3); let k = 0;
+      for (const s of use) { const r = [1, s.x - cx, s.y - cy]; for (let i = 0; i < 3; i++) { b[i] += r[i] * s.fwhm; for (let j = 0; j < 3; j++) A[i * 3 + j] += r[i] * r[j]; } k++; }
+      const c = solve(Float64Array.from(A), Float64Array.from(b), 3); if (!c || !c.every(Number.isFinite)) return null;
+      let q = 0; for (const s of use) q += (s.fwhm - (c[0] + c[1] * (s.x - cx) + c[2] * (s.y - cy))) ** 2;
+      return { c, A, rms: Math.sqrt(q / Math.max(1, k - 3)), n: k };
+    };
+    let p = fitPlane(stars);
+    if (p) { const keep = stars.filter((s) => Math.abs(s.fwhm - (p.c[0] + p.c[1] * (s.x - cx) + p.c[2] * (s.y - cy))) <= 3 * p.rms); if (keep.length >= 8 && keep.length < stars.length) p = fitPlane(keep) || p; }
+    if (p) {
+      // the gradient's covariance from the normal matrix: sigma of |grad| along its own direction
+      const inv = (() => { const M = p.A, e = []; for (let j = 0; j < 3; j++) { const col = solve(Float64Array.from(M), Float64Array.from([0, 1, 2].map((i) => (i === j ? 1 : 0))), 3); e.push(col); } return e; })();
+      const [, gx, gy] = p.c, g = Math.hypot(gx, gy), ux = g > 0 ? gx / g : 1, uy = g > 0 ? gy / g : 0;
+      const varG = inv.every(Boolean) ? p.rms * p.rms * (ux * ux * inv[1][1] + 2 * ux * uy * inv[1][2] + uy * uy * inv[2][2]) : NaN;
+      const across = g * (Math.abs(ux) * (w - 1) + Math.abs(uy) * (h - 1));
+      plane = { f0: p.c[0], gx, gy, across, fraction: across / p.c[0], angle: ((Math.atan2(gy, gx) * 180 / Math.PI) + 360) % 360, sigma: varG > 0 ? g / Math.sqrt(varG) : NaN, n: p.n };
+    }
+  }
+  // coma pattern
+  let csx = 0, csy = 0, csz = 0, crad = 0, cout = 0;
+  for (const s of stars) {
+    if (!s.coma || !Number.isFinite(s.coma.size)) continue;
+    csx += s.coma.x; csy += s.coma.y; csz += s.coma.size;
+    const d = Math.hypot(s.x - cx, s.y - cy); if (d > 0.15 * Math.hypot(w, h)) { crad += (s.coma.x * (s.x - cx) + s.coma.y * (s.y - cy)) / d; cout += s.coma.size; }
+  }
+  const coma = median(stars.filter((s) => s.coma).map((s) => s.coma.size)), comaCoherence = csz > 0 ? Math.hypot(csx, csy) / csz : NaN, comaAngle = ((Math.atan2(csy, csx) * 180 / Math.PI) + 360) % 360, comaRadial = cout > 0 ? crad / cout : NaN;
+  const asymmetry = median(stars.map((s) => s.asymmetry).filter(Number.isFinite));
+  const rejCount = {}; for (const r of rejected) rejCount[r.reason] = (rejCount[r.reason] || 0) + 1;
+  const compass = (a) => ['+x (right)', 'upper right', '+y (up)', 'upper left', '-x (left)', 'lower left', '-y (down)', 'lower right'][Math.round(a / 45) % 8];
   const ell = median(stars.map((s) => s.ellipticity)), verdict = [];
-  if (stars.length < 5) verdict.push('Too few unsaturated, isolated stars to judge the focus.');
+  if (stars.length < 5) verdict.push(`Too few bright, unsaturated, isolated stars to judge the focus${rejCount.faint ? ` (${rejCount.faint} fainter than S/N ${minSnr}: lower the limit, or use a longer exposure)` : ''}.`);
   else {
     if (Number.isFinite(curvature) && curvature > 0.15) verdict.push(`Corners are ${(100 * curvature).toFixed(0)}% softer than the centre: field curvature or off-axis aberration (a field flattener or the correct back-focus spacing would help).`);
-    if (Number.isFinite(tilt) && tilt > 0.15) verdict.push(`The corners differ by ${(100 * tilt).toFixed(0)}% of the central FWHM, worst ${worstCorner}: the sensor may be tilted, or the frame is not centred on the optical axis.`);
+    if (plane && plane.fraction > 0.1 && plane.sigma > 3) verdict.push(`The FWHM rises by ${(100 * plane.fraction).toFixed(0)}% across the frame toward the ${compass(plane.angle)} (${plane.sigma.toFixed(0)}σ): the sensor may be tilted (tip/tilt), or the frame is not centred on the optical axis.`);
+    else if (Number.isFinite(tilt) && tilt > 0.15) verdict.push(`The corners differ by ${(100 * tilt).toFixed(0)}% of the central FWHM, worst ${worstCorner}: the sensor may be tilted, or the frame is not centred on the optical axis.`);
+    if (coma > 0.15 && comaCoherence > 0.6) verdict.push(`Stars trail toward the ${compass(comaAngle)} across the whole field (coma ${coma.toFixed(2)}): a decentred or tilted optic (collimation), or guiding that jumped during the exposure.`);
+    else if (coma > 0.15 && Number.isFinite(comaRadial) && Math.abs(comaRadial) > 0.5) verdict.push(`Off-axis stars trail ${comaRadial > 0 ? 'away from' : 'toward'} the centre of the frame: coma from the optics (collimation or back-focus spacing).`);
     if (ell > 0.15 && coherence > 0.6) verdict.push(`Stars are elongated by ${(100 * ell).toFixed(0)}% all in the same direction (${angle.toFixed(0)}° from +x): tracking, guiding or wind shake rather than the optics.`);
     else if (ell > 0.12 && Number.isFinite(radial) && Math.abs(radial) > 0.3) verdict.push(`Off-axis stars are stretched ${radial > 0 ? 'along the radius (coma-like)' : 'across the radius (astigmatism or curvature)'}.`);
     if (!verdict.length) verdict.push('The focus is even across the field.');
   }
   return {
-    stars, cells, surface, background: det.background, noise: det.sigma,
-    summary: { n: stars.length, fwhm: median(stars.map((s) => s.fwhm)), fwhmCentre: fc, fwhmCorners: fco, curvature, tilt, worstCorner, best, ellipticity: ell, radial, coherence, angle, pixelScale: opts.pixelScale ?? NaN, verdict },
+    stars, rejected, cells, surface, background: det.background, noise: det.sigma,
+    summary: { n: stars.length, rejected: rejCount, minSnr, fwhm: median(stars.map((s) => s.fwhm)), fwhmCentre: fc, fwhmCorners: fco, curvature, tilt, worstCorner, plane, best, ellipticity: ell, radial, coherence, angle, coma, comaCoherence, comaAngle, comaRadial, asymmetry, pixelScale: opts.pixelScale ?? NaN, verdict },
   };
 }
 

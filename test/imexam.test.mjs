@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { openFits, readImage } from '../src/core/fits.js';
 import { fitPsf, centroidIter } from '../src/core/photometry.js';
-import { radialProfile, lineProfile, regionStats, pixelTable, psfShape, focusMap, rankComparisons, saturationLevel, bilinear, lmFit } from '../src/core/imexam.js';
+import { radialProfile, lineProfile, regionStats, pixelTable, psfShape, psfMoments, focusMap, rankComparisons, saturationLevel, bilinear, lmFit } from '../src/core/imexam.js';
 import { makeRng } from '../src/core/stats.js';
 import { splitFits } from '../src/photometry/pipeline.js';
 
@@ -55,6 +55,13 @@ function addStar(img, w, h, s) {
   check('Moffat FWHM of the binned profile = scipy curve_fit', wm < 1, `largest difference ${wm.toFixed(3)}%; tolerance 1%`);
   check('half-flux radius from the curve of growth', w50 < 1e-6, `largest difference ${w50.toExponential(1)} px (both interpolating 1 px steps); tolerance 1e-6 px`);
   check('centroid used for recentring agrees with photutils centroid_2dg', wc < 0.25, `largest offset ${wc.toFixed(3)} px ; tolerance 0.25 px`);
+
+  // the focus map on this real frame: every measured star above the S/N limit and far from saturation, every skipped one with a reason
+  {
+    const lvl = saturationLevel(im.header || {}).level, fm = focusMap(data, w, h, { saturation: lvl }), S = fm.summary, tot = S.n + Object.values(S.rejected).reduce((a, b) => a + b, 0);
+    check('focus map on the HAT-P-32 frame: measured stars bright and unsaturated, skipped ones counted by reason', S.n >= 5 && fm.stars.every((s) => s.snr >= 30 && !(s.peak >= 0.9 * lvl)) && fm.rejected.every((r) => ['saturated', 'crowded', 'edge', 'faint', 'fit'].includes(r.reason)),
+      `${S.n} of ${tot} detected stars measured (S/N >= 30), skipped ${JSON.stringify(S.rejected)}; median FWHM ${S.fwhm.toFixed(2)} px, elongation ${(100 * S.ellipticity).toFixed(1)}%, ${(100 * S.coherence).toFixed(0)}% in one direction; coma ${S.coma.toFixed(3)}, asymmetry ${S.asymmetry.toFixed(3)}; tilt ${(100 * S.plane.fraction).toFixed(0)}% (${S.plane.sigma.toFixed(1)} sigma)`);
+  }
 
   // region statistics against astropy
   const R = ref.region, st = regionStats(data, w, h, { shape: 'box', x0: R.x0, y0: R.y0, x1: R.x1, y1: R.y1 });
@@ -128,6 +135,97 @@ const cellTruth = (F, c) => { const v = F.truth.filter((t) => t.x >= c.x0 && t.x
   const G = field(() => ({ sx: 1.9 }), { seed: 5 }), gm = focusMap(G.img, G.w, G.h);
   check('focus map: an even field is called even', gm.summary.verdict.length === 1 && /even/.test(gm.summary.verdict[0]), `curvature ${(100 * gm.summary.curvature).toFixed(1)}%, tilt ${(100 * gm.summary.tilt).toFixed(1)}%, ellipticity ${gm.summary.ellipticity.toFixed(3)}`);
 }
+// --- tip/tilt plane, the signal-to-noise cutoff, saturation without a header level, and the coma pattern
+{
+  // FWHM growing linearly to the right: the plane must give the change across the frame and point to +x
+  const F = field((x, y, w) => ({ sx: 1.5 * (1 + 0.6 * x / w) }), { seed: 11 }), fm = focusMap(F.img, F.w, F.h), P = fm.summary.plane;
+  const fw = (x) => 2.3548 * Math.sqrt((1.5 * (1 + 0.6 * x / F.w)) ** 2 + 1 / 12), frac = (fw(F.w - 1) - fw(0)) / fw((F.w - 1) / 2);
+  const dA = Math.min(P.angle, 360 - P.angle);
+  check('focus map: tip/tilt plane across the field', Math.abs(P.fraction - frac) < 0.05 && dA < 5 && P.sigma > 10 && fm.summary.verdict.some((v) => /tip\/tilt/.test(v)),
+    `FWHM rises ${(100 * P.fraction).toFixed(1)}% across the frame toward ${P.angle.toFixed(1)} deg (${P.sigma.toFixed(0)} sigma) against ${(100 * frac).toFixed(1)}% toward 0 deg`);
+  // faint stars are left out, and reported as faint
+  const G = field(() => ({ sx: 1.9 }), { seed: 5 }), all = focusMap(G.img, G.w, G.h, { minSnr: 0 }), strict = focusMap(G.img, G.w, G.h, { minSnr: 150 });
+  check('focus map: stars under the S/N limit are not measured, and are listed as faint', strict.summary.n < all.summary.n && strict.summary.n > 0 && strict.stars.every((s) => s.snr >= 150) && strict.summary.rejected.faint === all.summary.n - strict.summary.n,
+    `S/N >= 150: ${strict.summary.n} of ${all.summary.n} measured, ${strict.summary.rejected.faint} faint`);
+  // a clipped star in a floating-point frame (no SATURATE): a flat top at the frame's maximum
+  const S = field(() => ({ sx: 1.8 }), { seed: 9 }), cx = 240, cy = 180;
+  for (let i = 0; i < S.img.length; i++) { const x = i % S.w, y = Math.floor(i / S.w); if (Math.hypot(x - cx, y - cy) < 12) S.img[i] = 1000; }
+  addStar(S.img, S.w, S.h, { x0: cx, y0: cy, flux: 3e6, sx: 2, sy: 2, th: 0, os: 3 });
+  let top = 0; for (const v of S.img) top = Math.max(top, v); for (let i = 0; i < S.img.length; i++) S.img[i] = Math.min(S.img[i], 0.7 * top);
+  const sm = focusMap(S.img, S.w, S.h);
+  check('focus map: a clipped star without a header level is rejected as saturated', sm.rejected.some((r) => r.reason === 'saturated' && Math.hypot(r.x - cx, r.y - cy) < 2) && !sm.stars.some((s) => Math.hypot(s.x - cx, s.y - cy) < 2), `rejected: ${JSON.stringify(sm.summary.rejected)}`);
+  // every star with a faint tail toward 210 degrees: a field-wide coma
+  const C = field(() => ({ sx: 1.7 }), { seed: 4 }), th = 210 * Math.PI / 180;
+  for (let i = 0; i < C.img.length; i++) C.img[i] = 1000;
+  const rng = makeRng(21).next;
+  for (const t of C.truth) { addStar(C.img, C.w, C.h, { x0: t.x, y0: t.y, flux: 6e4, sx: 1.7, sy: 1.7, th: 0, os: 3 }); addStar(C.img, C.w, C.h, { x0: t.x + 2.6 * Math.cos(th), y0: t.y + 2.6 * Math.sin(th), flux: 2e4, sx: 2.4, sy: 2.4, th: 0, os: 3 }); }
+  for (let i = 0; i < C.img.length; i++) C.img[i] += Math.sqrt(C.img[i]) * (rng() + rng() + rng() + rng() - 2) * Math.sqrt(3);
+  const cm = focusMap(C.img, C.w, C.h), dC = Math.abs(((cm.summary.comaAngle - 210) + 540) % 360 - 180);
+  const R = focusMap(G.img, G.w, G.h).summary;
+  check('focus map: a coma common to every star is found, with its direction; round stars show none', cm.summary.comaCoherence > 0.9 && dC < 5 && cm.summary.verdict.some((v) => /trail/.test(v)) && R.coma < 0.1 && !R.verdict.some((v) => /trail/.test(v)),
+    `tails toward 210 deg: coma ${cm.summary.coma.toFixed(2)} toward ${cm.summary.comaAngle.toFixed(1)} deg, coherence ${cm.summary.comaCoherence.toFixed(2)}, asymmetry ${cm.summary.asymmetry.toFixed(3)}; round stars: coma ${R.coma.toFixed(3)}, asymmetry ${R.asymmetry.toFixed(3)}`);
+}
+
+// --- moments of a star (psfMoments) against the analytic moments of Gaussian mixtures. A Gaussian sampled at pixel
+// centres has the moments of the continuous one to far below 1e-9 for sigma >= 1.5 px (Poisson summation), and the
+// circle of radius 9 sigma loses nothing measurable, so these are exact references.
+{
+  const w = 90, h = 90;
+  const mix = (comps) => { const img = new Float64Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let v = 0; for (const c of comps) { const dx = x - c.x, dy = y - c.y, ca = Math.cos(c.th || 0), sa = Math.sin(c.th || 0), u = dx * ca + dy * sa, q = -dx * sa + dy * ca; v += c.wt * Math.exp(-0.5 * (u * u / (c.sa * c.sa) + q * q / (c.sb * c.sb))); } img[y * w + x] = v; } return img; };
+  // analytic central moments of a mixture of Gaussians (component covariance S, weights wt / (2 pi sa sb) * that norm)
+  const truth = (comps) => {
+    const W = comps.reduce((a, c) => a + c.wt * c.sa * c.sb, 0), cx = comps.reduce((a, c) => a + c.wt * c.sa * c.sb * c.x, 0) / W, cy = comps.reduce((a, c) => a + c.wt * c.sa * c.sb * c.y, 0) / W;
+    let xx = 0, yy = 0, xy = 0, xxx = 0, xyy = 0, xxy = 0, yyy = 0;
+    for (const c of comps) {
+      const m = c.wt * c.sa * c.sb / W, ca = Math.cos(c.th || 0), sa = Math.sin(c.th || 0), a2 = c.sa * c.sa, b2 = c.sb * c.sb;
+      const Sxx = a2 * ca * ca + b2 * sa * sa, Syy = a2 * sa * sa + b2 * ca * ca, Sxy = (a2 - b2) * ca * sa, dx = c.x - cx, dy = c.y - cy;
+      xx += m * (Sxx + dx * dx); yy += m * (Syy + dy * dy); xy += m * (Sxy + dx * dy);
+      xxx += m * (dx ** 3 + 3 * Sxx * dx); yyy += m * (dy ** 3 + 3 * Syy * dy);
+      xyy += m * (dx * dy * dy + Syy * dx + 2 * Sxy * dy); xxy += m * (dx * dx * dy + Sxx * dy + 2 * Sxy * dx);
+    }
+    const s3 = Math.pow((xx + yy) / 2, 1.5);
+    return { cx, cy, xx, yy, xy, coma: [(xxx + xyy) / s3, (xxy + yyy) / s3] };
+  };
+  const cases = [
+    { name: 'round star', comps: [{ x: 44.3, y: 45.7, sa: 2.2, sb: 2.2, wt: 1 }] },
+    { name: 'elongated, 35 deg', comps: [{ x: 45.1, y: 44.6, sa: 3.0, sb: 1.8, th: 35 * Math.PI / 180, wt: 1 }] },
+    { name: 'core and a tail to +x (coma)', comps: [{ x: 44.2, y: 45.4, sa: 2.0, sb: 2.0, wt: 1 }, { x: 47.6, y: 45.4, sa: 2.6, sb: 2.6, wt: 0.25 }] },
+    { name: 'core and a tail toward 120 deg', comps: [{ x: 45, y: 45, sa: 2.1, sb: 1.9, th: 0.3, wt: 1 }, { x: 45 - 2.2, y: 45 + 3.8, sa: 2.4, sb: 2.4, wt: 0.3 }] },
+  ];
+  let worst = 0; const notes = [];
+  for (const k of cases) {
+    const m = psfMoments(mix(k.comps), w, h, Math.round(k.comps[0].x), Math.round(k.comps[0].y), { radius: 26 }), t = truth(k.comps);
+    const e = Math.max(Math.abs(m.x - t.cx), Math.abs(m.y - t.cy), Math.abs(m.ixx - t.xx), Math.abs(m.iyy - t.yy), Math.abs(m.ixy - t.xy), Math.abs(m.coma.x - t.coma[0]), Math.abs(m.coma.y - t.coma[1]));
+    worst = Math.max(worst, e); notes.push(`${k.name}: coma (${m.coma.x.toFixed(4)}, ${m.coma.y.toFixed(4)})`);
+  }
+  check('star moments: centroid, second moments and coma vector of Gaussian mixtures', worst < 1e-7, `${cases.length} cases, largest error ${worst.toExponential(1)}; ${notes.slice(2).join('; ')}`);
+  const el = psfMoments(mix(cases[1].comps), w, h, 45, 45, { radius: 26 });
+  check('star moments: ellipticity 1 - b/a and major-axis direction of an elongated star', Math.abs(el.ellipticity - (1 - 1.8 / 3.0)) < 1e-7 && Math.abs(el.angle - 35) < 1e-5 && Math.abs(el.fwhm - 2.3548200450309493 * Math.sqrt((9 + 3.24) / 2)) < 1e-6,
+    `ellipticity ${el.ellipticity.toFixed(8)} against 0.4, angle ${el.angle.toFixed(6)} deg against 35`);
+  // with a Gaussian weight of sigma_w about the centroid, a Gaussian star of covariance S has the moments of
+  // (S^-1 + I / sigma_w^2)^-1: an elongated star becomes rounder by exactly that much
+  {
+    const sa = 3.0, sb = 1.8, th = 35 * Math.PI / 180, swt = 2.5, A = 1 / (sa * sa) + 1 / (swt * swt), B = 1 / (sb * sb) + 1 / (swt * swt);
+    const aw = 1 / Math.sqrt(A), bw = 1 / Math.sqrt(B), c = Math.cos(th), sn = Math.sin(th);
+    const exx = aw * aw * c * c + bw * bw * sn * sn, eyy = aw * aw * sn * sn + bw * bw * c * c, exy = (aw * aw - bw * bw) * c * sn;
+    const wm = psfMoments(mix(cases[1].comps), w, h, 45, 45, { radius: 26, weight: swt }), wr = psfMoments(mix(cases[0].comps), w, h, 44, 46, { radius: 26, weight: swt });
+    const err = Math.max(Math.abs(wm.ixx - exx), Math.abs(wm.iyy - eyy), Math.abs(wm.ixy - exy), Math.abs(wm.x - 45.1), Math.abs(wm.y - 44.6));
+    check('star moments with a Gaussian weight: (S^-1 + I/sigma_w^2)^-1, and no coma for a round star', err < 1e-6 && Math.abs(wm.ellipticity - (1 - bw / aw)) < 1e-6 && Math.abs(wm.angle - 35) < 1e-4 && wr.coma.size < 1e-6,
+      `largest error ${err.toExponential(1)}; ellipticity ${wm.ellipticity.toFixed(6)} against ${(1 - bw / aw).toFixed(6)} (0.4 unweighted)`);
+  }
+  const tail = psfMoments(mix(cases[3].comps), w, h, 45, 45, { radius: 26 });
+  check('star moments: the coma vector points to the tail', Math.abs(tail.coma.angle - 120) < 6 && psfMoments(mix(cases[0].comps), w, h, 44, 46, { radius: 26 }).coma.size < 1e-7, `tail at 120 deg: coma at ${tail.coma.angle.toFixed(1)} deg (the core's own elongation turns it a little)`);
+  // asymmetry: zero for a point-symmetric star; for an asymmetric one, against the analytic image rotated by 180 degrees
+  // about the measured centroid (no interpolation in the reference)
+  const sym = psfMoments(mix(cases[1].comps), w, h, 45, 45, { radius: 26 });
+  const comps = [{ x: 44.6, y: 45.3, sa: 4, sb: 4, wt: 1 }, { x: 49.1, y: 46.2, sa: 4.5, sb: 4.5, wt: 0.3 }], img = mix(comps), am = psfMoments(img, w, h, 45, 45, { radius: 26 });
+  const f = (x, y) => comps.reduce((a, c) => a + c.wt * Math.exp(-0.5 * ((x - c.x) ** 2 + (y - c.y) ** 2) / (c.sa * c.sa)), 0);
+  let num = 0, den = 0; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { if ((x - am.x) ** 2 + (y - am.y) ** 2 > 26 * 26) continue; const v = f(x, y); num += Math.abs(v - f(2 * am.x - x, 2 * am.y - y)); den += Math.abs(v); }
+  const aRef = num / (2 * den);
+  check('star moments: 180-degree asymmetry (0 when symmetric; against the analytic rotated image)', sym.asymmetry < 0.003 && Math.abs(am.asymmetry - aRef) < 0.003 && aRef > 0.03,
+    `symmetric ${sym.asymmetry.toFixed(5)}; with a companion ${am.asymmetry.toFixed(4)} against ${aRef.toFixed(4)} (cubic interpolation of the rotated image)`);
+}
+
 // --- line cut, pixel table, saturation, comparison ranking
 {
   const w = 30, h = 20, img = Float64Array.from({ length: w * h }, (_, i) => 3 * (i % w) - 2 * Math.floor(i / w) + 7);
