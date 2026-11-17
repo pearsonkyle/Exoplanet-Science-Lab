@@ -74,6 +74,33 @@ def photometry(b):
     save(pg, "photometry"); pg.close()
 
 
+def photometry_report(b):
+    # the same reduction, scrolled to its report: summary, field of view, the transit fit and the diagnostics of the night
+    pg = open_page(b, "analyze/photometry/?demo=3", 20000)
+    pg.evaluate("(() => { const h = [...document.querySelectorAll('h2')].find((x) => x.textContent.trim() === 'Report'); window.scrollTo(0, h.getBoundingClientRect().top + window.scrollY - 12); })()"); pg.wait_for_timeout(1000)
+    save(pg, "photometry_report"); pg.close()
+
+
+def tour(b):
+    # the guided tour of the analyzer, at the step on the data and the model
+    pg = open_page(b, "analyze/")
+    pg.evaluate("window.__esl.api.loadExample('hd80606-tess')"); pg.wait_for_timeout(5000)
+    pg.evaluate("(() => { const x = document.querySelector('.ex-explain .ex-x'); if (x) x.click(); window.__esl.tour(); })()"); pg.wait_for_timeout(1200)
+    for _ in range(4):
+        pg.click(".tour-next"); pg.wait_for_timeout(900)
+    pg.wait_for_timeout(800)
+    save(pg, "tour"); pg.close()
+
+
+def posterior(b):
+    # a stored fit's Results: the posterior corner plot under the buttons that save every product for a paper
+    pg = open_page(b, "analyze/")
+    pg.evaluate("window.__esl.api.loadExample('single')"); pg.wait_for_timeout(5000)
+    pg.evaluate("(() => { const x = document.querySelector('.ex-explain .ex-x'); if (x) x.click(); window.__esl.setLayout({ stage: false, lc: true, panel: true }); document.querySelector('.tabs [data-tab=results]').click(); })()"); pg.wait_for_timeout(2500)
+    pg.evaluate("(() => { const r = [...document.querySelectorAll('.btnrow')].find((x) => /Save everything/.test(x.textContent)); (r || document.getElementById('corner')).scrollIntoView({ block: 'start' }); })()"); pg.wait_for_timeout(1500)
+    save(pg, "posterior"); pg.close()
+
+
 def companion(b):
     pg = open_page(b, "analyze/")
     pg.evaluate("window.__esl.api.loadExample('kepler88')"); pg.wait_for_timeout(6000)
@@ -111,7 +138,7 @@ def assistant(b):
 
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
-    pick = sys.argv[1:] or ["analyze", "orbit", "plan", "observe", "photometry", "companion", "assistant"]
+    pick = sys.argv[1:] or ["analyze", "orbit", "plan", "observe", "photometry", "photometry_report", "tour", "posterior", "companion", "assistant"]
     with sync_playwright() as p:
         b = p.chromium.launch(args=GL)
         for name in pick: globals()[name](b)

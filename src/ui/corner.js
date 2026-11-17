@@ -73,8 +73,13 @@ export function drawCorner(cv, post, labels, marks, opt = {}) {
       if (marks && Number.isFinite(marks[c])) { ctx.strokeStyle = th.mark; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(X(marks[c]), y0); ctx.lineTo(X(marks[c]), y0 + s); ctx.stroke(); }
       const up = q[c][5] - q[c][4], dn = q[c][4] - q[c][3], e = Math.min(up, dn) || 1e-12;
       ctx.fillStyle = th.text; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.font = `${fs}px ${th.font}`;
-      ctx.fillText(labels[c], x0 + 1, y0 - fs - 3);
-      ctx.fillStyle = th.dim; ctx.fillText(`${sig(q[c][4], e)} +${sig(up, e)} −${sig(dn, e)}`, x0 + 1, y0 - 2);
+      // the name and the value above the histogram, in the room from the cell to the right edge: a smaller font where they
+      // would run off it (the last column), shifted left only if even 8 px does not fit
+      const val = `${sig(q[c][4], e)} +${sig(up, e)} −${sig(dn, e)}`, room = W - 3 - (x0 + 1);
+      const put = (t, y) => { let f = fs; ctx.font = `${f}px ${th.font}`; const w0 = ctx.measureText(t).width; if (w0 > room) { f = Math.max(8, fs * room / w0); ctx.font = `${f}px ${th.font}`; }
+        ctx.fillText(t, Math.max(2, Math.min(x0 + 1, W - 3 - ctx.measureText(t).width)), y); ctx.font = `${fs}px ${th.font}`; };
+      put(labels[c], y0 - fs - 3);
+      ctx.fillStyle = th.dim; put(val, y0 - 2);
     } else {
       const h = new Float64Array(NB * NB);
       for (let i = 0; i < n; i++) {

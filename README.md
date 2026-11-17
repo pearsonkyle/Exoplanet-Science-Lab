@@ -56,6 +56,30 @@ Files you open never leave your browser: every science routine (transit and RV m
 - DS9-style inspection, plate solving and Gaia comparison stars.
 - A search over aperture radii, annuli and comparison stars, scored with the transit model.
 
+![Photometry report for HAT-P-32 b: the chosen aperture and annulus, the field with the target and comparison apertures, the transit fit with residuals, and the centroid, sky, airmass and field-rotation diagnostics](docs/screens/photometry_report.webp)
+
+The reduction ends in a report (HAT-P-32 b from a 6-inch MicroObservatory telescope, the sample EXOTIC is tested with):
+
+- **Summary:** the best method, aperture and annulus, comparison stars, residual scatter, a quick transit fit (Rp/R★, mid-transit time) and the time standard.
+- **Diagnostics of the night:** centroid drift, sky background, airmass and field rotation, with Gaussian-process detrending against the centroids.
+- **Is the noise white?** A power spectrum of the residuals, the scatter against bin size (β for correlated noise) and a pixel-response map of the target's centroid.
+- **What was tried:** all 1,015 combinations of method, aperture, annulus and comparison stars, ranked by scatter; pick any row to see its light curve.
+- **Exports:** the light curve (CSV, with airmass and the detrending columns), the reduction settings (JSON), an AAVSO Exoplanet Database report, or straight into the analyzer for the full fit.
+
+### Learn, then publish
+
+![The analyzer's guided tour at step 5 of 13, explaining the light curve, the model and the residuals of the TESS transit of HD 80606 b](docs/screens/tour.webp)
+
+- A 13-step guided tour of the analyzer (**?** in the toolbar) walks through the 3D view, the data and the model, changing parameters live, running the fit and reading its results.
+- Every worked example opens with a note on what it shows and how to read it, and every derived quantity explains how it is calculated when you hover over it.
+- The Methods page gives the equations, validation and references behind each model, and the assistant answers questions from them.
+
+![Results of a fit: the posterior corner plot coloured by likelihood, with buttons saving the LaTeX table, JSON, session, Python script, Markdown report and methods paragraph](docs/screens/posterior.webp)
+
+- Nested sampling gives the posterior and the Bayesian evidence. The corner plot shows 1σ, 2σ and 3σ contours with each draw coloured by its likelihood, and saves as PNG or PDF in light or dark.
+- **Save everything** writes what a paper needs: a LaTeX table of fitted and derived parameters, the posterior as JSON, a session file that reopens the analysis here or in Python, a Python script that rebuilds it, a Markdown report, and a methods paragraph with the BibTeX of exactly the methods used.
+- Every plot exports from **Save figure**, and **Rec** records the animated system with its light curve as a movie.
+
 ### Timing and hidden companions
 
 ![Timing: the companion explorer for Kepler-88 with the orbit view and the transit-timing curve](docs/screens/companion.webp)
