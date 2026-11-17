@@ -199,9 +199,47 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     evGroup.visible = on;
   }
 
+  // ---- data coverage (viz.setCoverage) --------------------------------------
+  // Where on the active planet's orbit each measurement was taken: the planet's position at the time of the point, drawn
+  // as a dot just outside the orbit line for radial velocities and just inside it for photometry, so the two read as two
+  // tracks along the orbit. Phases that were never observed are the gaps. Not drawn from Earth or in the inset (edge-on,
+  // every point lies on one line).
+  const COV_MAX = 20000, COV_KINDS = { rv: { color: 0xffa94d, label: 'radial velocity', shift: 1 }, phot: { color: 0x5ce0a0, label: 'photometry', shift: -1 } };
+  const covGeo = new THREE.BufferGeometry();
+  covGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(COV_MAX * 3), 3));
+  covGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(COV_MAX * 3), 3));
+  covGeo.setDrawRange(0, 0);
+  const cov = new THREE.Points(covGeo, new THREE.PointsMaterial({ size: 4, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false }));
+  cov.frustumCulled = false; cov.visible = false; cov.renderOrder = 3; sysGroup.add(cov);
+  const covLegend = document.createElement('div'); covLegend.className = 'cov-legend'; covLegend.hidden = true; labelsEl.appendChild(covLegend);
+  let covSets = [], covCounts = {};
+  const covPos = [0, 0, 0], covCol = new THREE.Color();
+  function rebuildCoverage() {
+    let n = 0; covCounts = {};
+    if (el && opts.coverage) {
+      const total = covSets.reduce((a, c) => a + c.t.length, 0), stride = Math.max(1, Math.ceil(total / COV_MAX));
+      const P = covGeo.attributes.position.array, C = covGeo.attributes.color.array, gap = 0.035 * el.ars + 0.04;
+      for (const c of covSets) {
+        const K = COV_KINDS[c.kind]; if (!K) continue;
+        covCol.setHex(K.color); covCounts[c.kind] = (covCounts[c.kind] || 0) + c.t.length;
+        for (let i = 0; i < c.t.length && n < COV_MAX; i += stride) {
+          if (!Number.isFinite(c.t[i])) continue;
+          orbitPosition(el, c.t[i], covPos);
+          const r = Math.hypot(covPos[0], covPos[1], covPos[2]) || 1, k = 1 + (K.shift * gap) / r;   // a fixed distance off the orbit, outward or inward
+          P[n * 3] = covPos[0] * k; P[n * 3 + 1] = covPos[1] * k; P[n * 3 + 2] = covPos[2] * k;
+          C[n * 3] = covCol.r; C[n * 3 + 1] = covCol.g; C[n * 3 + 2] = covCol.b; n++;
+        }
+      }
+      covGeo.attributes.position.needsUpdate = true; covGeo.attributes.color.needsUpdate = true;
+    }
+    covGeo.setDrawRange(0, n);
+    const kinds = Object.keys(covCounts);
+    covLegend.innerHTML = kinds.map((k) => `<span><i style="background:#${COV_KINDS[k].color.toString(16).padStart(6, '0')}"></i>${COV_KINDS[k].label} · ${covCounts[k].toLocaleString('en-US')}</span>`).join('') + (kinds.length ? '<small>outside the orbit: velocities · inside: photometry</small>' : '');
+  }
+
   // ---- state ----------------------------------------------------------------
   let el = null, rprs = 0.1, rmax = 6, rAll = 6, rprsMax = 0.1, time = 0;   // el, rprs, rmax: the active planet; rAll: the outermost apastron
-  const opts = { style: 'eyes', glow: true, granulation: true, stars: true, orbit: true, grid: false, corridor: true, labels: true, enlarge: false, inset: true, look: 'auto', hz: false, fit: 'auto' };
+  const opts = { style: 'eyes', glow: true, granulation: true, stars: true, orbit: true, grid: false, corridor: true, labels: true, enlarge: false, inset: true, look: 'auto', hz: false, fit: 'auto', coverage: false };
   let view = 'free', anim = null;
   const bg = new THREE.Color(0x000000);
 
@@ -250,7 +288,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     earthPos.set(0, 0, len);
     const rp = el.ars * (1 - el.e), u = el.w + trueAnomaly(0, el.e);
     periPos.set(-rp * Math.cos(u), -rp * Math.sin(u) * el.cosI, rp * Math.sin(u) * el.sinI);
-    rebuildHZ(); placeEvent();
+    rebuildHZ(); placeEvent(); rebuildCoverage();
   }
 
   function rebuildHZ() {
@@ -419,7 +457,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
       earthCam.left = earth.cx - earth.half * a; earthCam.right = earth.cx + earth.half * a; earthCam.top = earth.cy + earth.half; earthCam.bottom = earth.cy - earth.half;
       earthCam.position.set(0, 0, farZ()); earthCam.updateProjectionMatrix(); earthCam.updateMatrixWorld();
       sysGroup.visible = true; stars.visible = false;
-      dots.visible = false;
+      dots.visible = false; cov.visible = false; covLegend.hidden = true;
       scalePlanets(true);   // every planet at true scale: the star's depth buffer hides the ones behind it, so simultaneous transits and overlaps show as they are
       showMoons(opts.orbit);
       evGroup.visible = showEvent; evRing.quaternion.copy(earthCam.quaternion); evRing.scale.setScalar((EV_PX * 2 * earth.half) / h);
@@ -451,6 +489,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
 
     sysGroup.visible = true;
     scalePlanets(false); showMoons(opts.orbit); dots.visible = nDots > 0;
+    cov.visible = opts.coverage && covGeo.drawRange.count > 0; covLegend.hidden = !cov.visible;
     evGroup.visible = showEvent; evRing.quaternion.copy(camera.quaternion);
     evRing.scale.setScalar((EV_PX * 2 * camera.position.distanceTo(evPos) * Math.tan((camera.fov * Math.PI) / 360)) / h);
     showOrbits(opts.orbit); grid.visible = opts.grid || blueprint; stars.visible = opts.stars && !blueprint;
@@ -473,7 +512,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     if (opts.inset) {
       const r = insetFrame.getBoundingClientRect(), c = container.getBoundingClientRect();
       const x = r.left - c.left, y = c.bottom - r.bottom, s = r.width;
-      scalePlanets(true); showMoons(false); dots.visible = false;
+      scalePlanets(true); showMoons(false); dots.visible = false; cov.visible = false;
       evGroup.visible = false;
       showOrbits(false); grid.visible = false; stars.visible = false; tube.visible = false; los.visible = false; hzMesh.visible = false;
       glow.scale.setScalar(7); glowUni.uScale.value = 7; glowUni.uStrength.value = 0.7;
@@ -542,6 +581,13 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
       else if (view !== 'earth' && Math.abs(viewRadius() - prev) / prev > 0.5) setView(view, false);
     },
     setTime(t) { time = t; },
+    // The measurements to place on the active planet's orbit (shown with the option `coverage`): [{ kind: 'rv' | 'phot',
+    // t: times in the model's frame }]. Pass the same arrays again freely: positions are recomputed only with the orbit.
+    setCoverage(sets) {
+      const next = (sets || []).filter((c) => c && c.t && c.t.length && COV_KINDS[c.kind]);
+      if (next.length === covSets.length && next.every((c, i) => c.t === covSets[i].t && c.kind === covSets[i].kind)) return;
+      covSets = next; rebuildCoverage();
+    },
     setOptions(o) {
       const hzWas = opts.hz, rWas = viewRadius();
       Object.assign(opts, o); applyLook();
@@ -569,7 +615,7 @@ export async function createViz(container, labelsEl, insetFrame, onFatal) {
     eventPosition: (kind) => (el && EVENT_LABELS[kind] ? eventPosition(el, kind) : null),
     getHighlight: () => evKind,
     // what is drawn, for tests and for a "fit" control: number of planets, framed radius and the outermost apastron (stellar radii)
-    getInfo: () => ({ planets: bodies.length, maps: bodies.filter((b) => b.uni.uMapOn.value).length, active: act ? bodies.indexOf(act) : -1, frameRadius: viewRadius(), outerRadius: rAll, drawCalls: renderer.info.render.calls, moons: bodies.filter((b) => b.moon).length,
+    getInfo: () => ({ coverage: opts.coverage ? { ...covCounts, drawn: covGeo.drawRange.count } : null, planets: bodies.length, maps: bodies.filter((b) => b.uni.uMapOn.value).length, active: act ? bodies.indexOf(act) : -1, frameRadius: viewRadius(), outerRadius: rAll, drawCalls: renderer.info.render.calls, moons: bodies.filter((b) => b.moon).length,
       // the active planet's moon as drawn in the last pass: positions (stellar radii), radii, and whether its mesh is shown
       moon: act && act.moon ? { planet: act.mesh.position.toArray(), moon: act.moonObj.mesh.position.toArray(), rMoon: act.moonObj.mesh.scale.x, rPlanet: act.mesh.scale.x, visible: act.moonObj.mesh.visible, separation: act.moon.sep } : null }),
   };

@@ -7,6 +7,7 @@ import { residualPeriodogramOf } from '../src/assistant/ops.js';
 import { buildProblem } from '../src/core/model.js';
 import { specFromSession } from '../src/core/session.js';
 import { mathSegments } from '../src/assistant/mathtext.js';
+import { texToMathML } from '../src/methods/tex.js';
 
 let ok = true; const check = (name, cond, info = '') => { console.log((cond ? 'ok   ' : 'FAIL ') + name + (info ? '   ' + info : '')); if (!cond) ok = false; };
 
@@ -72,5 +73,9 @@ check('math: inline and display TeX found', seg.filter((s) => s.math).length ===
 check('math: dollar amounts are not math', mathSegments('It costs $5 and $10 dollars.').every((s) => !s.math));
 check('math: \\( \\) and \\[ \\] delimiters', mathSegments('a \\(x^2\\) b \\[y = 1\\] c').filter((s) => s.math).length === 2);
 check('math: code spans are left alone', mathSegments('use `$x$` here').every((s) => !s.math));
+// \left( ... \right)^{1/3}: one group, so both fences stretch to the fraction and the exponent applies to the whole bracket
+const lr = texToMathML('K = \\left(\\frac{2\\pi G}{P}\\right)^{1/3}');
+check('math: \\left ... \\right is one group and a script after it applies to all of it', /<msup><mrow><mo fence="true" stretchy="true">\(<\/mo><mfrac>.*<\/mfrac><mo fence="true" stretchy="true">\)<\/mo><\/mrow><mrow><mn>1<\/mn>/.test(lr) &&
+  /<mrow><mo fence="true" stretchy="true">\|<\/mo><mi>x<\/mi><\/mrow>/.test(texToMathML('\\left| x \\right.')), lr.length + ' chars');
 
 process.exit(ok ? 0 : 1);

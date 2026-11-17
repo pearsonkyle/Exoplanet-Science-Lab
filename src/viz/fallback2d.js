@@ -113,7 +113,7 @@ export function createFallbackViz(container, labelsEl, insetFrame, reason) {
       dirty = true;
     },
     setTime(t) { time = t; dirty = true; },
-    setOptions() {}, setView() {}, getView: () => 'free', getOptions: () => ({}),
+    setOptions() {}, setView() {}, setCoverage() {}, getView: () => 'free', getOptions: () => ({}),
     highlight(kind) { evKind = kind && EVENT_LABELS[kind] ? kind : null; dirty = true; },
     eventPosition: (kind) => (act && EVENT_LABELS[kind] ? eventPosition(act.el, kind) : null),
     getHighlight: () => evKind,

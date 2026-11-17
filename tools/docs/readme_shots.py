@@ -1,7 +1,7 @@
 """Screenshots for README.md (docs/screens/*.webp), taken from the running site.
 
     npm run dev                                         # or a built copy: ESL_BASE=http://localhost:4199
-    .venv/bin/python tools/docs/readme_shots.py         # all, or name some: analyze plan observe photometry companion assistant
+    .venv/bin/python tools/docs/readme_shots.py         # all, or name some: analyze orbit plan observe photometry companion assistant
 
 Each view is put in a state by the site's own scripting surfaces (window.__esl.api, URL parameters), captured at
 1440 x 900 and written as WebP (cwebp, Homebrew: webp). The assistant's view is a stored conversation, not a live model.
@@ -40,6 +40,15 @@ def analyze(b):
     pg.evaluate("window.__esl.api.loadExample('hd80606-joint')"); pg.wait_for_timeout(6000)
     pg.evaluate("document.querySelector('.tabs [data-tab=results]').click()"); pg.wait_for_timeout(1500)
     save(pg, "analyze"); pg.close()
+
+
+def orbit(b):
+    # Look > Data along the orbit on TOI-1873 d: TESS sectors and NEID velocities placed where the candidate was
+    pg = open_page(b, "analyze/")
+    pg.evaluate("window.__esl.api.loadExample('toi1873')"); pg.wait_for_timeout(6000)
+    pg.evaluate("document.querySelector('button[title=\"Show planet d\"]').click()"); pg.wait_for_timeout(1500)
+    pg.evaluate("(() => { const x = document.querySelector('.ex-explain .ex-x'); if (x) x.click(); window.__esl.viz.setOptions({ coverage: true }); })()"); pg.wait_for_timeout(2500)
+    save(pg, "orbit"); pg.close()
 
 
 def plan(b):
@@ -97,7 +106,7 @@ def assistant(b):
 
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
-    pick = sys.argv[1:] or ["analyze", "plan", "observe", "photometry", "companion", "assistant"]
+    pick = sys.argv[1:] or ["analyze", "orbit", "plan", "observe", "photometry", "companion", "assistant"]
     with sync_playwright() as p:
         b = p.chromium.launch(args=GL)
         for name in pick: globals()[name](b)

@@ -151,6 +151,11 @@ table.res.rvarch tr.sec a { text-transform: none; letter-spacing: 0; }
 table.res .rvsrc { color: var(--faint); font-size: 10px; }
 .rvfind { margin: 4px 0 8px; }
 .lbl.hz { color: #8ff0b8cc; }
+/* Look ▸ Data along the orbit: what the dots on the orbit are, above the playback bar on the right */
+.cov-legend { position: absolute; right: 12px; bottom: 58px; display: flex; flex-direction: column; gap: 3px; padding: 6px 9px; border-radius: 6px; background: #000a; font: 11px var(--mono); color: #dbe7f3; text-shadow: 0 0 3px #000; }
+.cov-legend span { display: flex; align-items: center; gap: 6px; }
+.cov-legend i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.cov-legend small { font-size: 10px; color: #9fb2c6; }
 .lctools { position: absolute; right: 12px; top: 3px; display: flex; gap: 8px; align-items: center; }
 .lcrow { display: contents; }   /* wide plot: the buttons are laid out by .lctools; narrow plot: .lcrow becomes a strip that scrolls sideways */
 .lchint { color: var(--faint); font-size: 10.5px; }

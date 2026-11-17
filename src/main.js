@@ -982,6 +982,8 @@ function doRefresh() {
     try { e2 = orbitElements(q); const d2 = deriveSystem(q, st); look = planetClass(d2.rpEarth, d2.teq).key; } catch { /* impossible geometry: leave it out */ }
     return { el: e2, rprs: q.rprs, name: p.letter, look, active: p.sfx === S.pl, color: planetColor(p.sfx), moon: moonOf(p.sfx, q), map: mapOf(p.sfx) };
   }).filter((p) => p.el) : undefined });
+  // where on the orbit the measurements were taken (Look ▸ Data along the orbit): every RV set, and the light curve when it is used
+  if (viz && viz.setCoverage) viz.setCoverage([...(S.use.lc && S.data && S.data.t ? [{ kind: 'phot', t: S.data.t }] : []), ...(rvOn() ? S.rv.map((d) => ({ kind: 'rv', t: d.t })) : [])]);
   // annotation on the light curve: fitted radius ratio and mid-transit time
   const fs = (k) => S.fit && !S.live && S.fit.summary.find((x) => x.key === PK(k)), tRef = S.data.tRef || 0;
   const pmTxt = (label, v, s, dg) => (s ? `${label} = ${s.med.toFixed(dg)} ± ${(0.5 * (s.plus + s.minus)).toFixed(dg)}` : `${label} = ${v.toFixed(dg)}`);
@@ -2546,13 +2548,13 @@ function buildLookPanel() {
   const sel = (label, key, opts) => { const s = h('select', { 'aria-label': label }, opts.map(([v, t]) => h('option', { value: v, selected: o[key] === v }, t))); s.addEventListener('change', () => viz.setOptions({ [key]: s.value })); return h('div', { class: 'field', style: 'grid-template-columns:70px 1fr' }, h('span', {}, label), s); };
   p.append(h('h4', {}, 'Style'), sel('Render', 'style', [['eyes', 'Realistic'], ['blueprint', 'Blueprint']]), sel('Planet', 'look', [['auto', 'Auto (by radius)'], ['jupiter', 'Jupiter-size'], ['neptune', 'Neptune-size'], ['subneptune', 'Sub-Neptune'], ['earth', 'Earth-size'], ['lava', 'Lava world']]));
   const tg = (label, key) => { const c = h('input', { type: 'checkbox', checked: !!o[key] }); c.addEventListener('change', () => viz.setOptions({ [key]: c.checked })); return h('label', { class: 'tog' }, c, label); };
-  p.append(h('h4', {}, 'Show'), h('div', { class: 'grid2' }, tg('Orbit path', 'orbit'), tg('Orbital grid', 'grid'), tg('Transit corridor', 'corridor'), tg('Labels', 'labels'), tg('Earth-view inset', 'inset'), tg('Background stars', 'stars'), tg('Corona glow', 'glow'), tg('Granulation', 'granulation'), tg('Enlarge planet', 'enlarge')));
+  p.append(h('h4', {}, 'Show'), h('div', { class: 'grid2' }, tg('Orbit path', 'orbit'), tg('Orbital grid', 'grid'), tg('Transit corridor', 'corridor'), tg('Labels', 'labels'), tg('Earth-view inset', 'inset'), tg('Background stars', 'stars'), tg('Corona glow', 'glow'), tg('Granulation', 'granulation'), tg('Enlarge planet', 'enlarge'), tg('Data along the orbit', 'coverage')));
   const hzc = h('input', { type: 'checkbox', checked: S.hz });
   hzc.addEventListener('change', () => { S.hz = hzc.checked; doRefresh(); viz.setOptions({ hz: S.hz }); syncViewButtons(); });
   const a0 = h('input', { type: 'number', min: 0, max: 0.95, step: 0.05, value: S.albedo[0], 'aria-label': 'Minimum albedo' }), a1 = h('input', { type: 'number', min: 0, max: 0.95, step: 0.05, value: S.albedo[1], 'aria-label': 'Maximum albedo' });
   [a0, a1].forEach((i, j) => i.addEventListener('change', () => { S.albedo[j] = Math.min(0.95, Math.max(0, Number(i.value) || 0)); S.albedo.sort((x, y) => x - y); refresh(); }));
   p.append(h('h4', {}, 'Habitable zone'), h('label', { class: 'tog' }, hzc, 'Show the habitable zone'), h('div', { class: 'field3', style: 'margin-top:4px' }, h('span', {}, 'Albedo'), a0, h('span', { class: 'pm' }, '–'), a1));
-  p.append(h('p', { class: 'note', style: 'margin-bottom:0' }, 'Brightest where every case agrees: Kopparapu et al. conservative limits, fading to the optimistic ones, blurred by the T eff uncertainty and the albedo range. “Enlarge planet” is for visibility only; the From Earth view and the inset are always true scale.'));
+  p.append(h('p', { class: 'note', style: 'margin-bottom:0' }, '“Data along the orbit” puts each measurement where the planet was when it was taken: velocities outside the orbit, photometry inside; the gaps are phases never observed. Brightest where every case agrees: Kopparapu et al. conservative limits, fading to the optimistic ones, blurred by the T eff uncertainty and the albedo range. “Enlarge planet” is for visibility only; the From Earth view and the inset are always true scale.'));
 }
 
 function animRange() {
@@ -2747,7 +2749,7 @@ function setupResizer() {
 
 async function init() {
   lcPlot = new LightCurvePlot($('#lccanvas'));
-  window.__esl = { ...(window.__esl || {}), S, lcPlot, undo, redo, api: makeAPI(), tour: runTour, setLayout, setLayoutSizes, layoutSizes: () => ({ ...layoutSizes }) };   // handle for tests, the guided tour, the assistant and console poking (keeps window.__esl.project, src/site/project.js)
+  window.__esl = { ...(window.__esl || {}), S, get viz() { return viz; }, lcPlot, undo, redo, api: makeAPI(), tour: runTour, setLayout, setLayoutSizes, layoutSizes: () => ({ ...layoutSizes }) };   // handle for tests, the guided tour, the assistant and console poking (keeps window.__esl.project, src/site/project.js)
   if (!window.__esl.project) window.__esl.project = projectHandle();
   lcPlot.onScrub = (t) => { S.t = t; S.playing = false; $('#play').textContent = '▶'; };
   setupLCToolbar(); setupResizer();

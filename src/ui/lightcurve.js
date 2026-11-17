@@ -193,9 +193,16 @@ export function renderLightCurve(ctx, W, H, d, view, th, opt = {}) {
     if (wide) { ctx.textAlign = 'right'; ctx.fillText(txt, px1 - 8, T + 6 + 11 * k); }
     else d.info.forEach((s2, i) => { ctx.textAlign = 'right'; ctx.fillText(s2, px1 - 8, T + 6 + 11 * k + i * 14 * k); });
   }
-  // legend along the bottom of the main panel
+  // legend along the bottom of the main panel, or along the top (under the fitted values) when fewer points and less of
+  // the model lie there: a transit's floor or a deep eclipse can fill the bottom line
   if (hMain < 90) return { px0, px1, T, hMain, yR0, hRes };
-  let lx = px0 + 10; const ly = T + hMain - 9; ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'left';
+  const infoRows = d.info && d.info.length && hMain >= 110 ? (ctx.font = `${F(11)}px ${th.font}`, ctx.measureText(d.info.join('     ')).width < px1 - px0 - 20 ? 1 : d.info.length) : 0;
+  const lyBottom = T + hMain - 9, lyTop = T + (infoRows ? 6 + 11 * k + (infoRows - 1) * 14 * k + 17 * k : 16 * k);
+  const crowd = (ly0) => { const y0 = ly0 - 13, y1 = ly0 + 5; let c = 0;
+    for (const i of vis) { const y = Y(det[i]); if (y >= y0 && y <= y1) c++; }
+    for (let i = 0; i <= 200; i++) { const y = Y(d.fluxFn(view.x0 + (span * i) / 200)); if (y >= y0 - 4 && y <= y1 + 4) c += 5; }
+    return c; };
+  let lx = px0 + 10; const ly = lyTop + 14 < lyBottom && crowd(lyTop) < crowd(lyBottom) ? lyTop : lyBottom; ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'left';
   const item = (draw, txt) => { draw(lx); ctx.fillStyle = th.text; ctx.fillText(txt, lx + 19, ly); lx += 30 + ctx.measureText(txt).width; };
   item((x) => { ctx.strokeStyle = th.model; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, ly - 3.5); ctx.lineTo(x + 14, ly - 3.5); ctx.stroke(); }, 'model');
   if (d.band) item((x) => { ctx.fillStyle = th.band; ctx.fillRect(x + 2, ly - 9, 10, 10); }, W < 520 ? '68%' : 'posterior 68%');

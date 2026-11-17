@@ -97,15 +97,22 @@ export function renderRV(ctx, W, H, d, th, opt = {}) {
   }
   ctx.font = `${F(10.5)}px ${th.sans}`; ctx.textAlign = 'left';
   if (hMain < 100) return null;
-  // legend: one entry per instrument, wrapping onto a second row when there are many
-  let lx = px0 + 10, ly = T + hMain - 9;
-  const rowsNeeded = sets.reduce((a, s) => a + 26 + ctx.measureText(s.name).width, 0) > px1 - px0 - 20 ? 2 : 1;
-  if (rowsNeeded === 2) ly -= 14 * k;
-  sets.forEach((s, g) => {
-    const w = 26 + ctx.measureText(s.name).width;
-    if (lx + w > px1 - 6) { lx = px0 + 10; ly += 14 * k; }
+  // legend: one entry per instrument, wrapping onto more rows when there are many, in the corner of the main panel
+  // where it covers the fewest points and model samples (never over the numbers at the top right), on a faint plate
+  const rowH = 14 * k, maxW = Math.min(px1 - px0 - 20, Math.max(260, (px1 - px0) * 0.6)), items = [];
+  let cx = 0, rows = 1, boxW = 0;
+  for (const s of sets) { const w = 26 + ctx.measureText(s.name).width; if (cx + w > maxW && cx > 0) { rows++; cx = 0; } items.push({ x: cx, row: rows - 1, w }); cx += w; boxW = Math.max(boxW, cx); }
+  const boxH = rows * rowH + 6, pad = 6, infoBottom = d.info && d.info.length && hMain >= 120 ? T + 10 + 11 * k : T;
+  const corners = [[px0 + pad, T + pad], [px1 - pad - boxW, infoBottom + pad], [px0 + pad, T + hMain - pad - boxH], [px1 - pad - boxW, T + hMain - pad - boxH]];   // top first: the curve's flat parts lie low
+  const pts = []; for (const st of sets) for (let i = 0; i < st.x.length; i++) pts.push([X(st.x[i]), Y(st.y[i]), 1]);
+  if (d.curve) for (let i = 0; i < d.curve.x.length; i += Math.max(1, Math.floor(d.curve.x.length / 300))) pts.push([X(d.curve.x[i]), Y(d.curve.y[i]), 2]);
+  const cost = ([bx, by]) => pts.reduce((a, [x, y, wgt]) => a + (x >= bx - 10 && x <= bx + boxW + 10 && y >= by - 10 && y <= by + boxH + 10 ? wgt : 0), 0) + (by < T ? 1e9 : 0);
+  const [bx, by] = corners.reduce((best, c) => (cost(c) < cost(best) ? c : best));
+  ctx.save(); ctx.globalAlpha = 0.72; ctx.fillStyle = th.bg; ctx.beginPath(); ctx.rect(bx - 4, by - 2, boxW + 4, boxH); ctx.fill(); ctx.restore();
+  for (const [g, it] of items.entries()) {
+    const lx = bx + it.x, ly = by + rowH * (it.row + 1) - 2;
     ctx.fillStyle = col(g); ctx.beginPath(); ctx.arc(lx + 5, ly - 3.5, 3, 0, 6.3); ctx.fill();
-    ctx.fillStyle = th.text; ctx.fillText(s.name, lx + 13, ly); lx += w;
-  });
+    ctx.fillStyle = th.text; ctx.fillText(sets[g].name, lx + 13, ly);
+  }
   return null;   // no pan and zoom on this panel
 }

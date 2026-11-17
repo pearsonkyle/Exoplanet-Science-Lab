@@ -88,8 +88,11 @@ export function texToMathML(src, { display = false } = {}) {
     }
     if (ACCENT[c]) return `<mover accent="true">${arg()}<mo>${ACCENT[c]}</mo></mover>`;
     if (c === 'left' || c === 'right') {
-      const d = tk[p++]; const ch = d.t === 'cmd' ? (d.v === '{' || d.v === '}' ? d.v : (SYM[d.v] || ['|'])[0]) : d.v;
-      return ch === '.' ? '' : `<mo fence="true" stretchy="true">${esc(ch)}</mo>`;
+      const delim = () => { const d = tk[p++]; if (!d) throw new Error('tex: missing delimiter in: ' + src); const ch = d.t === 'cmd' ? (d.v === '{' || d.v === '}' ? d.v : (SYM[d.v] || ['|'])[0]) : d.v; return ch === '.' ? '' : `<mo fence="true" stretchy="true">${esc(ch)}</mo>`; };
+      if (c === 'right') return delim();   // a \right without its \left
+      // \left ... \right is one group: the fences stretch to what is between them, and a script after \right applies to it all
+      const open = delim(), inner = seq(false, true), close = delim();
+      return `<mrow>${open}${inner.join('')}${close}</mrow>`;
     }
     if (GREEK[c]) return `<mi>${GREEK[c]}</mi>`;
     if (SYM[c]) return `<${SYM[c][1]}>${SYM[c][0]}</${SYM[c][1]}>`;
@@ -105,9 +108,10 @@ export function texToMathML(src, { display = false } = {}) {
     throw new Error(`tex: unknown command \\${c} in: ${src}`);
   }
   /** A sequence up to a closing brace (inGroup) or the end, with ^ and _ attached to the atom before them. */
-  function seq(inGroup) {
+  function seq(inGroup, toRight = false) {
     const out = [];
     while (p < tk.length) {
+      if (toRight && is('cmd', 'right')) { p++; return out; }
       if (is('ch', '}')) { if (!inGroup) throw new Error('tex: stray } in: ' + src); p++; return out; }
       const start = tk[p], big = start.t === 'cmd' && (start.v === 'sum' || start.v === 'prod' || start.v === 'max' || start.v === 'min');
       let base = atom(), sub = null, sup = null;
@@ -120,6 +124,7 @@ export function texToMathML(src, { display = false } = {}) {
       if (start.t === 'cmd' && FUNCS.includes(start.v) && (sub || sup) && tk[p] && !(tk[p].t === 'ch' && '(}'.includes(tk[p].v))) out.push('<mspace width="0.17em"/>');
     }
     if (inGroup) throw new Error('tex: missing } in: ' + src);
+    if (toRight) throw new Error('tex: \\left without \\right in: ' + src);
     return out;
   }
   const body = seq(false).join('');
