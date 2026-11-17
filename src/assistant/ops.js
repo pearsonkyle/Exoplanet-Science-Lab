@@ -191,6 +191,8 @@ export function compareRuns(runs, key) {
   let verdict = here.length === 1 ? 'One run so far: an evidence means something only next to another model fitted to the same data.' : `Run ${tag(top)} has the highest evidence.`;
   if (same.length) verdict += ` ${same.map(tag).join(', ')} ${same.length > 1 ? 'are' : 'is'} indistinguishable from it within the errors: the data do not choose between them, so prefer the simpler model.`;
   if (worse.length) verdict += ` ${worse.map((x) => `${tag(x)} is ${readBayes(x, top)} (odds about 1 in ${Math.exp(Math.min(50, top.logZ - x.logZ)).toPrecision(2)})`).join('; ')}.`;
+  // runs that are all one model differ only by sampling noise: there is no comparison to report, whatever their labels say
+  if (here.length > 1 && here.every((x) => x.model && x.model === here[0].model)) verdict = `These ${here.length} runs are the same model (same free parameters, priors and fixed values), whatever their labels say: they differ only by sampling noise, so they compare nothing. To compare a linear with a quadratic ephemeris use fit_ephemeris (its BIC); for a circular against an eccentric orbit and other pairs use run_experiment.`;
   return { runs: rows, verdict, cautions: [...here.flatMap((x) => runAlarms(x, top).map((t) => `${tag(x)}: ${t}`)), ...sameModel(here)], rule, hidden };
 }
 
@@ -217,7 +219,9 @@ export function ephemerisOf(doc, { planet, upcoming = 3, now = Date.now() } = {}
   if (lin.chi2 / Math.max(1, lin.dof) > 2) out.caution = `chi2/dof = ${(lin.chi2 / Math.max(1, lin.dof)).toFixed(1)} for the linear ephemeris: the timing errors are too small or the times vary; the quoted uncertainties are then too small.`;
   if (quad) {
     const d = lin.bic - quad.bic, z = Math.abs(quad.dPdt / quad.dPdtErr);
-    out.quadratic = { ...row(quad), dPdt_ms_per_year: pm2(quad.dPdt * MS_PER_YEAR, quad.dPdtErr * MS_PER_YEAR) };
+    out.quadratic = { ...row(quad), dPdt_ms_per_year: pm2(quad.dPdt * MS_PER_YEAR, quad.dPdtErr * MS_PER_YEAR),
+      // the sign in words: small models read a negative dP/dt as a lengthening period
+      period_change: quad.dPdt < 0 ? 'negative: the period is getting SHORTER (the orbit shrinks, as in tidal decay)' : 'positive: the period is getting LONGER' };
     out.reading = `ΔBIC (linear − quadratic) = ${d.toFixed(1)}: ${d > 10 ? 'the changing period is strongly preferred' : d > 2 ? 'some preference for a changing period' : d > -2 ? 'the two models are not distinguished' : 'the constant period is preferred'}. The period change is ${z.toFixed(1)}σ from zero.`;
   } else out.reading = 'A quadratic ephemeris needs at least 4 times at distinct epochs; only the linear one was fitted.';
   if (upcoming > 0 && T.t[0] > 2e6) {

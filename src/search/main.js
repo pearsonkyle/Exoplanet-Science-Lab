@@ -313,8 +313,11 @@ import { withError as valueWithError } from './format.js';
     { name: 'search_query', core: true, description: `Filter and sort the catalogue table. "text" matches names, hosts, methods and facilities. Ranges are in the units the table shows; keys: ${RANGES.map((k) => `${k}${unit(k) ? ' [' + unit(k) + ']' : ''}`).join(', ')}. Every limit of the request goes in one call, e.g. period under 1 day and brighter than magnitude 10 is {"transiting": "yes", "ranges": {"per": [null, 1], "mag": [null, 10]}, "sort": "mag"}. Returns how many rows match and the first of them.`,
       parameters: obj({ text: T('Words every row must contain, e.g. "wasp" or "TRAPPIST-1"; "" for none.'), transiting: T('Only transiting planets (yes), only non-transiting (no), or any.', { enum: ['yes', 'no', 'any'] }),
         ranges: { type: 'object', description: 'Numeric limits as key: [minimum, maximum], null for an open end, e.g. {"per": [null, 3], "mag": [null, 11]}.', additionalProperties: { type: 'array', items: { type: ['number', 'null'], description: 'minimum or maximum' } } },
-        method: T('Discovery method contains this, e.g. "Transit", "Radial Velocity"; "" for any.'), sort: T(`One column name to sort by (a plain string; use "descending" for the direction): ${Object.keys(COLS).filter((k) => k !== 'cats').slice(0, 24).join(', ')}.`), descending: { type: 'boolean', description: 'Largest first.' }, clear: { type: 'boolean', description: 'true: clear every filter first.' }, limit: { type: 'integer', description: 'Rows to return (default 8, at most 30).', minimum: 1, maximum: 1000 } }),
-      run(a) {
+        method: T('Discovery method contains this, e.g. "Transit", "Radial Velocity"; "" for any.'), sort: T(`One column name to sort by (a plain string; use "descending" for the direction): ${Object.keys(COLS).filter((k) => k !== 'cats').slice(0, 24).join(', ')}.`), descending: { type: 'boolean', description: 'Largest first. For magnitudes, the brightest stars have the SMALLEST magnitude: "brightest first" is sort "mag" with descending false.' }, clear: { type: 'boolean', description: 'true: clear every filter first.' }, limit: { type: 'integer', description: 'Rows to return (default 8, at most 30).', minimum: 1, maximum: 1000 } }),
+      run(a, ctx = {}) {
+        // "brightest" is the smallest magnitude: a model that sorts magnitudes largest-first for it gets the order put right
+        let sortNote = '';
+        if (a.sort === 'mag' && a.descending === true && /\bbright/i.test(ctx.request || '') && !/\bfaint/i.test(ctx.request || '')) { a = { ...a, descending: false }; sortNote = 'brightest first means the smallest magnitude first: sorted ascending'; }
         if (a.clear) { S.q = ''; S.ranges = {}; S.method = ''; S.transit = 'any'; S.cats = 'any'; S.diffOnly = false; }
         if (a.text !== undefined) S.q = String(a.text);
         if (a.transiting !== undefined) S.transit = a.transiting; if (a.method !== undefined) S.method = a.method;
@@ -322,7 +325,7 @@ import { withError as valueWithError } from './format.js';
         if (a.sort !== undefined) { if (!COLS[a.sort]) throw new Error(`"${a.sort}" is not a column: ${Object.keys(COLS).join(', ')}`); S.sort = { key: a.sort, dir: a.descending ? -1 : 1 }; } else if (a.descending !== undefined) S.sort = { ...S.sort, dir: a.descending ? -1 : 1 };
         $('s-q').value = S.q; save(); drawFilters(); refresh();
         if ($('s-nfilters').textContent && $('s-filters').hidden) $('s-filters-btn').click();
-        return { matching: S.view.length, of: S.rows.length, filters: filters(), rows: S.view.slice(0, Math.min(30, a.limit || 8)).map(rowOf), next: S.view.length ? 'search_planet gives one planet in full with its references; search_open opens one in plan, analyze or observe.' : 'Nothing matches: loosen a filter.' };
+        return { ...(sortNote ? { note: sortNote } : {}), matching: S.view.length, of: S.rows.length, filters: filters(), rows: S.view.slice(0, Math.min(30, a.limit || 8)).map(rowOf), next: S.view.length ? 'search_planet gives one planet in full with its references; search_open opens one in plan, analyze or observe.' : 'Nothing matches: loosen a filter.' };
       } },
     { name: 'search_planet', core: true, readOnly: true, description: 'One planet in full, as the catalogues give it: every quantity with its uncertainty, the catalogue it comes from and the reference. Its panel is opened on the page.',
       parameters: obj({ name: T('Planet name, e.g. "WASP-43 b".') }, ['name']),

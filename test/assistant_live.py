@@ -31,6 +31,15 @@ TASKS = [
     dict(id=7, page='analyze/?skipintro', attach=attach, ask='Fit the transit in the file I attached. The planet is HD 80606 b. Then give me the light-curve figure.'),
     dict(id=8, page='analyze/?skipintro', ask='Load the single-transit example, save the analysis under the name "old", then delete the saved analysis "old".'),
     dict(id=9, page='analyze/?skipintro', attach=attach, ask='I attached a TESS light curve of HD 80606 b. Set up the project: get the system parameters and priors from the catalogue, fit the transit, explain the results, then search the residuals for another periodic signal. Finish with the standard report.'),
+    dict(id=11, page='plan/', ask='Which transits of WASP-12 b can I observe from Kitt Peak between January and July? Give me the first three.'),
+    dict(id=12, page='plan/', ask='Plan transits from La Silla for the first week of March, transits deeper than 10 ppt only.'),
+    dict(id=13, page='analyze/photometry/?demo=3', ask='Check the focus of these frames, solve the sky coordinates for HAT-P-32, rank the comparison stars with Gaia and set the apertures from the stars. Then run the reduction and send the light curve to Analyze.'),
+    dict(id=14, page='analyze/spectroscopy/', ask='Simulate a JWST observation of a hot Jupiter, fit the white light curve, then fit the channels and give me the transmission spectrum.'),
+    dict(id=15, page='observe/', ask='Show me HAT-P-32 from Kitt Peak tonight, then load a DSS image of its field and tell me how many comparison stars within one magnitude are in a 15 arcminute field.'),
+    dict(id=16, page='search/', ask='Find transiting planets with periods under 3 days and depths over 15 ppt brighter than V = 11, sorted by brightness, and show me the first one with its references.'),
+    dict(id=17, page='plan/', ask='Plan the transits of WASP-43 b from La Silla between February and April.'),
+    dict(id=18, page='analyze/?skipintro', ask='Open the orbital decay of WASP-12 b example, fit a linear and a quadratic ephemeris, and tell me the period change dP/dt and which model the data prefer.'),
+    dict(id=19, page='analyze/?skipintro', ask='Open the example with 40 simulated mid-transit times, fit the ephemeris, and search the timing residuals for a periodic signal.'),
     dict(id=10, page='methods/', ask='How does this site compute the equilibrium temperature? Give the exact equation and the assumptions behind it.'),
 ]
 if only: TASKS = [t for t in TASKS if str(t['id']) in only.split(',')]

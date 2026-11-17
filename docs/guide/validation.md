@@ -773,6 +773,30 @@ that, the model's own algebra was wrong in two of two runs); "how is T_eq comput
 in 7 steps. Numbers the model rounds or recalls are still common (two to four per long answer), and the number
 check still has to append the app's table.
 
+*Round of 2026-11-16, evening (the VPN copy of gemma4-e4b, vLLM, about 0.2 s per short request).* Planning dates:
+`node test/nightdates.test.mjs` (16: a date without a year is its next occurrence, a past date moves to next year
+with a note, a month alone is the whole month, "between January and July" asked in November is 2027-01-01 onward and
+is cut at the planner's 90 nights with the rest named, ranges wrapping the year, ranges found in a sentence). The
+state card now gives today's date and time zone, and the planner applies a month range the user wrote when the
+model passes only one end (in the browser: "between February and April" from La Silla, planned 2027-02-01 to
+2027-04-30; "between January and July", 2027-01-01 onward). Other changes found in these runs: a draft answer whose
+numbers differ from the tool results is sent back once with the exact list, and the corrected answer goes to the user
+(and to an export) without the table; its "Here's the corrected answer" opening is removed; "brightest first" sorts
+magnitudes ascending whatever the model asks; the observatory name is used instead of remembered coordinates;
+load_example lists every example and opens the one the user's words describe when the model picks another (scored on
+title words and numbers: "the example with 40 mid-transit times" opens `ephemeris`); an ephemeris result says in
+words that a negative dP/dt is a shrinking period; compare_runs says that runs of one model compare nothing; after
+photometry_send_to_analyze the model is told the photometry part is done; changing the model server no longer keeps
+the old server's model (a connection test that finished after the change used to overwrite it). The MCP and Node
+examples list grew from 6 to 16 worked examples. Worked examples through `node test/assistant_examples.mjs` (open
+fresh, fit, explain): single, hd80606-tess, multi, hd80606-rv, hd80606-joint, toy1873, hd80606-rm, phasecurve,
+eclipsemap, eclipsemap-sim, exomoon and toi1873-oc all completed (4 to 10 steps, 13 s to 199 s each); the number check
+passed for 9 of those 12 once the correction step was in. The fresh fits of TOI-1873 (32,000 points) and of the N-body
+examples were still running after 30 minutes in Node and are not reported here. In the browser (`test/assistant_live.py`):
+the planner date tasks, photometry (focus map, WCS, Gaia ranking, optimal apertures, reduction, hand-off),
+spectroscopy (simulation, white light, channels, spectrum), the sky view's survey image, the catalogue query and the
+two timing examples (decay: dP/dt −25.57 ± 0.84 ms/yr; the 40-time list) completed.
+
 ## The site
 
 Pages are real folders with their own `index.html` (no rewrite rules needed on a static host), sharing the

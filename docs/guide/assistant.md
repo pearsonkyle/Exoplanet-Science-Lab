@@ -39,6 +39,10 @@ The full tool list, generated from the code, is in the [tool reference](../refer
 
 The chat renders LaTeX: `$...$` inline and `$$...$$` (or `\( \)`, `\[ \]`) on their own line, as MathML in the browser; a dollar amount ("$5") stays text. Ask "how is X computed?" and the assistant reads the [Methods](../METHODS) section that implements it (`explain_method`: the equations as the code evaluates them, assumptions, limits and the checks against other codes) and, when you want the code itself, the exact function (`read_source`, from the published repository). A question only reads: while a request is a question, the tools that change the analysis are refused.
 
+## Dates
+
+The assistant is told today's date with every request. When you plan, a date without a year is its next occurrence ("transits between January and July", asked in November, are next year's), a past date is moved to next year unless you ask about the past on purpose, a month on its own means the whole month, and a range you write ("between February and April") is planned as one span even when the model passes only one end. The planner covers 90 nights at a time; a longer range is cut there and the result says where to continue.
+
 ## A whole project from your data
 
 Attach a light curve or radial velocities and ask for the project in one go, for example *"Set up the project: get the system parameters and priors from the catalogue, fit the orbit with a jitter for each instrument, explain the results, search the residuals for another periodic signal, and finish with the standard report."* The assistant loads the file, looks the system up (with velocities only, the orbit is set up for them: mass, period, e, ω, T mid and one jitter per instrument), fits, explains, runs `residual_periodogram` (Lomb–Scargle of the residuals with false-alarm probabilities, known planets, harmonics and 1-day aliases named, and a warning when the residuals exceed their errors) and writes the report with its BibTeX, session and figures. The app checks every number of the answer against the tool results.

@@ -28,11 +28,27 @@ const priorText = (p) => (!p ? '' : p.type === 'normal' ? `normal(${sig(p.a, 9)}
 // read_source: the code as published on GitHub (the browser), or the files of this checkout (the MCP server passes readSource)
 const REPO_RAW = 'https://raw.githubusercontent.com/pearsonkyle/Exoplanet-Science-Lab/main', REPO_BLOB = 'https://github.com/pearsonkyle/Exoplanet-Science-Lab/blob/main';
 
+/** The words of a request or a query that can tell examples apart: numbers always count ("40"), filler does not. */
+export const exampleWords = (text) => String(text || '').toLowerCase().split(/[^a-z0-9+-]+/).map((w) => w.replace(/^-+|-+$/g, ''))
+  .filter((w) => (w.length > 2 || /^\d+$/.test(w)) && !['the', 'and', 'example', 'examples', 'with', 'from', 'open', 'fit', 'then', 'tell', 'its', 'for', 'show', 'load', 'run', 'give'].includes(w));
+/** How well an example matches those words: a word of the title counts 2, of its description 1, a number 3 more. */
+export function exampleScore(e, words) {
+  const title = `${e.id} ${e.title}`.toLowerCase(), about = String(e.about || '').toLowerCase();
+  return words.reduce((a, w) => a + (title.includes(w) ? 2 : about.includes(w) ? 1 : 0) + ((title.includes(w) || about.includes(w)) && /^\d+$/.test(w) ? 3 : 0), 0);
+}
+
 export function createTools(ctx) {
   const { api, files, page = null, fetchJson = null, where = 'browser' } = ctx;
   const readSource = ctx.readSource || defaultReadSource;
   const has = (m) => typeof api[m] === 'function';
-  const specs = [...toolsFor(where).filter((t) => !t.needs || has(t.needs)), ...describedTools(api)], runs = [];
+  const specs = [...toolsFor(where).filter((t) => !t.needs || has(t.needs)), ...describedTools(api)].map((t) => (t.name === 'load_example' ? withExampleList(t) : t)), runs = [];
+  /** load_example names every example this page has, with its title: a small model picks from a list, it does not guess ids. */
+  function withExampleList(t) {
+    let ex = []; try { ex = api.examples() || []; } catch { /* no examples here */ }
+    if (!ex.length) return t;
+    return { ...t, description: `Open a worked example. The examples (id: title): ${ex.map((e) => `${e.id}: ${e.title}`).join('; ')}. It opens with its stored posterior when it has one; fresh=true opens it without a result. Replaces what is loaded.`,
+      parameters: { ...t.parameters, properties: { ...t.parameters.properties, id: { ...t.parameters.properties.id, description: 'An id from the list above, or words of its title ("orbital decay of WASP-12 b").' } } } };
+  }
   let catalog = null, nextRun = 1, lastSearch = null;
 
   const doc = (withResult = false) => api.exportSession(withResult);
@@ -168,12 +184,22 @@ export function createTools(ctx) {
         sampler: s.sampler, fit_running: s.running, has_result: s.hasResult, chi2_at_current_values: sig(s.chi2, 6) };
     },
     list_examples: () => ({ examples: api.examples().map((e) => ({ id: e.id, title: e.title, about: e.about, kinds: e.kinds })) }),
-    async load_example({ id, fresh }) {
-      const ex = api.examples(), hit = ex.find((e) => e.id === id) || ex.find((e) => e.id.includes(String(id).toLowerCase()) || e.title.toLowerCase().includes(String(id).toLowerCase()));
+    async load_example({ id, fresh }, opts = {}) {
+      // an id, or words of a title or description ("orbital decay of WASP-12 b", "40 mid-transit times")
+      let hit; const ex = api.examples(), q = String(id || '').toLowerCase(), words = exampleWords(q), score = (e) => exampleScore(e, words);
+      hit = ex.find((e) => e.id === id) || ex.find((e) => e.id.includes(q) || e.title.toLowerCase().includes(q)) || ex.map((e) => ({ e, s: score(e) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).map((x) => x.e)[0];
       if (!hit) throw new Error(`no example "${id}". The examples are: ${ex.map((e) => `${e.id} (${e.title})`).join('; ')}.`);
+      // the user's own words describe another example much better than the one chosen ("the example with 40 mid-transit times"
+      // and the model picked "multi"): open the one the user described, and say so
+      let switched = '';
+      if (opts.request) {
+        const rw = exampleWords(opts.request), sc = (e) => exampleScore(e, rw);
+        const best = ex.map((e) => ({ e, s: sc(e) })).sort((a, b) => b.s - a.s)[0];
+        if (best && best.e !== hit && best.s >= sc(hit) + 3) { switched = `the request describes "${best.e.title}", not "${hit.title}": that example was opened`; hit = best.e; }
+      }
       await api.loadExample(hit.id, { fresh: !!fresh });
       const s = api.state(); if (s.hasResult) recordRun('stored example result');
-      return { opened: hit.title, system: s.name, data: dataLines(), free: s.parameters.filter((p) => p.free).map((p) => p.key), has_result: s.hasResult, next: s.hasResult ? 'It opened with a stored result (get_results). run_fit samples it again.' : 'Choose free parameters (set_free) and call run_fit.' };
+      return { ...(switched ? { note: switched } : {}), opened: hit.title, system: s.name, data: dataLines(), free: s.parameters.filter((p) => p.free).map((p) => p.key), has_result: s.hasResult, next: (hit.kinds || []).length === 1 && hit.kinds[0] === 'ephemeris' ? 'This example is a list of mid-transit times: fit_ephemeris fits a linear and a quadratic ephemeris (period, T0, dP/dt, BIC of each); timing_periodogram searches the O − C residuals for a periodic signal. run_fit is not needed for those.' : s.hasResult ? 'It opened with a stored result (get_results). run_fit samples it again.' : 'Choose free parameters (set_free) and call run_fit.' };
     },
     async search_catalog({ query, limit = 8 }) {
       if (!fetchJson) throw new Error('the catalogue is not available here');

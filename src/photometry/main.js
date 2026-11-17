@@ -1121,7 +1121,7 @@ const HATP32 = { stars: [[424, 286], [465, 183], [512, 263]], planet: { per: 2.1
         // the same record the page's own "Open in Analyze" button leaves for the analyzer
         const lc = P.lc;
         localStorage.setItem('esl.handoff', JSON.stringify(handoffRecord()));
-        return { handed_over: `${P.name}: ${lc.time.length} points`, navigate: { page: 'analyze', params: { handoff: 1 } } };
+        return { handed_over: `${P.name}: ${lc.time.length} points`, navigate: { page: 'analyze', params: { handoff: 1 } }, next: 'The light curve is now in the analyzer, which opens next. The photometry part of the request is finished there: do not call photometry_ tools on that page. Fit it only if the user asked for a fit; otherwise tell the user it is loaded.' };
       } },
   ];
   (window.__esl = window.__esl || {}).photometry = { tools, ready: () => P.ready === true,

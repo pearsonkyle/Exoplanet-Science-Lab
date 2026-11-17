@@ -1350,7 +1350,7 @@ function xrLabels() {
     out.push({ key: 'target-ring', ring: true, dir: ti.dir, color: '#ffb454', deg: 6 });
     const d = altAzOf(ti.dir); out.push({ key: 'target', text: tg.name, dir: dirOf(d.alt - 4.2 * RAD, d.az), color: '#ffd9a0', deg: 1.9, centre: true });
     if (data.night) {
-      for (const m of data.night.marks) out.push({ key: 'markring' + m.name, ring: 'mark', dir: m.dir, color: data.night.color || '#5fd4ff', deg: m.mid ? 1.1 : 0.8 }, { key: 'mark' + m.name, text: `${m.name} ${hhmm(m.t)}${m.up ? '' : ' (below the horizon)'}`, dir: m.dir, color: '#bfeaff', deg: 1.3 });
+      for (const m of data.night.marks) out.push({ key: 'markring' + m.name, ring: 'mark', dir: m.dir, color: data.night.color || '#5fd4ff', deg: m.mid ? 1.1 : 0.8 }, { key: 'mark' + m.name, text: `${m.name} ${hhmm(m.t)}${m.up ? '' : ' (below the horizon)'}`, dir: m.dir, color: '#bfeaff', deg: m.mid ? 2.4 : 1.3 });   // the target's reticle sits on mid-transit: its label goes clear of it
       data.night.hours.forEach((h, i) => { if (h.up) out.push({ key: 'hour' + i, text: hhmm(h.t), dir: h.dir, color: '#ffc882', deg: 0.9 }); });
     }
   }

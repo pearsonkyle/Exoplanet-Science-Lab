@@ -4,6 +4,7 @@
 //
 // "Observable" is judged on the region of interest of an event (the baseline before the start to the same after
 // the end, widened by 1 sigma of the predicted time): see findObservableEvents in src/core/observability.js.
+import * as ND from '../core/nightdates.js';
 import { siteRoot } from '../site/nav.js';
 import { fetchJsonProgress, progressText } from '../site/load.js';
 import { SOURCES, loadSources, buildTable, findRow } from '../core/sources/index.js';
@@ -706,7 +707,7 @@ start().catch((err) => { status('Could not load the catalogues: ' + err.message)
   const apply = async () => { A.cleared = false; save(); fillForm(); await ensureSources(); compute(); };
   const isoMin = (jd) => new Date(Math.round((jd - 2440587.5) * 1440) * 60000).toISOString().slice(0, 16) + 'Z';   // to the nearest minute, as the list shows
   const siteText = () => `${curSite() ? curSite().name : 'custom site'} (${Math.abs(P.lat).toFixed(3)}° ${P.lat >= 0 ? 'N' : 'S'}, ${Math.abs(P.lon).toFixed(3)}° ${P.lon >= 0 ? 'E' : 'W'}, ${Math.round(P.elev || 0)} m)`;
-  const datesText = () => (single ? 'the next 12 months' : `${P.date === 'auto' ? 'tonight' : P.date}${A.info ? ` (first night ${F.day(A.info.jd0)})` : ''}, ${P.nights} night${P.nights > 1 ? 's' : ''}`);
+  const datesText = () => (single ? 'the next 12 months' : `${P.date === 'auto' ? 'tonight' : P.date}${A.info ? ` (first night ${F.day(A.info.jd0)}${P.nights > 1 ? `, last night ${F.day(A.info.jd0 + P.nights - 1)}` : ''})` : ''}, ${P.nights} night${P.nights > 1 ? 's' : ''}`);
   const evRow = (ev) => ({ index: A.shown.indexOf(ev) + 1, planet: ev.target.name, ...(ev.target.candidate ? { tess_candidate: 'not a confirmed planet' } : {}), event: ev.kind, event_label: KIND[ev.kind].badge, ...(ev.assumed ? { assumed: ev.assumed } : {}), night_of: F.day(O.noonBefore(ev.mid, P.lon)), ingress_utc: isoMin(ev.ingress), mid_utc: isoMin(ev.mid), egress_utc: isoMin(ev.egress),
     local_times: `${F.local(ev.ingress)} – ${F.local(ev.mid)} – ${F.local(ev.egress)} ${F.tzShort}`, observable: ev.full ? 'yes' : ev.transitFull ? `${KIND[ev.kind].word} complete, ${ev.baselineWanted > 0 ? 'baseline' : 'timing margin'} cut short` : `partial: ${pct(ev.coverage)}% of the ${KIND[ev.kind].word}`, region_observable_pct: +pct(ev.roiCoverage),
     timing_1sigma: ev.target.hasErr ? '± ' + minutes(ev.sigma * 1440) : 'unknown', altitude: `${deg(ev.altIngress)} → ${deg(ev.altMid)} → ${deg(ev.altEgress)}`, moon: `${Math.round(100 * ev.moon.illum)}% lit, ${deg(ev.moon.sep)} away`,
@@ -744,7 +745,7 @@ start().catch((err) => { status('Could not load the catalogues: ' + err.message)
         phase_center: T('Centre of a phase-curve window.', { enum: ['eclipse', 'transit'] }), phase_max_period: N('Only planets with a period up to this many days get phase-curve windows (default 3).', { minimum: 0.2, maximum: 30 }),
         custom_from: N('Custom window start, orbital phase (0 = mid-transit).', { minimum: 0, maximum: 1 }), custom_to: N('Custom window end, orbital phase.', { minimum: 0, maximum: 1 }) }),
       run(a) { return setEvents(a.events, a); } },
-    { name: 'plan_set_site', core: true, description: 'Choose where the observations are made: an observatory by name (for example "Kitt Peak", "La Silla", "Mauna Kea") or coordinates. The list of transits is recomputed.',
+    { name: 'plan_set_site', core: true, description: 'Choose where the observations are made: an observatory by name (for example "Kitt Peak", "La Silla", "Mauna Kea"), or coordinates only when the user gave coordinates (never coordinates you remember: the list has the right ones). The list of transits is recomputed.',
       parameters: obj({ observatory: T('Name or part of the name of an observatory in the site\'s list.'), lat: N('Latitude in degrees, north positive (with lon, instead of an observatory).', { minimum: -90, maximum: 90 }), lon: N('Longitude in degrees, east positive.', { minimum: -180, maximum: 360 }), elev: N('Elevation in metres.') }),
       async run({ observatory, lat, lon, elev }) {
         if (observatory) {
@@ -756,13 +757,27 @@ start().catch((err) => { status('Could not load the catalogues: ' + err.message)
         await apply(); if (globe) globe.lookAt(P.lat, P.lon);
         return { site: siteText(), time_zone: F.tzLabel, transits: counts() };
       } },
-    { name: 'plan_set_dates', core: true, description: 'Choose the nights to plan: the first night (a date, or "tonight") and how many nights from then (1 to 90).',
-      parameters: obj({ date: T('First night as YYYY-MM-DD (the evening date at the site), or "tonight".'), nights: { type: 'integer', description: 'Number of nights, 1 to 90.', minimum: 1, maximum: 90 } }),
-      async run({ date, nights }) {
+    { name: 'plan_set_dates', core: true, description: 'Choose the nights to plan, in ONE call: the first night and either how many nights or the last night. A range ("between February and April") is {"date": "February", "until": "April"}; a month alone ("January") is that whole month. Dates may be written as YYYY-MM-DD, "Jan 15", "January" or "tonight"; a date without a year is its next occurrence, and a past date is moved to the next year (planning is for nights to come). At most 90 nights at a time: a longer range is cut and the result says where to go on.',
+      parameters: obj({ date: T('First night: YYYY-MM-DD (the evening date at the site), a month and day ("Jan 15"), a month ("January") or "tonight".'), until: T('Last night, written the same way ("July" means July 31). Use it for "between January and July".'), nights: { type: 'integer', description: 'Number of nights, 1 to 90 (instead of until).', minimum: 1, maximum: 90 }, allow_past: { type: 'boolean', description: 'Only when the user asks about past nights on purpose.' } }),
+      async run({ date, until, nights, allow_past }, ctx = {}) {
         if (single) throw new Error('this page shows one planet for the next 12 months; navigate to plan without "planet" to choose dates');
-        if (date !== undefined) { if (/^(tonight|today|auto|now)$/i.test(date)) P.date = 'auto'; else if (/^\d{4}-\d\d-\d\d$/.test(date)) P.date = date; else throw new Error('date is YYYY-MM-DD or "tonight"'); }
-        if (nights !== undefined) P.nights = Math.max(1, Math.min(90, Math.round(nights)));
-        await apply(); return { dates: datesText(), transits: counts() };
+        const notes = [];
+        // the user named a range of months ("between January and July") and the call gives one end only: the user's range
+        const said = until === undefined && nights === undefined ? ND.rangeInText(ctx.request) : null;
+        if (said) { date = said.from; until = said.to; notes.push(`the request names ${said.from} to ${said.to}, so that whole range was planned`); }
+        const rg = date !== undefined && until === undefined && /^\s*(?:between\s+|from\s+)?(.+?)\s+(?:to|and|until|through|thru|-|–)\s+(.+?)\s*$/i.exec(String(date));
+        if (rg && !/^\d{4}-\d\d-\d\d$/.test(String(date).trim())) { date = rg[1]; until = rg[2]; }
+        if (date !== undefined && until !== undefined) {
+          const r = ND.resolveRange(date, until, new Date(), { maxNights: 90, allowPast: !!allow_past });
+          P.date = r.tonight ? 'auto' : r.first; P.nights = r.nights; if (r.note) notes.push(r.note);
+        } else {
+          if (date !== undefined) { const r = ND.resolveNight(date, new Date(), { allowPast: !!allow_past }); P.date = r.tonight ? 'auto' : r.date; if (r.note) notes.push(r.note); }
+          if (nights !== undefined) P.nights = Math.max(1, Math.min(90, Math.round(nights)));
+          // a month on its own ("January"): the whole month, not the default week
+          else if (until === undefined && date !== undefined && ND.isBareMonth(date)) { const r = ND.resolveRange(date, date, new Date(), { maxNights: 90, allowPast: !!allow_past }); P.date = r.first; P.nights = r.nights; }
+          else if (until !== undefined) { const r = ND.resolveRange(P.date === 'auto' ? 'tonight' : P.date, until, new Date(), { maxNights: 90, allowPast: !!allow_past }); P.nights = r.nights; if (r.note) notes.push(r.note); }
+        }
+        await apply(); return { dates: datesText(), covers: `the nights of ${ND.spanText(P.date === 'auto' ? null : P.date, P.nights)} only: say so when the user asked about a longer range, or call plan_set_dates again with "until"`, transits: counts(), ...(notes.length ? { note: notes.join('; ') } : {}) };
       } },
     { name: 'plan_set_target', core: true, description: 'Show only the transits of planets whose name contains this text (for example "WASP-43 b"); an empty name shows every planet again. For one planet over a whole year, navigate to plan with {"planet": name} instead.',
       parameters: obj({ name: T('Planet or host name, or part of it; "" for all planets.') }, ['name']),
@@ -804,5 +819,5 @@ start().catch((err) => { status('Could not load the catalogues: ' + err.message)
   ];
   (window.__esl = window.__esl || {}).plan = { tools, ready: () => !!A.info && !!F, setEvents, events: () => kindsOn(),
     list: (limit = 40) => A.shown.slice(0, limit).map(evRow),
-    state: () => [`Site: ${siteText()}. Nights: ${datesText()}. Events: ${eventsText()}. Target filter: ${single ? single + ' (single-planet page)' : P.name || 'all planets'}.`, `Limits: ${plain(criteria())}; magnitude ≤ ${P.magMax ?? 'any'}, depth ≥ ${P.depth || 0} ppt; discovery methods: ${P.disc === DM.GROUP_IDS ? 'all' : DM.GROUPS.filter((g) => P.disc.includes(g.id)).map((g) => g.label).join(', ') || 'none'}; TESS candidates ${P.src.toi ? 'included (marked as candidates)' : 'off'}; terrain horizon ${P.terrain ? 'on' : 'off'}.`, A.info ? `Found: ${JSON.stringify(counts())}${A.selected ? `; details open for ${A.selected.target.name}` : ''}.` : 'The catalogues are still loading.'] };
+    state: () => [`Site: ${siteText()}. Nights: ${datesText()}. Events: ${eventsText()}. Target filter: ${single ? single + ' (single-planet page)' : P.name ? `${P.name}: ONLY this planet is listed (left from earlier; for other planets clear it with plan_set_target {"name": ""})` : 'all planets'}.`, `Limits: ${plain(criteria())}; magnitude ≤ ${P.magMax ?? 'any'}, depth ≥ ${P.depth || 0} ppt; discovery methods: ${P.disc === DM.GROUP_IDS ? 'all' : DM.GROUPS.filter((g) => P.disc.includes(g.id)).map((g) => g.label).join(', ') || 'none'}; TESS candidates ${P.src.toi ? 'included (marked as candidates)' : 'off'}; terrain horizon ${P.terrain ? 'on' : 'off'}.`, A.info ? `Found: ${JSON.stringify(counts())}${A.selected ? `; details open for ${A.selected.target.name}` : ''}.` : 'The catalogues are still loading.'] };
 }

@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "206c0d786999e305",
+ "sourceHash": "577870113720e87a",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1322389,
-   "sha256": "8e565562dd88326cf00eb3d74634413c018d343ea76b78a5c2475a9a674f4be2"
+   "bytes": 1328243,
+   "sha256": "d2ba68a5e8d588d15537dbae9506cf31558004081a77cc368bea5faa740c36a2"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -49,6 +49,7 @@
   "src/core/model.js",
   "src/core/nbody.js",
   "src/core/nested.js",
+  "src/core/nightdates.js",
   "src/core/observability.js",
   "src/core/periodogram.js",
   "src/core/phasecurve.js",
@@ -556,6 +557,13 @@
   "nested": [
    "MiniNest",
    "diagnose"
+  ],
+  "nightdates": [
+   "isBareMonth",
+   "rangeInText",
+   "resolveNight",
+   "resolveRange",
+   "spanText"
   ],
   "observability": [
    "AU_KM",

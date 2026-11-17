@@ -32,6 +32,17 @@ export const EXAMPLE_LIST = [
   { id: 'hd80606-rv', title: 'Radial velocities of HD 80606 b', about: '264 velocities from seven instruments over 20 years', kinds: ['rv'] },
   { id: 'hd80606-joint', title: 'HD 80606 b: transit, velocities and timing together', about: 'a joint fit of the three kinds of data', kinds: ['transit', 'rv', 'ephemeris'] },
   { id: 'toy1873', title: 'Three planets', about: 'three transiting planets and velocities, masses free', kinds: ['transit', 'rv'] },
+  // the rest of the analyzer's worked examples that have a stored session (public/examples/results)
+  { id: 'hd80606-rm', title: 'HD 80606 b: the Rossiter–McLaughlin effect', about: 'velocities through the transit: the spin–orbit angle', kinds: ['rv'] },
+  { id: 'toi1873', title: 'TOI-1873: two planets and a candidate, TESS + NEID', about: 'real TESS photometry and NEID velocities', kinds: ['transit', 'rv'] },
+  { id: 'phasecurve', title: 'WASP-43 b: full-orbit phase curve', about: 'the planet\'s own light around the orbit', kinds: ['transit', 'phase'] },
+  { id: 'eclipsemap', title: 'WASP-43 b: eclipse map', about: 'the day side mapped from the eclipse shape', kinds: ['transit', 'phase'] },
+  { id: 'eclipsemap-sim', title: 'Eclipse map at JWST precision (simulated)', about: 'a map recovered from a simulated eclipse', kinds: ['transit', 'phase'] },
+  { id: 'exomoon', title: 'A planet with a moon (simulated)', about: 'transits with a moon\'s dips and timing shifts', kinds: ['transit', 'moon'] },
+  { id: 'toi1873-oc', title: 'TOI-1873: ephemerides, O − C and periodogram', about: 'mid-transit times of three planets', kinds: ['ephemeris'] },
+  { id: 'kepler88', title: 'Kepler-88: weighing a hidden planet by transit timing (real data)', about: 'Kepler mid-transit times and an N-body fit', kinds: ['ephemeris', 'nbody'] },
+  { id: 'ttvpair', title: 'Masses from timing alone (simulated)', about: 'two planets near resonance, masses from their timing variations', kinds: ['ephemeris', 'nbody'] },
+  { id: 'nbody', title: 'Timing variations from an unseen companion (simulated)', about: 'a transiting planet pulled by a planet that does not transit', kinds: ['ephemeris', 'nbody'] },
 ];
 
 /** An empty session to start from. */

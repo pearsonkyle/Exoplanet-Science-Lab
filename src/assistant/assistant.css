@@ -174,8 +174,8 @@
 }
 
 /* equations in messages (mathtext.js): MathML, displayed ones scroll sideways inside the bubble instead of widening it */
-.ai-msg math { font-size: 1.05em; }
-.ai-msg math[display=block] { display: block; overflow-x: auto; overflow-y: hidden; padding: 4px 0; margin: 4px 0; max-width: 100%; }
+.ai-msg math { font-size: 1.08em; font-family: "STIX Two Math", "Cambria Math", "Latin Modern Math", "Libertinus Math", math, serif; }
+.ai-msg math[display=block] { display: block math; math-style: normal; text-align: center; overflow-x: auto; overflow-y: hidden; padding: 6px 0; margin: 4px 0; max-width: 100%; font-size: 1.15em; }
 .ai-msg code.ai-tex { white-space: pre-wrap; word-break: break-word; }
 .ai-msg code.ai-tex.d { display: block; padding: 4px 6px; margin: 4px 0; }
 

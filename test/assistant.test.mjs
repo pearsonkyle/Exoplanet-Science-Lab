@@ -245,7 +245,8 @@ function harness(script, extra = {}) {
   const a = realApi(), fl = memoryFiles(), tl = createTools({ api: a, files: fl, where: 'browser' }), ev = [];
   await a.loadExample('single');
   const res = a.results(), rp = ops.pmText(res.parameters.find((p) => p.key === 'rprs')), bareRp = rp.split(' ')[0];
-  const f1 = endpoint([toolCall('get_results', {}), say(`The fit gives Rp/R* = ${bareRp}, so the planet blocks 2.21% of the light and the transit lasts 3.11 hours.`)]);
+  const wrong = `The fit gives Rp/R* = ${bareRp}, so the planet blocks 2.21% of the light and the transit lasts 3.11 hours.`;
+  const f1 = endpoint([toolCall('get_results', {}), say(wrong), say(wrong)]);   // asked to correct it once, it repeats the mistake
   const ag = createAgent({ base: 'http://llm.test/v1', model: 'm', tools: tl, fetch: f1, contextLimit: 32000, onEvent: (e) => ev.push(e) });
   await ag.send('what is the radius ratio?');
   const fin = ev.find((e) => e.type === 'assistant' && e.final).text;
@@ -253,6 +254,11 @@ function harness(script, extra = {}) {
   const f2 = endpoint([toolCall('get_results', {}), say(`Rp/R* = ${rp} (the fit converged).`)]), ev2 = [];
   const ag2 = createAgent({ base: 'http://llm.test/v1', model: 'm', tools: tl, fetch: f2, contextLimit: 32000, onEvent: (e) => ev2.push(e) });
   await ag2.send('radius ratio?');
+  check('harness: before the table, the model is asked once to correct the numbers, with the list and tools off', f1.seen.length === 3 && /quote these with their uncertainties exactly as the tools gave them: [^\n]*\+/.test(f1.seen[2].body.messages.at(-1).content.split('CURRENT STATE')[0] + f1.seen[2].body.messages.map((m) => m.content).join(' ')) && f1.seen[2].body.tool_choice === 'none');
+  const f3 = endpoint([toolCall('get_results', {}), say(wrong), say(`The fit gives Rp/R* = ${rp}.`)]), ev3 = [];
+  const ag3 = createAgent({ base: 'http://llm.test/v1', model: 'm', tools: tl, fetch: f3, contextLimit: 32000, onEvent: (e) => ev3.push(e) });
+  await ag3.send('what is the radius ratio?');
+  check('harness: a corrected answer goes to the user without the table, and is what an export records', ev3.find((e) => e.type === 'assistant' && e.final).text === `The fit gives Rp/R* = ${rp}.` && ag3.turns[0].check.ok === true && ag3.turns[0].modelFinal === `The fit gives Rp/R* = ${rp}.`);
   check('harness: a faithful answer is left as written', ev2.find((e) => e.type === 'assistant' && e.final).text === `Rp/R* = ${rp} (the fit converged).` && ag2.turns[0].check.ok === true);
   check('the primer forbids computing or converting and asks for uncertainties as returned', /Never compute, convert/.test(PRIMER) && /always quoted with it/.test(PRIMER) && /navigate/.test(PRIMER));
 }

@@ -17,7 +17,7 @@
 // The only network traffic is to the base URL passed in; an API key, when given, goes in the
 // Authorization header of those requests and nowhere else.
 
-import { openAITools } from './toolspec.js';
+import { openAITools, TOOL_SPECS } from './toolspec.js';
 import { checkNumbers, appendix } from './numcheck.js';
 
 // No address of a model server is written in this code: the set-up card's presets are in presets.js, the only place
@@ -223,6 +223,9 @@ export function parseTextCalls(text, names) {
  */
 export const isQuestionOnly = (text) => /^\s*(how|what|why|which|where|when|who|whose|is|are|was|does|do|did|can you explain|explain|tell me|describe|derive|show me how|give me the (?:equation|formula))\b/i.test(text)
   && !/\b(fit|load|run|set(?:\s+up)?|open|plan|simulate|add|remove|change|save|export|delete|try|compare|use|switch|free|fix|apply|search|find|look\s+(?:\w+\s+)?up|lookup|go to|navigate|attach)\b(?!\s+(?:by|from|in|with)\s+(?:the|this)\s+(?:site|code|model))/i.test(String(text).replace(/^\s*\S+/, ''));
+
+/** The analyzer's tools (toolspec.js): the ones a question must not use to change the analysis. */
+const ANALYSIS_TOOLS = new Set(TOOL_SPECS.map((t) => t.name));
 
 export const NOT_RUN = /\b(?:do not|don['’]?t|without|no need to|not yet|before you)\s+(?!forget|hesitate)(?:\w+\s+){0,2}?(?:run(?:ning)?|start(?:ing)?|launch(?:ing)?)\b/i;
 const CHARS_PER_TOKEN = 3.2;
@@ -446,6 +449,20 @@ export function createAgent(config) {
           const ghost = have ? [...new Set((content.match(/[\w][\w.()-]*\.(?:json|md|csv|py|tex|png|txt|yaml)\b/gi) || []).filter((n) => !have.includes(n.toLowerCase())))] : [];
           if (ghost.length && !turn.fileChecked && turn.steps.length) { turn.fileChecked = true; (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: `[From the app, not the user] Your answer mentions ${ghost.join(', ')}, but no such file exists (files: ${have.join(', ') || 'none'}). If you meant to give the user that file, write it now with export_file or write_file; otherwise answer again without claiming it.` }); emit({ type: 'note', text: `The answer mentioned ${ghost.join(', ')}, which does not exist; the assistant was asked to write it or correct itself.` }); continue; }
           if (ghost.length && turn.fileChecked) emit({ type: 'note', text: `Check: the answer below mentions ${ghost.join(', ')}, but no such file was written.` });
+          // the numbers of a draft answer against the tool results: once, the model gets the exact list to put right and
+          // writes the answer again (its corrected words are what the user sees and what an export records)
+          if (content.trim() && cfg.checkNumbers !== false && !turn.numFixAsked) {
+            const pre = checkNumbers(content, numberSources());
+            if (!pre.ok) {
+              turn.numFixAsked = true;
+              const fix = [pre.bare.length ? `quote these with their uncertainties exactly as the tools gave them: ${pre.bare.map((b) => b.full).slice(0, 12).join('; ')}` : '', pre.unsupported.length ? `these numbers are in no tool result, so remove them or use the tool's own value: ${pre.unsupported.slice(0, 12).join(', ')}` : ''].filter(Boolean).join('. Also ');
+              (turn.notes = turn.notes || []).push({ after: turn.steps.length, text: `[From the app, not the user] Before your answer goes to the user, ${fix}. Write the whole answer again with those corrections and nothing else changed, as if it were your first answer: do not mention this correction, and do not call tools.\n\nYour draft:\n${cutText(content.trim(), 3000)}` });
+              emit({ type: 'note', text: 'The draft answer quoted numbers that differ from the tool results: the assistant was asked to correct them.' });
+              turn.forceAnswer = true; continue;
+            }
+          }
+          // a corrected answer that announces itself ("Here's the corrected answer:"): the announcement goes, the answer stays
+          if (turn.numFixAsked) content = content.replace(/^\s*(?:\*\*)?(?:(?:ok(?:ay)?|sure|done)[,.!]?\s*)?(?:here(?:'s| is) (?:the |my |your )?(?:corrected|revised|updated|fixed)[^\n:]*:?|corrected answer:?)(?:\*\*)?\s*(?:---\s*)?/i, '');
           turn.modelFinal = content.trim();   // the model's own words, before the app adds its table (export)
           const extra = content.trim() && cfg.checkNumbers !== false ? numberCheck(content, turn) : '';
           if (extra) { content = content.trim() + extra; emit({ type: 'note', text: 'The answer quoted numbers that differ from the tool results (or dropped an uncertainty): the app\'s own table was added under it.' }); }
@@ -471,14 +488,16 @@ export function createAgent(config) {
           else {
             const reason = tools.confirmFor(c.name, typeof c.args === 'object' && c.args ? c.args : {}), spec = tools.specs.find((t) => t.name === c.name);
             if (spec) active.add(c.name);   // a tool the model called directly stays shown
-            if (spec && !spec.readOnly && c.name !== 'navigate' && isQuestionOnly(turn.user)) { text = `ERROR: the user asked a question ("${cutShort(turn.user, 80)}"), so nothing should be changed: do not call ${c.name}. Answer from what the read-only tools and the Methods (explain_method) give.`; }
+            // only the analysis is protected: page tools (the planner's dates, the sky view's target) change what is shown, and
+            // answering a question about them needs them
+            if (spec && !spec.readOnly && ANALYSIS_TOOLS.has(c.name) && isQuestionOnly(turn.user)) { text = `ERROR: the user asked a question ("${cutShort(turn.user, 80)}"), so nothing should be changed: do not call ${c.name}. Answer from what the read-only tools and the Methods (explain_method) give.`; }
             else if (spec && spec.long && NOT_RUN.test(turn.user)) { text = `ERROR: the user asked not to run a fit in this request ("${cutShort((turn.user.match(NOT_RUN) || [''])[0], 60)}"). The set-up is all that was asked: do not call ${c.name}; finish and say the fit was not run.`; }
             else
             // one "no" stands for the rest of the request: the user is not asked again, and a second attempt ends the request
             if (reason && turn.denied) { denied = true; turn.deniedTwice = true; text = 'DENIED: the user already declined this in the current request.'; }
             else if (reason && cfg.confirm && !(await cfg.confirm({ id, name: c.name, args: c.args, reason }))) { denied = true; turn.denied = true; text = 'DENIED: the user declined this action. Do not retry it or try another way to do the same thing. Tell the user it was not done and ask what they would like instead.'; }
             else {
-              const r = await tools.call(c.name, c.args, { signal, onProgress: (p) => emit({ type: 'tool_progress', id, progress: p }) });
+              const r = await tools.call(c.name, c.args, { signal, onProgress: (p) => emit({ type: 'tool_progress', id, progress: p }), request: turn.user });   // request: the user's words, for tools that check the model's reading of them
               ok = r.ok; text = r.text; data = r.data; if (r.table) table = r.table; if (r.halt) halt = r.halt;
               // the arguments as they ran (repaired by the tool layer, e.g. a list written as one escaped string): what the
               // model sees in its history from now on, and what a training export records
@@ -516,9 +535,10 @@ export function createAgent(config) {
    * The check on a final answer: its numbers against every tool result of the conversation, the live state and the
    * user's words. Returns the text to put under the answer ('' when it passes): the reason and the tools' own tables.
    */
+  /** Everything an answer's numbers may come from: the live state, the user's words and every tool result (with its table). */
+  const numberSources = () => [tools.stateCard(), ...turns.flatMap((t) => [t.user, ...t.steps.flatMap((s) => s.results.flatMap((r) => [r.text, r.table || '']))])];
   function numberCheck(content, turn) {
-    const sources = [tools.stateCard(), ...turns.flatMap((t) => [t.user, ...t.steps.flatMap((s) => s.results.flatMap((r) => [r.text, r.table || '']))])];
-    const chk = checkNumbers(content, sources); turn.check = { ok: chk.ok, unsupported: chk.unsupported, bare: chk.bare.map((b) => b.full) };
+    const chk = checkNumbers(content, numberSources()); turn.check = { ok: chk.ok, unsupported: chk.unsupported, bare: chk.bare.map((b) => b.full) };
     if (chk.ok) return '';
     // the tables of this request, newest first; kept: those that add a value quoted without its interval, else the newest
     const all = [], seen = new Set(), tables = [], left = new Set(chk.bare.map((b) => b.full));

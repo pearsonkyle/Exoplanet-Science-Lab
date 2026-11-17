@@ -5,7 +5,7 @@
 //   analyzer  tools.js on window.__esl.api (the analyze page only)
 //   page      the tools a page declares itself in window.__esl.<page>:
 //               { ready() -> bool, state() -> string | [string], tools: [{ name, description, parameters (JSON schema),
-//                 readOnly, confirm, core, run(args, { files, signal, onProgress }) -> result }] }
+//                 readOnly, confirm, core, run(args, { files, signal, onProgress, request }) -> result }] }   request: the user's words
 //             A result is plain data. { navigate: { page, params } } in it means "this action continues on another
 //             page": the harness saves the conversation, goes there and carries on.
 //
@@ -71,6 +71,14 @@ const jsonText = (data) => JSON.stringify(data, (k, v) => (v === undefined || v 
  *   pageApi      window.__esl.<page> (see the top of this file), or null
  * -> { page, specs, names, call, confirmFor, stateCard, fileNames, actions, undoAction(), canUndo(), problems }
  */
+/** Today's date in the browser, for the state card: the model does not know it, and a month without a year means the next one. */
+export function todayLine(now = new Date()) {
+  const z = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; } })();
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const day = now.toLocaleDateString('en-US', { weekday: 'long' }), time = now.toTimeString().slice(0, 5);
+  return `Today: ${day} ${date}, ${time}${z ? ' ' + z : ''} (this browser's clock). Plans are for nights from today on: a date the user gives without a year is its next occurrence (in November, "January" means next January); pass dates as the user wrote them and the planner resolves them.`;
+}
+
 export function createSiteTools({ page, root, analyzer = null, analyzerApi = null, pageApi = null, files, maxNavigations = 6, project = null, pageProblem = null }) {
   if (!PAGES[page]) throw new Error(`unknown page "${page}"`);
   const pageTools = (pageApi && Array.isArray(pageApi.tools) ? pageApi.tools : []).filter((t) => t && typeof t.run === 'function').map((t) => ({ group: page, ...t, parameters: t.parameters || obj({}) }));
@@ -156,7 +164,7 @@ export function createSiteTools({ page, root, analyzer = null, analyzerApi = nul
       }
       if (FH[name] && own.includes(spec)) { const data = await FH[name](args); if (name === 'write_file') record(spec, args, data, null); return { ok: true, args, data, text: jsonText(data), table: '' }; }
       const t = pageTools.find((x) => x.name === name);
-      let data = await t.run(args, { files, signal: opts.signal, onProgress: opts.onProgress });
+      let data = await t.run(args, { files, signal: opts.signal, onProgress: opts.onProgress, request: opts.request || '' });
       if (data === undefined) data = { done: true };
       let halt = null;
       // a transit opened in the analyzer: its predicted mid-time as a BJD (the planner's own number) goes with it,
@@ -181,6 +189,7 @@ export function createSiteTools({ page, root, analyzer = null, analyzerApi = nul
   /** The live card the model reads at every step: where it is, what that page shows, the files at hand. */
   function stateCard() {
     const L = [`CURRENT STATE (live; regenerated every step)`, `Page: ${page} (${PAGES[page].about}). Other pages are reached with navigate: ${PAGE_IDS.filter((p) => p !== page).join(', ')}.`];
+    L.splice(1, 0, todayLine());
     let pj = ''; try { pj = projectCard(project ? project() : null, { caps: capabilities(analyzer ? analyzer.specs : null, page) }); } catch { pj = ''; }
     if (pj) L.push(pj);
     if (pageApi && typeof pageApi.state === 'function') { try { const s = pageApi.state(); L.push(...[].concat(s).filter(Boolean).map((x) => cut(String(x), 600))); } catch (err) { L.push(`The page's state is unavailable (${err.message}).`); } }

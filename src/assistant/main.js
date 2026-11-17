@@ -170,8 +170,10 @@ function build({ root, launcher }) {
       if (testing) return; read(); warn();
       if (!S.base) { out.className = 'ai-test bad'; out.textContent = 'Type the address of your model server first: its OpenAI-compatible base URL, which usually ends in /v1.'; return; }
       testing = true; testBtn.disabled = true; out.className = 'ai-test'; out.textContent = `Testing ${S.base}…`;
-      const r = await testConnection(S.base, { apiKey: S.apiKey, model: S.model, listModels }).catch((e) => ({ ok: false, kind: 'error', message: String(e.message || e), models: [] }));
-      testing = false; models = r.models || [];
+      const tested = S.base, r = await testConnection(S.base, { apiKey: S.apiKey, model: S.model, listModels }).catch((e) => ({ ok: false, kind: 'error', message: String(e.message || e), models: [] }));
+      testing = false; testBtn.disabled = false;
+      if (S.base !== tested) return;   // the server was changed while this one was being tested: its answer is not about the current one
+      models = r.models || [];
       if (r.ok || models.length) { if (!models.some((m) => m.id === S.model)) S.model = r.model || models[0].id; const m = models.find((x) => x.id === S.model); if (m && m.context) S.context = m.context; }
       if (r.ok) S.lastGood = { preset: S.preset, base: S.base, model: S.model, at: Date.now() };
       apply();
@@ -515,7 +517,7 @@ function build({ root, launcher }) {
     /** The open conversation as one training record (sft.js), or null when it is empty: for scripted checks and data collection. */
     trainingRecord: () => { const r = currentRecord(); return r ? trainingRecord(r) : null; }, send: (t) => { input.value = t; return submit(); }, undoLast, newChat, get working() { return working; },
     /** For scripted checks: use this server for the page's lifetime without typing it into the card. */
-    configure: async (o = {}) => { Object.assign(S, Object.fromEntries(Object.entries(o).filter(([, v]) => v !== '' && v !== undefined && v !== null))); S.base = normalizeBase(S.base); S.preset = presetOf(S.base); if (!S.model && S.base) { models = await listModels(S.base, { apiKey: S.apiKey }); S.model = models[0].id; S.context = S.context || models[0].context; } apply(); toggleSettings(false); } };
+    configure: async (o = {}) => { const was = S.base; Object.assign(S, Object.fromEntries(Object.entries(o).filter(([, v]) => v !== '' && v !== undefined && v !== null))); S.base = normalizeBase(S.base); if (S.base !== normalizeBase(was) && !o.model) S.model = '';  /* another server: its own models */ S.preset = presetOf(S.base); if (!S.model && S.base) { models = await listModels(S.base, { apiKey: S.apiKey }); S.model = models[0].id; S.context = S.context || models[0].context; } apply(); toggleSettings(false); } };
   window.__eslAssistant = handle;   // for scripted checks (test/assistant_live.py)
   return handle;
 }
