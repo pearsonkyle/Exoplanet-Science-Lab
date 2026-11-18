@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "bc2b0f33ce6be5cf",
+ "sourceHash": "a707f60e2f635069",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1345270,
-   "sha256": "05464a9cf784b13e5276dfe8c7c871c35483739a15caa1d86ba159e648d0f69a"
+   "bytes": 1357259,
+   "sha256": "50af507f74a335463cb3269fe4f1b59ece8766cae7398eedb72e16b64a89aab6"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -23,6 +23,7 @@
   "src/core/asteroids.js",
   "src/core/astro.js",
   "src/core/catalog.js",
+  "src/core/clocksync.js",
   "src/core/config.js",
   "src/core/data.js",
   "src/core/derive.js",
@@ -51,6 +52,7 @@
   "src/core/nbody.js",
   "src/core/nested.js",
   "src/core/nightdates.js",
+  "src/core/nmea.js",
   "src/core/observability.js",
   "src/core/periodogram.js",
   "src/core/phasecurve.js",
@@ -79,6 +81,8 @@
   "src/core/spectroscopy.js",
   "src/core/stats.js",
   "src/core/stellar.js",
+  "src/core/timeformat.js",
+  "src/core/timescale.js",
   "src/core/transit.js",
   "src/core/zip.js",
   "src/data/ld_table.js",
@@ -220,6 +224,15 @@
    "suggestPriors",
    "systemFromRows",
    "transitDuration"
+  ],
+  "clocksync": [
+   "SOURCE_RANK",
+   "agedUncertainty",
+   "chooseClock",
+   "describeClock",
+   "estimateOffset",
+   "nextProbeAt",
+   "sampleBounds"
   ],
   "config": [
    "configToObject",
@@ -579,6 +592,12 @@
    "resolveRange",
    "spanText"
   ],
+  "nmea": [
+   "NMEA_LATENCY",
+   "nmeaChecksum",
+   "nmeaStream",
+   "parseNmea"
+  ],
   "observability": [
    "AU_KM",
    "AU_LIGHT_DAYS",
@@ -930,6 +949,38 @@
    "TORRES_SCATTER",
    "estimateMassRadius",
    "torres"
+  ],
+  "timeformat": [
+   "DISPLAY_SCALES",
+   "formatScale",
+   "hms",
+   "hourAngle",
+   "isDisplayScale",
+   "lstHours"
+  ],
+  "timescale": [
+   "DAY_MS",
+   "LEAP_LAST",
+   "LEAP_SECONDS",
+   "MJD_ZERO",
+   "SCALES",
+   "TAI_MINUS_GPS",
+   "TT_MINUS_TAI",
+   "UNIX_EPOCH_JD",
+   "convertJd",
+   "gpsMinusUtc",
+   "jdFromMjd",
+   "jdFromMs",
+   "leapCheck",
+   "mjdFromJd",
+   "msFromJd",
+   "offsetFromUtc",
+   "taiMinusUtc",
+   "tdbMinusTt",
+   "tdbMinusUtc",
+   "toUtc",
+   "ttMinusUtc",
+   "utcTo"
   ],
   "transit": [
    "blockedFraction",

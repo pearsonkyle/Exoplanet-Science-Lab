@@ -358,3 +358,8 @@ table.eph { border-collapse: collapse; width: 100%; font: 12px var(--mono); font
   .ev { grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1fr) 40px; grid-template-areas: "score name name tog" "time time time time" "alt alt alt alt" "base base go go"; }
   .ev .c-go { justify-self: end; }
 }
+
+/* "Now in <scale>": the corrected present in the chosen time scale, and the clock source */
+.p-now { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 6px; }
+.p-now label { display: flex; align-items: center; gap: 6px; }
+.p-now output { font: 500 12px/1.3 var(--mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }

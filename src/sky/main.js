@@ -15,6 +15,8 @@ import * as VIS from './visible.js';
 import * as HF from './hostFilter.js';
 import * as AST from '../core/asteroids.js';
 import { eventKind, eventInfo } from './events.js';
+import clock, { mountClockBadge } from '../site/clock.js';
+import { DISPLAY_SCALES, formatScale, isDisplayScale } from '../core/timeformat.js';
 
 const { RAD, DEG } = A;
 const $ = (id) => document.getElementById(id);
@@ -48,7 +50,7 @@ const num = (k) => (q.has(k) && Number.isFinite(+q.get(k)) ? +q.get(k) : null);
 const savedLoc = store.get('esl.sky.location', null);
 const S = {
   lat: num('lat') ?? savedLoc?.lat ?? 51.4769, lon: num('lon') ?? savedLoc?.lon ?? 0, elev: num('elev') ?? 0, hasLocation: num('lat') != null || !!savedLoc,
-  time: Date.now(), playing: true, rate: 1, live: true, step: 3600e3,
+  time: clock.now(), playing: true, rate: 1, live: true, step: 3600e3,
   az: num('az') ?? 180, alt: num('alt') ?? 24, fov: num('fov') ?? 100,
   layers: { ...DEFAULT_LAYERS, ...store.get('esl.sky.layers', {}) },
   selection: null, ar: false,
@@ -944,6 +946,22 @@ const pad = (n, w = 2) => String(n).padStart(w, '0');
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const localInput = (ms) => { const d = new Date(ms); return `${pad(d.getFullYear(), 4)}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
 let lastReadout = '';
+// the third line of the readout: UTC by default, or another time scale chosen in the time panel (src/core/timeformat.js)
+let timeScale = (() => { const v = store.get('esl.sky.scale', 'utc'); return isDisplayScale(v) && v !== 'local' ? v : 'utc'; })();
+function scaleLine() {
+  const s = S.target && infoOf(S.target), rd = s && s.radec;
+  const f = formatScale(S.time, timeScale, { site: { lon: S.lon, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }, target: rd ? { ra: rd[0], dec: rd[1] } : null });
+  const t = timeScale === 'utc' || timeScale === 'site' ? f.text.slice(11) : f.text;
+  return `${t} ${f.unit}${f.note ? ' · ' + f.note : ''}`;
+}
+function bindScale() {
+  const sel = $('scale'); if (!sel) return;
+  sel.innerHTML = DISPLAY_SCALES.filter((d) => d.id !== 'local' && d.id !== 'site').map((d) => `<option value="${d.id}" title="${d.hint}">${d.label}</option>`).join('');
+  sel.value = timeScale;
+  sel.onchange = () => { timeScale = sel.value; store.set('esl.sky.scale', timeScale); lastReadout = ''; };
+  clock.start(); mountClockBadge($('skyclock'));
+  window.addEventListener('esl-clock', () => { if (S.live) S.time = clock.now(); });
+}
 function drawReadout() {
   const d = new Date(S.time), off = -d.getTimezoneOffset(), tz = 'UTC' + (off >= 0 ? '+' : '−') + (Math.abs(off) % 60 ? `${Math.floor(Math.abs(off) / 60)}:${pad(Math.abs(off) % 60)}` : Math.floor(Math.abs(off) / 60));
   const key = Math.floor(S.time / 1000) + '|' + S.playing + S.live + S.rate + (F ? A.twilight(F.sunAlt) : '');
@@ -951,7 +969,7 @@ function drawReadout() {
   $('clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   $('date').textContent = `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} · ${tz}`;
   const tw = F ? { day: 'day', civil: 'civil twilight', nautical: 'nautical twilight', astronomical: 'astronomical twilight', night: 'night' }[A.twilight(F.sunAlt)] : '';
-  $('utc').textContent = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC${tw ? ' · ' + tw : ''}`;
+  $('utc').textContent = `${scaleLine()}${tw ? ' · ' + tw : ''}`;
   $('play').innerHTML = S.playing ? ICON('<path d="M8 5v14M16 5v14"/>') : ICON('<path d="M7 4l13 8-13 8z" fill="currentColor"/>');
   $('play').title = S.playing ? 'Pause' : 'Play'; $('now').classList.toggle('on', S.live);
   if (document.activeElement !== $('dt')) $('dt').value = localInput(S.time);
@@ -978,12 +996,12 @@ function buildUI() {
     bar.append(b);
   }
   syncLayers(); layersAsked = true;
-  bindCard(); bindSearch(); bindNight(); bindTonight(); bindFilter(); bindVisible();
+  bindCard(); bindSearch(); bindNight(); bindTonight(); bindFilter(); bindVisible(); bindScale();
   $('terrainMore').onclick = () => { const b = $('terrainSources'); b.hidden = !b.hidden; $('terrainMore').setAttribute('aria-expanded', String(!b.hidden)); };
   $('back').innerHTML = ICON('<path d="M15 5l-7 7 7 7"/>'); $('fwd').innerHTML = ICON('<path d="M9 5l7 7-7 7"/>');
   $('back').onclick = () => setTime(S.time - S.step); $('fwd').onclick = () => setTime(S.time + S.step);
   $('play').onclick = () => { S.playing = !S.playing; if (!S.playing) S.live = false; };
-  $('now').onclick = () => { S.time = Date.now(); S.rate = 1; $('rate').value = '1'; S.playing = true; S.live = true; S.nightPlay = false; };
+  $('now').onclick = () => { S.time = clock.now(); S.rate = 1; $('rate').value = '1'; S.playing = true; S.live = true; S.nightPlay = false; };
   $('rate').onchange = (e) => { if (e.target.value === 'night') { playNight(true); return; } S.rate = +e.target.value; S.playing = true; S.nightPlay = false; if (S.rate !== 1) S.live = false; };
   $('step').onchange = (e) => { S.step = +e.target.value; };
   $('dt').onchange = (e) => { const t = new Date(e.target.value).getTime(); if (Number.isFinite(t)) setTime(t); };
@@ -1554,7 +1572,7 @@ function resize() {
 let lastT = performance.now(), slow = 0, ringOn = false;
 function frame(t) {
   const dt = Math.min(1000, t - lastT); lastT = t;
-  if (S.live && S.playing) S.time = Date.now(); else if (S.playing) S.time += dt * S.rate;
+  if (S.live && S.playing) S.time = clock.now(); else if (S.playing) S.time += dt * S.rate;
   // the run through the night stops at its end
   if (S.playing && $('rate').value === 'night' && data.night && S.time >= data.night.t1) { S.time = data.night.t1; S.playing = false; cardKey = ''; }
   if (S.follow && S.playing && $('rate').value === 'night' && !S.ar && F && targetReady(S.target)) followTarget();
@@ -1632,7 +1650,7 @@ window.__sky = { S, A, R, data, ar, xr, frame: () => F, compute, pick, select: (
     { name: 'observe_set_time', core: true, description: 'Set the moment shown: a UTC time, or "now" to follow the clock again.',
       parameters: obj({ time: T('ISO time in UTC, e.g. "2026-11-16T03:20:00Z", or "now".') }, ['time']),
       run({ time }) {
-        if (/^now$/i.test(time)) { S.time = Date.now(); S.live = true; S.playing = true; S.rate = 1; if ($('rate').value === 'night') $('rate').value = '1'; }
+        if (/^now$/i.test(time)) { S.time = clock.now(); S.live = true; S.playing = true; S.rate = 1; if ($('rate').value === 'night') $('rate').value = '1'; }
         else { const ms = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(time) ? time : time + 'Z'); if (!Number.isFinite(ms)) throw new Error('time is an ISO date and time in UTC, or "now"'); setTime(ms); S.playing = false; }
         compute(); return { showing_utc: isoMin(S.time), following_the_clock: S.live, target_now: where() || undefined };
       } },

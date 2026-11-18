@@ -3,7 +3,7 @@
 // BSCALE/BZERO/BLANK, gzip through DecompressionStream, tile-compressed images (fpack, .fz: RICE_1, GZIP_1,
 // GZIP_2, PLIO_1, NOCOMPRESS, quantised floats with every dither method), headers without END, cubes, Bayer
 // frames. Also the time, exposure, airmass, pixel scale, WCS (TAN) and pier side keywords of a frame, and the
-// UTC -> BJD_TDB conversion. No DOM; runs in Node, in a page and in a worker.
+// UTC -> BJD_TDB conversion. The only import is the leap-second table (timescale.js). No DOM; runs in Node, in a page and in a worker.
 // The aim is to open what astropy.io.fits opens for EXOTIC (fits.open(..., ignore_missing_end=True), first HDU
 // with NAXIS != 0); test/fits.test.mjs compares each case with astropy (test/make_fits_variants.py).
 //
@@ -12,6 +12,8 @@
 //
 // Pixel convention (same as astropy / photutils): data[y * width + x], x along NAXIS1, y along NAXIS2,
 // both zero-based, the centre of the first pixel at (0, 0).
+
+import { taiMinusUtc, tdbMinusUtc } from './timescale.js';
 
 const BLOCK = 2880;
 const ASCII = new TextDecoder('latin1');
@@ -527,16 +529,8 @@ export function parseFitsDate(date, timeOfDay = null) {
   return calendarToJd(y, mo, d, h, mi, se);
 }
 
-// TAI - UTC in seconds from 1972 (dates are the JD at which each value starts)
-const LEAP = [[2441317.5, 10], [2441499.5, 11], [2441683.5, 12], [2442048.5, 13], [2442413.5, 14], [2442778.5, 15], [2443144.5, 16], [2443509.5, 17], [2443874.5, 18], [2444239.5, 19], [2444786.5, 20], [2445151.5, 21], [2445516.5, 22], [2446247.5, 23], [2447161.5, 24], [2447892.5, 25], [2448257.5, 26], [2448804.5, 27], [2449169.5, 28], [2449534.5, 29], [2450083.5, 30], [2450630.5, 31], [2451179.5, 32], [2453736.5, 33], [2454832.5, 34], [2456109.5, 35], [2457204.5, 36], [2457754.5, 37]];
-/** TAI - UTC [s] at a UTC Julian date (37 s from 2017; no leap second has been announced since). */
-export function taiMinusUtc(jdUtc) { let v = 10; for (const [jd, s] of LEAP) if (jdUtc >= jd) v = s; else break; return v; }
-
-/** TDB - UTC in days at a UTC Julian date: leap seconds + 32.184 s + the 1.7 ms periodic term. */
-export function tdbMinusUtc(jdUtc) {
-  const g = (357.53 + 0.9856003 * (jdUtc - 2451545.0)) * Math.PI / 180;
-  return (taiMinusUtc(jdUtc) + 32.184 + 0.001657 * Math.sin(g) + 0.000014 * Math.sin(2 * g)) / 86400;
-}
+// TAI - UTC and TDB - UTC: one table for the whole code, in timescale.js
+export { taiMinusUtc, tdbMinusUtc };
 
 // Keplerian elements of the giant planets at J2000 and their rates per century (Standish, JPL "Approximate
 // positions of the planets", 1800-2050): a [au], e, I, L, long. of perihelion, long. of node [deg]; then Sun/planet mass.

@@ -23,6 +23,8 @@
 //                    see the "a target through a night" block of the test.
 // Not modelled: stellar proper motion and parallax, annual aberration of stars (20"), polar motion, UT1-UTC.
 
+import { ttMinusUtc as ttMinusUtcJd } from './timescale.js';
+
 export const RAD = Math.PI / 180, DEG = 180 / Math.PI, TAU = 2 * Math.PI, ASEC = RAD / 3600;
 export const AU_KM = 149597870.7, EARTH_RADIUS_KM = 6378.137, C_AU_PER_DAY = 173.1446327;
 const { sin, cos, tan, atan2, asin, acos, sqrt, abs, floor, PI } = Math;
@@ -35,16 +37,8 @@ export const wrapPi = (x) => mod(x + PI, TAU) - PI;
 export const julianDate = (ms) => ms / 86400000 + 2440587.5;
 export const fromJulianDate = (jd) => (jd - 2440587.5) * 86400000;
 
-// leap seconds: [Unix ms from which TAI-UTC holds, TAI-UTC in s]
-const LEAPS = [[1972, 1, 10], [1972, 7, 11], [1973, 1, 12], [1974, 1, 13], [1975, 1, 14], [1976, 1, 15], [1977, 1, 16], [1978, 1, 17], [1979, 1, 18], [1980, 1, 19],
-  [1981, 7, 20], [1982, 7, 21], [1983, 7, 22], [1985, 7, 23], [1988, 1, 24], [1990, 1, 25], [1991, 1, 26], [1992, 7, 27], [1993, 7, 28], [1994, 7, 29], [1996, 1, 30],
-  [1997, 7, 31], [1999, 1, 32], [2006, 1, 33], [2009, 1, 34], [2012, 7, 35], [2015, 7, 36], [2017, 1, 37]].map(([y, m, s]) => [Date.UTC(y, m - 1, 1), s]);
-/** TT - UTC in seconds: 32.184 + leap seconds (table 1972-2017, the last value held after; 42.184 before 1972). */
-export function ttMinusUtc(ms) {
-  let s = 10;
-  for (const [t, v] of LEAPS) { if (ms >= t) s = v; else break; }
-  return 32.184 + s;
-}
+/** TT - UTC in seconds for a Unix time in ms: 32.184 + leap seconds (the table is in timescale.js; 42.184 before 1972). */
+export const ttMinusUtc = (ms) => ttMinusUtcJd(julianDate(ms));
 /** Julian centuries of TT since J2000.0 for a Unix time in ms. */
 export const centuriesTT = (ms) => (julianDate(ms) + ttMinusUtc(ms) / 86400 - 2451545.0) / 36525;
 

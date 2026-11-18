@@ -18,6 +18,8 @@ import { createGlobe, GLOBE_COLOURS } from './globe.js';
 import * as DM from '../sky/discovery.js';
 import * as T from './targets.js';
 import { horizonAt, ATTRIBUTION as TERRAIN_ATTRIBUTION } from '../core/horizon.js';
+import clock, { mountClockBadge } from '../site/clock.js';
+import { DISPLAY_SCALES, formatScale, isDisplayScale } from '../core/timeformat.js';
 
 const $ = (id) => document.getElementById(id);
 const fetchJson = (file) => siteJson(new URL(file, siteRoot()), file);
@@ -32,7 +34,7 @@ const fin = Number.isFinite;
 // counts what each filter leaves.
 const DEFAULTS = { obs: FALLBACK_SITE.id, lat: FALLBACK_SITE.lat, lon: FALLBACK_SITE.lon, elev: FALLBACK_SITE.elev, tz: 'site', date: 'auto', nights: 7, minAlt: 30, sun: -18, base: 1, show: 'transit',
   magMin: null, magMax: 13, depth: 2, src: { nea: true, toi: true, eu: false }, eph: 'best', name: '', sort: 'time', view: 'list', chosen: false, disc: DM.GROUP_IDS, terrain: false,
-  events: ['transit'], phSpan: 0.5, phCenter: 'eclipse', phMaxPer: 3, cFrom: 0.4, cTo: 0.6 };
+  events: ['transit'], phSpan: 0.5, phCenter: 'eclipse', phMaxPer: 3, cFrom: 0.4, cTo: 0.6, scale: 'site' };
 const LIMIT_KEYS = ['minAlt', 'sun', 'base', 'show', 'magMin', 'magMax', 'depth'];
 /** Settings of the earlier version: what was left at its defaults (3 nights, 5 ppt, no candidates) takes the new ones. */
 function migrate(old) {
@@ -85,13 +87,29 @@ function formatters() {
 }
 /** First local mean noon of the range: the noon of the chosen date at the site's longitude. */
 function startNoon() {
-  if (P.date === 'auto' || !/^\d{4}-\d\d-\d\d$/.test(P.date)) return O.noonBefore(O.jdFromDate(Date.now()), P.lon);
+  if (P.date === 'auto' || !/^\d{4}-\d\d-\d\d$/.test(P.date)) return O.noonBefore(O.jdFromDate(clock.now()), P.lon);
   const [y, m, d] = P.date.split('-').map(Number);
   return Date.UTC(y, m - 1, d, 12) / 86400000 + 2440587.5 - P.lon / 360;
 }
 const isoDate = (jd) => O.dateFromJd(jd + P.lon / 360).toISOString().slice(0, 10);     // calendar date of a local mean noon
 const iso = (jd) => O.dateFromJd(Math.round(jd * 86400) / 86400).toISOString().replace(/\.\d+Z$/, 'Z');
 const sunName = (s = P.sun) => (s <= -18 ? 'astronomical night' : s <= -12 ? 'nautical night' : s <= -6 ? 'civil night' : 'sunset to sunrise');
+
+/** The present in the chosen time scale (clock.now(): corrected by the best time source; see src/site/clock.js). */
+function drawNow() {
+  const c = curSite(), t = A.selected && A.selected.target;
+  const f = formatScale(clock.now(), isDisplayScale(P.scale) ? P.scale : 'utc', { site: { lon: P.lon, tz: c ? c.tz : timeZone() }, target: t ? { ra: t.ra, dec: t.dec } : null });
+  const o = $('p-now'); if (!o) return;
+  o.textContent = `${f.text} ${f.unit}${f.note ? ' · ' + f.note : ''}`;
+  o.title = DISPLAY_SCALES.find((d) => d.id === P.scale)?.hint || '';
+}
+function initNow() {
+  const sel = $('p-scale'); if (!sel) return;
+  sel.innerHTML = DISPLAY_SCALES.map((d) => `<option value="${d.id}" title="${esc(d.hint)}">${esc(d.label)}</option>`).join('');
+  sel.value = isDisplayScale(P.scale) ? P.scale : 'site';
+  clock.start(); mountClockBadge($('p-clock'));
+  drawNow(); setInterval(drawNow, 1000);
+}
 
 // ------------------------------------------------------------------------------------------------ targets and their ephemerides
 
@@ -463,7 +481,7 @@ function camHtml(c) {
 let siteKey = '';
 function drawSite() {
   const c = curSite(), s = site(), I = A.info;
-  const jd = A.selected ? A.selected.mid : I ? I.jd0 + 0.5 : O.jdFromDate(Date.now());
+  const jd = A.selected ? A.selected.mid : I ? I.jd0 + 0.5 : O.jdFromDate(clock.now());
   if (globe) {
     globe.set({ jd, selected: c ? c.id : null, user: c ? null : { lat: P.lat, lon: P.lon } });
     $('p-gcap').innerHTML = `Night side at <b>${esc(F.local(jd))}</b> ${esc(F.tzShort)} (${iso(jd).slice(0, 16).replace('T', ' ')} UTC), ${A.selected ? `mid-${esc(KIND[A.selected.kind].word)} of ${esc(A.selected.target.name)}` : 'the middle of the first night'}.` +
@@ -593,6 +611,7 @@ let timer = 0;
 function recompute(delay = 0, keepCleared = false) { if (!keepCleared) A.cleared = false; save(); clearTimeout(timer); timer = setTimeout(async () => { await ensureSources(); compute(); }, delay); }
 function changed(e) {
   const id = e.target.id;
+  if (id === 'p-scale') { P.scale = e.target.value; save(); drawNow(); return; }
   if (id === 'p-obs') chooseSite(e.target.value);
   else if (id === 'p-lat' || id === 'p-lon' || id === 'p-elev') {
     const lat = numOr($('p-lat').value, NaN), lon = numOr($('p-lon').value, NaN);
@@ -675,7 +694,7 @@ async function start() {
   if (!['list', 'grid', 'eph'].includes(P.view)) P.view = 'list';
   if (!['roi', 'transit', 'partial'].includes(P.show)) P.show = 'transit';
   if (!Array.isArray(P.events) || !P.events.some((k) => KINDS.includes(k))) P.events = ['transit'];
-  fillForm(); formatters();
+  fillForm(); formatters(); initNow();
   if (single) {
     document.body.classList.add('single');
     $('p-title').textContent = 'Plan: ' + single;
@@ -772,14 +791,14 @@ start().catch((err) => { status('Could not load the catalogues: ' + err.message)
         const rg = date !== undefined && until === undefined && /^\s*(?:between\s+|from\s+)?(.+?)\s+(?:to|and|until|through|thru|-|–)\s+(.+?)\s*$/i.exec(String(date));
         if (rg && !/^\d{4}-\d\d-\d\d$/.test(String(date).trim())) { date = rg[1]; until = rg[2]; }
         if (date !== undefined && until !== undefined) {
-          const r = ND.resolveRange(date, until, new Date(), { maxNights: 90, allowPast: !!allow_past });
+          const r = ND.resolveRange(date, until, new Date(clock.now()), { maxNights: 90, allowPast: !!allow_past });
           P.date = r.tonight ? 'auto' : r.first; P.nights = r.nights; if (r.note) notes.push(r.note);
         } else {
-          if (date !== undefined) { const r = ND.resolveNight(date, new Date(), { allowPast: !!allow_past }); P.date = r.tonight ? 'auto' : r.date; if (r.note) notes.push(r.note); }
+          if (date !== undefined) { const r = ND.resolveNight(date, new Date(clock.now()), { allowPast: !!allow_past }); P.date = r.tonight ? 'auto' : r.date; if (r.note) notes.push(r.note); }
           if (nights !== undefined) P.nights = Math.max(1, Math.min(90, Math.round(nights)));
           // a month on its own ("January"): the whole month, not the default week
-          else if (until === undefined && date !== undefined && ND.isBareMonth(date)) { const r = ND.resolveRange(date, date, new Date(), { maxNights: 90, allowPast: !!allow_past }); P.date = r.first; P.nights = r.nights; }
-          else if (until !== undefined) { const r = ND.resolveRange(P.date === 'auto' ? 'tonight' : P.date, until, new Date(), { maxNights: 90, allowPast: !!allow_past }); P.nights = r.nights; if (r.note) notes.push(r.note); }
+          else if (until === undefined && date !== undefined && ND.isBareMonth(date)) { const r = ND.resolveRange(date, date, new Date(clock.now()), { maxNights: 90, allowPast: !!allow_past }); P.date = r.first; P.nights = r.nights; }
+          else if (until !== undefined) { const r = ND.resolveRange(P.date === 'auto' ? 'tonight' : P.date, until, new Date(clock.now()), { maxNights: 90, allowPast: !!allow_past }); P.nights = r.nights; if (r.note) notes.push(r.note); }
         }
         await apply(); return { dates: datesText(), covers: `the nights of ${ND.spanText(P.date === 'auto' ? null : P.date, P.nights)} only: say so when the user asked about a longer range, or call plan_set_dates again with "until"`, transits: counts(), ...(notes.length ? { note: notes.join('; ') } : {}) };
       } },

@@ -284,3 +284,9 @@ footer.sitefoot { border-top: 1px solid var(--line); color: var(--faint); font-s
 .sitenotice .sn-x { border-color: transparent; color: var(--dim); font-size: 16px; padding: 0 6px; }
 .sitenotice button:hover { border-color: var(--model); color: var(--strong); }
 @media (pointer: coarse) { .sitenotice button { min-height: 40px; min-width: 40px; } }
+
+/* the clock badge (src/site/clock.js): the time source and its uncertainty; click to measure again */
+.eslclock { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--line2); border-radius: 999px; background: none; color: var(--dim); font: 500 11px/1.4 var(--sans); white-space: nowrap; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.eslclock[data-state=unchecked] { color: var(--faint); border-style: dashed; }
+.eslclock[data-state=rough] { color: var(--warn); }
+.eslclock:hover, .eslclock:focus-visible { color: var(--text); border-color: var(--dim); }

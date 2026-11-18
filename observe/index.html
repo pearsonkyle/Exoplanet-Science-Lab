@@ -117,7 +117,10 @@
       <label>Play at <select id="rate"><option value="night">the night in 40 s</option><option value="1" selected>real time</option><option value="60">1 min / s</option><option value="600">10 min / s</option><option value="3600">1 hour / s</option><option value="21600">6 hours / s</option><option value="86400">1 day / s</option></select></label>
       <label>Step by <select id="step"><option value="60000">1 minute</option><option value="600000">10 minutes</option><option value="3600000" selected>1 hour</option><option value="86400000">1 day</option><option value="86164090.5">1 sidereal day</option><option value="604800000">1 week</option></select></label>
     </div>
-    <p class="note">Drag the clock sideways to scrub. Times are in this browser's time zone.</p>
+    <div class="fields">
+      <label>Third line <select id="scale" title="Time scale of the readout's third line"></select></label>
+    </div>
+    <p class="note">Drag the clock sideways to scrub. Times are in this browser's time zone; “Now” is this computer's clock corrected by <button type="button" id="skyclock" class="eslclock"></button></p>
   </div>
 
   <div id="nightBar" class="nightbar" hidden>
