@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "a707f60e2f635069",
+ "sourceHash": "f488bf70399e59e0",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1357259,
-   "sha256": "50af507f74a335463cb3269fe4f1b59ece8766cae7398eedb72e16b64a89aab6"
+   "bytes": 1370611,
+   "sha256": "ed595a5ed2e6647a6713542e86b1bef81d2f23bcc8ba699936a725740f6da482"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -34,6 +34,7 @@
   "src/core/fieldstars.js",
   "src/core/fitRunner.js",
   "src/core/fits.js",
+  "src/core/fitsheader.js",
   "src/core/gp.js",
   "src/core/healpix.js",
   "src/core/horizon.js",
@@ -333,14 +334,17 @@
    "calendarToJd",
    "demosaicBilinear",
    "earthBarycentric",
+   "encodeFits",
    "encodeFitsImage",
    "exposureTime",
    "firstImageHdu",
+   "fitsAscii",
    "frameAirmass",
    "framePointing",
    "frameTime",
    "gmstDeg",
    "gunzip",
+   "headerLines",
    "imageHeader",
    "inflateTiles",
    "isGzip",
@@ -359,6 +363,15 @@
    "taiMinusUtc",
    "tdbMinusUtc",
    "utcToBjdTdb"
+  ],
+  "fitsheader": [
+   "IMAGETYP",
+   "approximateWcs",
+   "cardsToObject",
+   "decText",
+   "frameHeader",
+   "pixelScaleArcsec",
+   "raText"
   ],
   "gp": [
    "cholesky",

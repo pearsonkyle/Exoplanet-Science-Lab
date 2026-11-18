@@ -1,0 +1,367 @@
+{
+ "made_by": "test/make_fitsheader_reference.py",
+ "astropy": "6.0.1",
+ "numpy": "1.26.4",
+ "ut1": "UT1 = UTC",
+ "frames": [
+  {
+   "name": "kitt-peak-hatp32",
+   "verify": "ok",
+   "cards": {
+    "SIMPLE": true,
+    "BITPIX": 16,
+    "NAXIS": 2,
+    "NAXIS1": 64,
+    "NAXIS2": 48,
+    "BZERO": 32768,
+    "BSCALE": 1,
+    "DATE-OBS": "2026-11-19T04:12:33.250",
+    "DATE-AVG": "2026-11-19T04:13:03.250",
+    "DATE-END": "2026-11-19T04:13:33.250",
+    "TIMESYS": "UTC",
+    "TIMEUNIT": "s",
+    "EXPTIME": 60,
+    "EXPOSURE": 60,
+    "MJD-OBS": 61363.175384838134,
+    "MJD-AVG": 61363.175732060336,
+    "MJD-END": 61363.17607928254,
+    "JD_UTC": 2461363.6757320603,
+    "BJD_TDB": 2461363.6812869944,
+    "LST": "00:39:31.6",
+    "HA": "-01:24:38.7",
+    "CLKSRC": "pearsonkyle.github.io Date header",
+    "CLKOFFS": -4.998,
+    "CLKUNC": 0.023,
+    "OBSERVAT": "Kitt Peak",
+    "SITELAT": 31.9583,
+    "SITELONG": -111.5967,
+    "SITEELEV": 2096,
+    "OBSGEO-B": 31.9583,
+    "OBSGEO-L": -111.5967,
+    "OBSGEO-H": 2096,
+    "OBJECT": "HAT-P-32",
+    "RA": 31.0428,
+    "DEC": 46.6878,
+    "OBJCTRA": "02 04 10.27",
+    "OBJCTDEC": "+46 41 16.1",
+    "RADESYS": "ICRS",
+    "EQUINOX": 2000,
+    "OBJCTALT": 67.7937,
+    "OBJCTAZ": 41.7813,
+    "AIRMASS": 1.08011,
+    "MOONSEP": 64.86,
+    "PIERSIDE": "WEST",
+    "TELESCOP": "RC 8 inch",
+    "INSTRUME": "ZWO ASI2600MM Pro",
+    "IMAGETYP": "Light Frame",
+    "FILTER": "r",
+    "XBINNING": 2,
+    "YBINNING": 2,
+    "XPIXSZ": 7.52,
+    "YPIXSZ": 7.52,
+    "FOCALLEN": 1625,
+    "APTDIA": 203,
+    "GAIN": 100,
+    "OFFSET": 50,
+    "EGAIN": 0.25,
+    "CCD-TEMP": -10.02,
+    "SET-TEMP": -10,
+    "READOUTM": "0",
+    "WCSAXES": 2,
+    "CTYPE1": "RA---TAN",
+    "CTYPE2": "DEC--TAN",
+    "CUNIT1": "deg",
+    "CUNIT2": "deg",
+    "CRVAL1": 31.0428,
+    "CRVAL2": 46.6878,
+    "CRPIX1": 32.5,
+    "CRPIX2": 24.5,
+    "CD1_1": -0.00025886218956135056,
+    "CD1_2": 5.738836578581637e-05,
+    "CD2_1": 5.738836578581637e-05,
+    "CD2_2": 0.00025886218956135056,
+    "WCSAPPRX": true,
+    "PLTSOLVD": false,
+    "OBSERVER": "Test Observer",
+    "SWCREATE": "Exoplanet Science Lab",
+    "DATE": "2026-11-19T04:13:33.250",
+    "SEQID": "seq-20261119-hatp32",
+    "SEQNAME": "HAT-P-32 b transit 2026-11-19",
+    "FRAMENO": 17
+   },
+   "history": [
+    "written by test/fitsheader_sample.mjs",
+    "a long history line that is longer than seventy-two characters so that",
+    "it is split over two cards"
+   ],
+   "comment": [],
+   "dtype": "uint16",
+   "shape": [
+    48,
+    64
+   ],
+   "first": [
+    0.0,
+    37.0,
+    74.0,
+    111.0,
+    148.0,
+    185.0
+   ],
+   "nbytes": 17280,
+   "mjd_obs": 61363.17538483796,
+   "mjd_avg": 61363.17573206018,
+   "jd_avg": 2461363.6757320603,
+   "lst_hours": 0.6587645916660558,
+   "bjd_tdb": 2461363.6812868454,
+   "alt": 67.78777490339598,
+   "az": 41.777481012571826,
+   "secz": 1.0801586319953473,
+   "moonsep": 64.8712460579576,
+   "ha_hours": -1.4107554083339444,
+   "wcs": [
+    {
+     "x": 0,
+     "y": 0,
+     "sky": [
+      31.05271953802516,
+      46.67990857647198
+     ]
+    },
+    {
+     "x": 63,
+     "y": 0,
+     "sky": [
+      31.028948100464376,
+      46.68352363630756
+     ]
+    },
+    {
+     "x": 0,
+     "y": 47,
+     "sky": [
+      31.056654092553764,
+      46.692074691906626
+     ]
+    },
+    {
+     "x": 32.0,
+     "y": 16.0,
+     "sky": [
+      31.041983898247537,
+      46.685887224860856
+     ]
+    }
+   ],
+   "wcs_scale_arcsec": [
+    0.9545300560738461,
+    0.9545300560738461
+   ]
+  },
+  {
+   "name": "paranal-south-solved",
+   "verify": "ok",
+   "cards": {
+    "SIMPLE": true,
+    "BITPIX": 32,
+    "NAXIS": 2,
+    "NAXIS1": 50,
+    "NAXIS2": 40,
+    "LONGSTRN": "OGIP 1.0",
+    "DATE-OBS": "2025-06-03T08:59:30.005",
+    "DATE-AVG": "2025-06-03T09:00:30.255",
+    "DATE-END": "2025-06-03T09:01:30.505",
+    "TIMESYS": "UTC",
+    "TIMEUNIT": "s",
+    "EXPTIME": 120.5,
+    "EXPOSURE": 120.5,
+    "MJD-OBS": 60829.37465283554,
+    "MJD-AVG": 60829.37535017356,
+    "MJD-END": 60829.376047511585,
+    "JD_UTC": 2460829.8753501736,
+    "BJD_TDB": 2460829.879165728,
+    "LST": "21:07:11.0",
+    "HA": "-00:07:45.8",
+    "CLKSRC": "helper - gpsd PPS",
+    "CLKOFFS": 0.012,
+    "CLKUNC": 0.001,
+    "OBSERVAT": "Paranal",
+    "SITELAT": -24.6272,
+    "SITELONG": -70.4042,
+    "SITEELEV": 2635,
+    "OBSGEO-B": -24.6272,
+    "OBSGEO-L": -70.4042,
+    "OBSGEO-H": 2635,
+    "OBJECT": "WASP-46 (O'Brien's test: a quote)",
+    "RA": 318.7366,
+    "DEC": -55.8718,
+    "OBJCTRA": "21 14 56.78",
+    "OBJCTDEC": "-55 52 18.5",
+    "RADESYS": "ICRS",
+    "EQUINOX": 2000,
+    "OBJCTALT": 58.8123,
+    "OBJCTAZ": 177.3885,
+    "AIRMASS": 1.16895,
+    "MOONSEP": 126.32,
+    "TELESCOP": "a telescope with a very long name that does not fit on one header card at all, so it continues",
+    "INSTRUME": "ZWO ASI294MC Pro",
+    "IMAGETYP": "Light Frame",
+    "FILTER": "V",
+    "XBINNING": 1,
+    "YBINNING": 1,
+    "XPIXSZ": 4.63,
+    "YPIXSZ": 4.63,
+    "FOCALLEN": 800,
+    "GAIN": 120,
+    "EGAIN": 0.9,
+    "BAYERPAT": "RGGB",
+    "XBAYROFF": 0,
+    "YBAYROFF": 0,
+    "ROWORDER": "TOP-DOWN",
+    "WCSAXES": 2,
+    "CTYPE1": "RA---TAN",
+    "CTYPE2": "DEC--TAN",
+    "CUNIT1": "deg",
+    "CUNIT2": "deg",
+    "CRVAL1": 318.7366,
+    "CRVAL2": -55.8718,
+    "CRPIX1": 25.5,
+    "CRPIX2": 20.5,
+    "CD1_1": -0.00025,
+    "CD1_2": 1e-05,
+    "CD2_1": 1e-05,
+    "CD2_2": 0.00025,
+    "PLTSOLVD": true,
+    "SWCREATE": "Exoplanet Science Lab",
+    "DATE": "2025-06-03T09:01:30.505"
+   },
+   "history": [],
+   "comment": [],
+   "dtype": ">i4",
+   "shape": [
+    40,
+    50
+   ],
+   "first": [
+    -1000.0,
+    -963.0,
+    -926.0,
+    -889.0,
+    -852.0,
+    -815.0
+   ],
+   "nbytes": 17280,
+   "mjd_obs": 60829.37465283565,
+   "mjd_avg": 60829.375350173614,
+   "jd_avg": 2460829.8753501736,
+   "lst_hours": 21.119720676817344,
+   "bjd_tdb": 2460829.879165166,
+   "alt": 58.81426036980985,
+   "az": 177.38042906574367,
+   "secz": 1.1689164100770062,
+   "moonsep": 126.31820283529156,
+   "ha_hours": -0.1293859898493217,
+   "wcs": [
+    {
+     "x": 0,
+     "y": 0,
+     "sky": [
+      318.7471709278147,
+      -55.87691954713191
+     ]
+    },
+    {
+     "x": 49,
+     "y": 0,
+     "sky": [
+      318.7253339931541,
+      -55.87642948562017
+     ]
+    },
+    {
+     "x": 0,
+     "y": 39,
+     "sky": [
+      318.747863320729,
+      -55.86716948581928
+     ]
+    },
+    {
+     "x": 25.0,
+     "y": 13.333333333333334,
+     "sky": [
+      318.7362672752456,
+      -55.87333666621764
+     ]
+    }
+   ],
+   "wcs_scale_arcsec": [
+    0.9007197122301698,
+    0.9007197122301698
+   ]
+  },
+  {
+   "name": "greenwich-dark-noclock",
+   "verify": "ok",
+   "cards": {
+    "SIMPLE": true,
+    "BITPIX": -32,
+    "NAXIS": 2,
+    "NAXIS1": 32,
+    "NAXIS2": 32,
+    "DATE-OBS": "2024-02-29T18:00:00.000",
+    "DATE-AVG": "2024-02-29T18:00:15.000",
+    "DATE-END": "2024-02-29T18:00:30.000",
+    "TIMESYS": "UTC",
+    "TIMEUNIT": "s",
+    "EXPTIME": 30,
+    "EXPOSURE": 30,
+    "MJD-OBS": 60369.75,
+    "MJD-AVG": 60369.7501736111,
+    "MJD-END": 60369.7503472222,
+    "JD_UTC": 2460370.250173611,
+    "LST": "04:36:25.6",
+    "CLKSRC": "system",
+    "OBSERVAT": "Greenwich",
+    "SITELAT": 51.4769,
+    "SITELONG": 0,
+    "SITEELEV": 46,
+    "OBSGEO-B": 51.4769,
+    "OBSGEO-L": 0,
+    "OBSGEO-H": 46,
+    "INSTRUME": "Simulated camera",
+    "IMAGETYP": "Dark Frame",
+    "XBINNING": 1,
+    "YBINNING": 1,
+    "XPIXSZ": 5,
+    "YPIXSZ": 5,
+    "FOCALLEN": 500,
+    "SWCREATE": "Exoplanet Science Lab",
+    "DATE": "2024-02-29T18:00:30.000"
+   },
+   "history": [],
+   "comment": [
+    "The exposure times come from the computer clock without a check; their",
+    "error is unknown."
+   ],
+   "dtype": ">f4",
+   "shape": [
+    32,
+    32
+   ],
+   "first": [
+    -3.0,
+    -2.75,
+    -2.5,
+    -2.25,
+    -2.0,
+    -1.75
+   ],
+   "nbytes": 11520,
+   "mjd_obs": 60369.75,
+   "mjd_avg": 60369.75017361111,
+   "jd_avg": 2460370.250173611,
+   "lst_hours": 4.607105066241792
+  }
+ ]
+}

@@ -966,26 +966,97 @@ export function readTargetPixelFile(fits) {
 // ---------------------------------------------------------------------------------------------------------
 // Writing (used by the page's synthetic demo and by tests of the round trip)
 
-/** Encode a single-image FITS file (BITPIX -32 or 16) from a typed array; `cards` is an object of extra keywords. Returns Uint8Array. */
-export function encodeFitsImage(data, width, height, cards = {}, bitpix = -32) {
-  const lines = [];
-  const card = (k, v, c = '') => {
-    let val;
-    if (typeof v === 'boolean') val = (v ? 'T' : 'F').padStart(20);
-    else if (typeof v === 'number') val = (Number.isInteger(v) ? String(v) : (Math.abs(v) < 1e-4 || Math.abs(v) >= 1e15 ? v.toExponential(12).replace('e', 'E') : String(+v.toPrecision(16)))).padStart(20);
-    else val = ("'" + String(v).replace(/'/g, "''").padEnd(8) + "'").padEnd(20);
-    lines.push((k.padEnd(8) + '= ' + val + (c ? ' / ' + c : '')).slice(0, 80).padEnd(80));
-  };
-  card('SIMPLE', true); card('BITPIX', bitpix); card('NAXIS', 2); card('NAXIS1', width); card('NAXIS2', height);
-  if (bitpix === 16) { card('BZERO', 32768); card('BSCALE', 1); }
-  for (const [k, v] of Object.entries(cards)) if (Array.isArray(v)) card(k, v[0], v[1]); else card(k, v);
-  lines.push('END'.padEnd(80));
+// ---------------------------------------------------------------------------------------------------------
+// Writing
+
+const KEY_RE = /^[A-Z0-9_-]{1,8}$/;
+const ASCII_MAP = { '·': '-', '−': '-', '–': '-', '—': '-', '±': '+/-', '°': 'deg', '′': "'", '″': '"', '‘': "'", '’': "'", '“': '"', '”': '"', 'µ': 'u', '×': 'x', '…': '...', '★': '*', '⊙': 'sun' };
+/** Text as FITS allows it (printable ASCII): common symbols spelled out, accents dropped, anything else '?'. */
+export const fitsAscii = (s) => String(s).replace(/[^\x20-\x7e]/g, (c) => ASCII_MAP[c] ?? (c.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7e]/g, '') || '?'));
+/** A keyword value as FITS text: logical T/F, integer, real (shortest exact form, E exponent), or a quoted string. */
+function fitsValue(v) {
+  if (typeof v === 'boolean') return { text: (v ? 'T' : 'F').padStart(20), fixed: true };
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v)) throw new Error('FITS cannot store NaN or infinity in a keyword');
+    let t = Number.isInteger(v) && Math.abs(v) < 1e15 ? String(v) : String(v).replace('e', 'E');
+    if (!/[.E]/.test(t) && !Number.isInteger(v)) t += '.';
+    if (/E/.test(t) && !/\./.test(t.split('E')[0])) t = t.replace('E', '.E');
+    return { text: t.padStart(20), fixed: t.length <= 20 };
+  }
+  return null;
+}
+const quote = (s) => "'" + s.replace(/'/g, "''") + "'";
+/**
+ * Header cards as 80-character lines. `cards` is a list of [key, value, comment] (or { key, value, comment });
+ * COMMENT and HISTORY take their text as the value; strings longer than a card continue on CONTINUE cards (the
+ * OGIP long-string convention; LONGSTRN is added); undefined / null / NaN values are left out. Keys are checked
+ * (1-8 of A-Z 0-9 _ -). Returns the lines without END.
+ */
+export function headerLines(cards) {
+  const lines = [], seen = new Set(); let long = false;
+  for (const c of cards) {
+    const [key, value, comment = ''] = Array.isArray(c) ? c : [c.key, c.value, c.comment];
+    if (!KEY_RE.test(key)) throw new Error(`"${key}" is not a FITS keyword (1-8 characters of A-Z, 0-9, _ and -)`);
+    if (key === 'COMMENT' || key === 'HISTORY' || key === '') {
+      const t = fitsAscii(value ?? '');
+      // wrapped at spaces where possible, 72 characters a card
+      let rest = t;
+      do {
+        let cut = rest.length <= 72 ? rest.length : rest.lastIndexOf(' ', 72);
+        if (cut <= 0) cut = Math.min(72, rest.length);
+        lines.push((key.padEnd(8) + rest.slice(0, cut)).padEnd(80));
+        rest = rest.slice(cut).replace(/^ /, '');
+      } while (rest.length);
+      continue;
+    }
+    if (value === undefined || value === null || (typeof value === 'number' && !Number.isFinite(value))) continue;
+    if (key !== 'CONTINUE' && seen.has(key)) throw new Error(`keyword ${key} given twice`);
+    seen.add(key);
+    const cm = fitsAscii(comment);
+    const v = fitsValue(value);
+    if (v) { lines.push((key.padEnd(8) + '= ' + v.text + (cm ? ' / ' + cm : '')).slice(0, 80).padEnd(80)); continue; }
+    const str = fitsAscii(value);
+    const q = quote(str.padEnd(8));
+    if (q.length <= 70) { lines.push((key.padEnd(8) + '= ' + q.padEnd(20) + (cm ? ' / ' + cm : '')).slice(0, 80).padEnd(80)); continue; }
+    // long string: pieces of at most 67 characters (quotes doubled inside, never split), '&' at the end of all but the last
+    long = true;
+    const pieces = []; let cur = '';
+    for (const ch of str) { const add = ch === "'" ? "''" : ch; if (cur.length + add.length > 66) { pieces.push(cur); cur = ''; } cur += add; }
+    pieces.push(cur);
+    pieces.forEach((p, i) => {
+      const body = "'" + p + (i < pieces.length - 1 ? '&' : '') + "'";
+      lines.push(((i === 0 ? key.padEnd(8) + '= ' : 'CONTINUE  ') + body + (i === pieces.length - 1 && cm ? ' / ' + cm : '')).slice(0, 80).padEnd(80));
+    });
+  }
+  if (long) lines.unshift(...headerLines([['LONGSTRN', 'OGIP 1.0', 'long strings continue on CONTINUE cards']]));
+  return lines;
+}
+
+/**
+ * Encode a single-image FITS file. bitpix: 8 (unsigned bytes), 16 (unsigned 16-bit, BZERO 32768: what cameras give),
+ * 32 (signed 32-bit) or -32 (float). `cards`: an ordered list as headerLines takes, written after the structural
+ * keywords. Values are rounded and clipped to the type's range. Returns a Uint8Array.
+ */
+export function encodeFits(data, width, height, cards = [], { bitpix = 16 } = {}) {
+  if (![8, 16, 32, -32].includes(bitpix)) throw new Error('encodeFits writes BITPIX 8, 16, 32 or -32');
+  const head = [['SIMPLE', true, 'conforms to FITS standard'], ['BITPIX', bitpix, bitpix === -32 ? 'IEEE single precision' : bitpix + '-bit integers'], ['NAXIS', 2], ['NAXIS1', width, 'columns'], ['NAXIS2', height, 'rows']];
+  if (bitpix === 16) head.push(['BZERO', 32768, 'unsigned 16-bit: physical = stored + 32768'], ['BSCALE', 1]);
+  const structural = new Set(['SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'BZERO', 'BSCALE', 'EXTEND', 'END']);
+  const extra = cards.filter((c) => !structural.has(Array.isArray(c) ? c[0] : c.key));
+  const lines = [...headerLines(head), ...headerLines(extra), 'END'.padEnd(80)];
   const hb = Math.ceil(lines.length / 36) * BLOCK, n = width * height, bytes = Math.abs(bitpix) / 8, db = Math.ceil(n * bytes / BLOCK) * BLOCK;
   const out = new Uint8Array(hb + db).fill(32, 0, hb), text = lines.join('');
   for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i);
   const dv = new DataView(out.buffer, hb);
   if (bitpix === -32) for (let i = 0; i < n; i++) dv.setFloat32(i * 4, data[i]);
-  else if (bitpix === 16) for (let i = 0; i < n; i++) dv.setInt16(i * 2, Math.max(-32768, Math.min(32767, Math.round(data[i]) - 32768)));
-  else throw new Error('encodeFitsImage writes BITPIX -32 or 16');
+  else if (bitpix === 16) for (let i = 0; i < n; i++) dv.setInt16(i * 2, Math.max(0, Math.min(65535, Math.round(data[i]))) - 32768);
+  else if (bitpix === 32) for (let i = 0; i < n; i++) dv.setInt32(i * 4, Math.max(-2147483648, Math.min(2147483647, Math.round(data[i]))));
+  else for (let i = 0; i < n; i++) dv.setUint8(i, Math.max(0, Math.min(255, Math.round(data[i]))));
   return out;
+}
+
+/** Encode a single-image FITS file (BITPIX -32 or 16) from a typed array; `cards` is an object of extra keywords ({ KEY: value | [value, comment] }). Returns Uint8Array. */
+export function encodeFitsImage(data, width, height, cards = {}, bitpix = -32) {
+  if (bitpix !== -32 && bitpix !== 16) throw new Error('encodeFitsImage writes BITPIX -32 or 16');
+  return encodeFits(data, width, height, Object.entries(cards).map(([k, v]) => (Array.isArray(v) ? [k, v[0], v[1]] : [k, v])), { bitpix });
 }
