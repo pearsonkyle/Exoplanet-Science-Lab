@@ -27,7 +27,8 @@ dependencies = [
 [project.optional-dependencies]
 plot = ["matplotlib>=3.5"]
 quickjs = ["quickjs>=1.19"]
-test = ["pytest>=7", "matplotlib>=3.5"]
+camera = ["zwoasi>=0.2"]
+test = ["pytest>=7", "matplotlib>=3.5", "alpyca>=3"]
 
 [project.urls]
 Homepage = "https://exoplanet.science"

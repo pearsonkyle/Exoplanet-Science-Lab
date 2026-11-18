@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "f488bf70399e59e0",
+ "sourceHash": "8a01d25b9fcc061c",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1370611,
-   "sha256": "ed595a5ed2e6647a6713542e86b1bef81d2f23bcc8ba699936a725740f6da482"
+   "bytes": 1376752,
+   "sha256": "b2eadd9e2506ab7ae37462b626ce962099b0e4691cfb1ba6a7be289017889686"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -20,6 +20,7 @@
  "inputs": [
   "src/core/aavso.js",
   "src/core/aliases.js",
+  "src/core/alpacabytes.js",
   "src/core/asteroids.js",
   "src/core/astro.js",
   "src/core/catalog.js",
@@ -70,6 +71,7 @@
   "src/core/rv.js",
   "src/core/rvsources.js",
   "src/core/session.js",
+  "src/core/simsky.js",
   "src/core/skyfield.js",
   "src/core/sources/eu.js",
   "src/core/sources/fields.js",
@@ -139,6 +141,10 @@
    "coverageIntervals",
    "coveredLength",
    "transitDuration"
+  ],
+  "alpacabytes": [
+   "decodeImageBytes",
+   "encodeImageBytes"
   ],
   "asteroids": [
    "ASTEROIDS",
@@ -891,6 +897,9 @@
    "summarizeFit",
    "validateSession",
    "valuesFromSession"
+  ],
+  "simsky": [
+   "createSimSky"
   ],
   "skyfield": [
    "angleText",
