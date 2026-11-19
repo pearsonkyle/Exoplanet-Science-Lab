@@ -14,7 +14,7 @@ Read `HANDOFF.md` first: it has the current state, what has never been run, and 
 
 ## Site
 - Pages are folders with their own `index.html`: `plan/`, `observe/`, `analyze/`, `analyze/photometry/`,
-  `analyze/spectroscopy/`, `search/`, `methods/` (tabs: Methods, Validation, Reproducibility, References, How to cite).
+  `analyze/spectroscopy/`, `search/`, `observe/run/` (observing sequences, docs/guide/observing.md), `methods/` (tabs: Methods, Validation, Reproducibility, References, How to cite).
   Each has `<meta name="esl-root">` and mounts `src/site/nav.js`; the three Analyze pages also mount `src/site/subnav.js`.
   New pages go in `vite.config.js` inputs. `observe/photometry/`, `observe/spectroscopy/` and `validation/` are redirect
   stubs; validation anchors on `methods/` are prefixed `val-` (`src/validation/anchors.js`).
@@ -39,5 +39,6 @@ Read `HANDOFF.md` first: it has the current state, what has never been run, and 
 - Long headless runs use a built copy on :8899 (`ESL_BASE`), not the dev server: it reloads when files change.
 - After changing a test's printed numbers: `node tools/validation/project_reference.mjs <topic>` (the Validation tab of Methods quotes them).
 - Never write into the EXOTIC repository or the `exotic` conda environment. No API key ships in the repo. The assistant's only built-in endpoint is the LM Studio preset (localhost:1234) in `src/assistant/presets.js`; the owner removed the VPN preset before going public, so other servers are entered as Custom.
+- "Now" is `clock.now()` (`src/site/clock.js`), never `Date.now()`, wherever the present is shown or stamped; time scales and leap seconds only from `src/core/timescale.js`. Frames we write get `frameHeader` (`src/core/fitsheader.js`).
 - Conventions: sky plane X, Y in stellar radii, +Z toward the observer; mid-transit = inferior conjunction;
   Claret law `I = 1 - sum a_n (1 - mu^(n/2))`; times stored relative to `data.tRef`.

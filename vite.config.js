@@ -40,7 +40,7 @@ export default defineConfig({
   plugins: [docsInDev, serviceWorker],
   worker: { format: 'es' },
   // one HTML entry per section: real folders, so the site needs no rewrite rules on a static host
-  build: { target: 'es2022', rollupOptions: { input: Object.fromEntries(['index', 'plan/index', 'observe/index', 'analyze/index', 'analyze/photometry/index', 'analyze/spectroscopy/index', 'search/index', 'methods/index',
+  build: { target: 'es2022', rollupOptions: { input: Object.fromEntries(['index', 'plan/index', 'observe/index', 'analyze/index', 'analyze/photometry/index', 'analyze/spectroscopy/index', 'search/index', 'methods/index', 'observe/run/index',
     // redirects from the old addresses: photometry and spectroscopy moved under analyze/, validation into methods/
     'observe/photometry/index', 'observe/spectroscopy/index', 'validation/index'].map((p) => [p.replace('/index', '').replace('/', '-') || 'index', p + '.html'])) } },
   // Dev only: the NASA Exoplanet Archive sends no CORS headers, so a live query from the page goes through

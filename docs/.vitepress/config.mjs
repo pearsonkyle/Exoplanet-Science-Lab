@@ -56,6 +56,7 @@ export default defineConfig({
           { text: '6 · Hidden planet from TTVs', link: '/labs/lab06_ttv' },
         ] },
         { text: 'Run it yourself', items: [
+          { text: 'Observing: time, cameras, live reduction', link: '/guide/observing' },
           { text: 'Python package', link: '/guide/python' },
           { text: 'MCP server', link: '/guide/mcp' },
           { text: 'Assistant and your own LLM', link: '/guide/assistant' },

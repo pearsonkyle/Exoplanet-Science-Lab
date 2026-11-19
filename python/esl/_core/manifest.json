@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "8a01d25b9fcc061c",
+ "sourceHash": "325fed163f3a2f9d",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1376752,
-   "sha256": "b2eadd9e2506ab7ae37462b626ce962099b0e4691cfb1ba6a7be289017889686"
+   "bytes": 1400212,
+   "sha256": "5f10268e65973b99c407ab8c9bc5d7fb6ac7ec707374c21fe1b0cd016d586cd6"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -65,11 +65,14 @@
   "src/core/psd.js",
   "src/core/pyentry.js",
   "src/core/pyshim.js",
+  "src/core/reduce.js",
+  "src/core/rehearsal.js",
   "src/core/relations.js",
   "src/core/report.js",
   "src/core/rm.js",
   "src/core/rv.js",
   "src/core/rvsources.js",
+  "src/core/sequence.js",
   "src/core/session.js",
   "src/core/simsky.js",
   "src/core/skyfield.js",
@@ -820,6 +823,19 @@
    "welchPsd",
    "whiteNoiseLevel"
   ],
+  "reduce": [
+   "createReducer",
+   "growMeasurements"
+  ],
+  "rehearsal": [
+   "DEFAULT_LD",
+   "REHEARSAL_PLANETS",
+   "fluxAtUtc",
+   "nextObservableTransit",
+   "planetFlux",
+   "t14",
+   "virtualClock"
+  ],
   "relations": [
    "CK17_RMAX_SINGLE",
    "DWARF_SEQUENCE",
@@ -886,6 +902,21 @@
    "sourceById",
    "summarizeSet"
   ],
+  "sequence": [
+   "DEFAULTS",
+   "SEQUENCE_FORMAT",
+   "SEQUENCE_VERSION",
+   "advance",
+   "envAt",
+   "fromPlanEvent",
+   "makeSequence",
+   "nextAction",
+   "resume",
+   "sequenceSummary",
+   "startState",
+   "stop",
+   "validateSequence"
+  ],
   "session": [
    "FORMAT",
    "FORMAT_VERSION",
@@ -899,7 +930,9 @@
    "valuesFromSession"
   ],
   "simsky": [
-   "createSimSky"
+   "TRACKING_PRESETS",
+   "createSimSky",
+   "trackingModel"
   ],
   "skyfield": [
    "angleText",

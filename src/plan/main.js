@@ -20,6 +20,7 @@ import * as T from './targets.js';
 import { horizonAt, ATTRIBUTION as TERRAIN_ATTRIBUTION } from '../core/horizon.js';
 import clock, { mountClockBadge } from '../site/clock.js';
 import { DISPLAY_SCALES, formatScale, isDisplayScale } from '../core/timeformat.js';
+import { fromPlanEvent } from '../core/sequence.js';
 
 const $ = (id) => document.getElementById(id);
 const fetchJson = (file) => siteJson(new URL(file, siteRoot()), file);
@@ -505,6 +506,15 @@ function drawSite() {
 }
 
 // ---- the selected event: chart, sky track, numbers
+/** Hand the selected event to the Run page as an observing sequence (src/core/sequence.js fromPlanEvent). */
+function observeEvent(ev) {
+  const c = curSite(), s = { ...site(), name: c ? c.name : 'Custom site', tz: c ? c.tz : timeZone() };
+  try {
+    const seq = fromPlanEvent(ev, s, { planMinAlt: P.minAlt, limits: { sunMax: Math.min(-12, P.sun + 6) } });
+    localStorage.setItem('esl.sequence.handoff', JSON.stringify(seq));
+    location.href = new URL('observe/run/?from=plan', siteRoot()).href;
+  } catch (err) { status('Could not make a sequence: ' + err.message); }
+}
 function drawDetail() {
   const el = $('p-detail'), ev = A.selected;
   document.querySelectorAll('#p-list .sel').forEach((b) => { b.classList.remove('sel'); b.setAttribute('aria-pressed', 'false'); });
@@ -524,7 +534,7 @@ function drawDetail() {
   el.innerHTML = `<div class="d-head"><div><h2>${esc(t.name)} ${kindBadge(ev.kind)}</h2><div class="d-sub">Night of ${esc(F.day(O.noonBefore(ev.mid, s.lon)))} · ${esc(F.dayUtc(ev.mid))} UTC · orbit ${ev.epoch} since T₀</div></div><button class="d-close" type="button" aria-label="Close">✕</button></div>` +
     `<div class="d-roi ${c}"><div class="d-roi-top">${roiBar(ev)}<b>${pct(ev.roiCoverage)}%</b> of the region of interest observable</div>` +
     `<div>${c === 'full' ? `<b>Observable:</b> ${F.local(ev.roiStart)} – ${F.local(ev.roiEnd)} is dark and above ${P.minAlt}° throughout.` : `${c === 'short' ? `The ${isLong(ev) ? 'window' : K.word} itself is complete, but the ${base > 0 ? 'baseline' : 'timing margin'} is cut` : `Only ${pct(ev.coverage)}% of the ${isLong(ev) ? 'window' : K.word} can be observed`}. Lost: ${esc(lostText(ev, true))}.`}</div></div>` +
-    `<div class="d-links"><a class="btn primary" href="${esc(skyUrl(ev))}">Sky view at this ${esc(K.word)}</a><a class="btn" href="../analyze/?planet=${q}">Analyze</a><a class="btn" href="../search/?planet=${q}">Catalogue entry</a>${single ? '' : `<a class="btn" href="?planet=${q}">All its events</a>`}</div>` +
+    `<div class="d-links"><a class="btn primary" href="${esc(skyUrl(ev))}">Sky view at this ${esc(K.word)}</a><button class="btn" type="button" id="d-observe" title="Make an observing sequence for this window (cooling, calibration, light frames between the start and the end) and open it in Run">Observe this event</button><a class="btn" href="../analyze/?planet=${q}">Analyze</a><a class="btn" href="../search/?planet=${q}">Catalogue entry</a>${single ? '' : `<a class="btn" href="?planet=${q}">All its events</a>`}</div>` +
     (t.hasErr && sm > 10 ? `<div class="d-flag ${sigClass(sm)}"><b>Timing uncertain by ± ${minutes(sm)} (1σ).</b> The ephemeris (${esc(ref)}) has drifted over ${Math.abs(ev.epoch)} orbits. ${ev.kind === 'transit' ? 'A mid-transit time from this event would tighten it: start early, end late.' : 'The region of interest is widened by this much on each side.'}</div>` : '') +
     `<canvas id="p-alt" class="p-canvas" aria-label="Altitude of the target through the night, with twilight, the region of interest, the ${esc(K.word)} and the Moon"></canvas>` +
     `<div class="d-legend">${legendHtml(false)}</div>` +
@@ -541,6 +551,7 @@ function drawDetail() {
     `<dt>Score</dt><dd>${esc(scoreTip(ev.score).split('. A ranking')[0].replace(/^Score /, ''))}</dd>` +
     '</dl></div>';
   el.querySelector('.d-close').addEventListener('click', () => select(null));
+  el.querySelector('#d-observe')?.addEventListener('click', () => observeEvent(ev));
   paintCharts();
 }
 function paintCharts() {

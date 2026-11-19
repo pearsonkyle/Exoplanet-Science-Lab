@@ -799,6 +799,90 @@ the planner date tasks, photometry (focus map, WCS, Gaia ranking, optimal apertu
 spectroscopy (simulation, white light, channels, spectrum), the sky view's survey image, the catalogue query and the
 two timing examples (decay: dP/dt −25.57 ± 0.84 ms/yr; the 40-time list) completed.
 
+## Observing: time, FITS headers, the helper and live reduction
+
+Added 2026-11-18. The numbers are from the tests named; rerun them for the current values.
+
+**Time scales** (`test/timescale.test.mjs`, against astropy 6.0.1, `test/make_timescale_reference.py`, UT1 = UTC)
+
+| Quantity | Largest difference | Notes |
+|---|---|---|
+| UTC→TAI | 17.6 µs | 16 instants 1975–2030, leap-second days included (float64 Julian dates resolve about 40 µs) |
+| TT | 27.8 µs | |
+| TDB | 44.3 µs | two periodic terms |
+| GPS seconds | 28.8 µs | |
+| MJD | 13.2 µs | |
+| apparent LST | 0.016 s | three sites |
+| BJD_TDB | 0.038 s | three targets |
+
+A positive leap second (23:59:60) has no UTC Julian date: `toUtc` returns the next day's first instant. The three leap-second tables of `astro.js`, `observability.js` and `fits.js` are now one, and their tests are unchanged.
+
+**Clock offsets** (`test/clocksync.test.mjs`, simulated servers with known offsets)
+
+| Case | Truth inside the bound | Largest bound |
+|---|---|---|
+| HTTP `Date` header, 8 probes, 20–120 ms round trips | 400 of 400 runs | ±74 ms |
+| Asymmetric 5–15 / 80–200 ms paths | 400 of 400 | ±135 ms |
+| Millisecond API, 5 probes | 400 of 400 | ±36 ms |
+
+Probing at second boundaries gives a bound 2.7× tighter than evenly spaced probes.
+
+In the browser, a `?clockskew=5000` page measured −4.998 s ± 11 ms against the dev server's `Date` header. Live SNTP to pool.ntp.org from `python -m esl.time` gave +8.6 ± 14 ms, and macOS `sntp pool.ntp.org` at the same minute gave +9.3 ± 42 ms.
+
+**NMEA** (`test/nmea.test.mjs`): the published RMC, GGA and ZDA example sentences and their checksums.
+
+**FITS headers** (`test/fitsheader.test.mjs`, astropy via `test/make_fitsheader_reference.py`)
+
+Three frames were written: BITPIX 16 unsigned, 32 and −32, with long strings, quotes, Bayer cards, a solved WCS and an approximate WCS.
+
+- Every frame passes `fits.verify('exception')`, and every card reads back equal.
+- Against astropy:
+
+  | Quantity | Largest difference | Notes |
+  |---|---|---|
+  | BJD_TDB | 0.048 s | |
+  | LST | 0.047 s | the card rounds to 0.1 s |
+  | HA | 0.019 s | |
+  | Altitude | 21″ | geometric: no aberration or nutation |
+  | Azimuth | 15″ | |
+  | sec z | 4.5 × 10⁻⁵ relative | |
+  | Moon separation | 0.011° | |
+  | WCS pixel→sky | 0.000 mas | |
+
+- Our own readers recover the time (BJD_TDB at mid-exposure), pointing, site, airmass, pixel scale, pier side and Bayer pattern.
+
+**ImageBytes** (`test/alpacabytes.test.mjs`): the JavaScript decoder and the Python encoder are byte-identical, and alpyca 3.1.3 (the ASCOM Initiative's client) decodes the helper's images to the camera's pixels (`python/tests/test_bridge.py`).
+
+**The helper** (`python/tests/test_bridge.py`). alpyca drove the simulated camera: connection, size, binning, gain range, cooler, exposure, `ImageReady`, `ImageArray` and `LastExposureStartTime`. The tests also cover:
+
+- CORS and Private Network Access headers;
+- refusing other origins;
+- Alpaca error numbers;
+- `/esl/save`, which refuses unsafe names and never overwrites;
+- the ZWO backend against a fake SDK;
+- the simulated transit: exact with the noise off.
+
+In the browser, Run drove `python -m esl.bridge --simulate` over Alpaca. The 55 frames it wrote pass astropy `verify()` and carry CLKSRC "helper - NTP 2.pool.ntp.org", CLKUNC 0.019 s.
+
+**Sequences** (`test/sequence.test.mjs`). HAT-P-32 b transits from Kitt Peak in November 2026 ran on a simulated clock. No light frame started or ended outside the window, with the target below its limit or with the Sun above its limit. The tests also cover:
+
+- one pause at the meridian;
+- stopping when the target sets;
+- waiting for the Sun;
+- a cooler that never reaches its set point;
+- calibration after the lights.
+
+**Live reduction** (`test/reduce.test.mjs`, `test/rehearsal.test.mjs`)
+
+- **Same numbers as before.** The per-frame work of `runStack` is now `src/core/reduce.js`. The photometry, EXOTIC-photometry, imexam and detrend tests print identical numbers.
+- **Growing arrays.** Arrays grown frame by frame equal arrays sized up front.
+- **Simulated night.** 256 frames of a 1.2 % injected transit, calibrated with bias, dark and flat, gave 1.01 ± 0.10 % (1.9σ).
+- **Poor tracking.** A simulated mount with walk, periodic error and 9 px jumps was followed to 0.28 px median, 0.82 px worst.
+- **Rehearsal.** A rehearsal of the 2026-12-01 HAT-P-32 b transit (60× speed, 62 s frames, "average" tracking, 279 light frames) gave a light curve whose depth, fitted with the predicted shape, is 1.007 × the model's 2.68 %, at 3.50 ppt per frame. Its measured track followed the simulated pointing to 0.02 px.
+- **Rehearsal from Plan.** A WASP-121 b transit from Las Campanas (2026-01-19), handed over by Plan's "Observe this event" and rehearsed at 120×, paused once at the meridian with the rehearsal clock stopped. It gave 0.951 × the model's 1.81 % depth (2.15 ppt per frame). The 5 % shortfall is not explained yet: dilution by a simulated field star inside the 6.2 px aperture is the first suspect.
+
+**Not run.** No real camera, mount, filter wheel or USB GPS has been connected. No transit fit in Analyze has been run on a Run light curve; the hand-off to Analyze was checked, not the fit. Plate solving inside Run is not done.
+
 ## The site
 
 Pages are real folders with their own `index.html` (no rewrite rules needed on a static host), sharing the

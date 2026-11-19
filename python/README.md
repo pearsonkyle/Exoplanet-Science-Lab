@@ -263,6 +263,17 @@ reproduced") and checking them; run from a checkout (the data are under `public/
 | `06_ephemeris_periodogram.py` | `ephemeris` | statsmodels WLS to 1e-6, 26 of 40 after the clip; 57.3 d, 2.78 ± 0.16 min |
 | `07_browser_export.py` | | a session the application stored, run again and compared; writes report, tables, script, figures |
 
+## Observing: time, cameras, sequences
+
+- `esl.time`: SNTP following the NTP Pool's rules, gpsd (PPS), the opt-in GNSS server ntp-01.jeffgeerling.com,
+  a `Clock` with uncertainty, and the core's time scales (`convert`, `format`). `python -m esl.time` measures this
+  computer's clock.
+- `esl.bridge`: the local helper for the web app, `python -m esl.bridge --simulate | --zwo | --alpaca URL`
+  (an ASCOM Alpaca camera, corrected time, saving frames). `pip install "exoplanet-science-lab[camera]"` adds zwoasi.
+- `esl.cameras`: `SimCamera`, `ZwoCamera`, `AlpacaCamera`; `esl.observe.run(sequence, camera, clock=...)` takes a
+  sequence from the Run page or Plan and writes byte-identical FITS files with the same headers (no live reduction
+  in Python yet). See docs/guide/observing.md.
+
 ## Not verified
 
 - Only macOS on Apple silicon was run: Python 3.12 with mini-racer 0.14.1 (V8 14.4) and Python 3.9 with

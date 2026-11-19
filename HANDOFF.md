@@ -59,8 +59,20 @@ Old `/observe/photometry/`, `/observe/spectroscopy/`, `/validation/` redirect. R
 **Outside the site**: `python/` (the `esl` package: the same core run from Python), `mcp/` (MCP server over session
 documents).
 
+**Observing (2026-11-18)**: `observe/run/` runs a sequence (`src/core/sequence.js`) on a camera
+(`src/observe/run/cameras.js`): the local helper `python -m esl.bridge` (ASCOM Alpaca; ZWO through zwoasi, Alpaca
+pass-through, a simulator), any CORS-enabled Alpaca device, or a simulated sky in the page (`src/core/simsky.js`,
+tracking errors, real planets' transits on a rehearsal clock: `src/core/rehearsal.js`). Frames get
+`src/core/fitsheader.js` headers; lights are reduced live by `src/core/reduce.js` (runStack's per-frame body).
+"Now" on Plan, Observe and Run is `src/site/clock.js` (the site's Date header, the helper's NTP/gpsd, Web Serial GPS;
+`src/core/clocksync.js`), shown in the scales of `src/core/timeformat.js`; the one leap-second table is
+`src/core/timescale.js`. Python: `esl.time`, `esl.bridge`, `esl.cameras`, `esl.observe`. Guide: docs/guide/observing.md.
+Next: a real ZWO run, plate solving in Run, mount and filter-wheel control (Alpaca telescope/filterwheel), INDI.
+
 ## Not verified
 
+- Observing: no real camera, mount, USB GPS or gpsd has been connected; the ZWO backend was tested against a fake
+  SDK only. No Analyze fit of a Run light curve was run (the hand-off was).
 - Any real device: phones (layouts, pinch, AR), a WebXR headset (Quest checklist below), Safari and Firefox.
   Everything was checked in headless Chromium at 390, 768 and 1440 px.
 - A real https deployment: the assistant's VPN preset is plain http and is blocked from https pages (mixed

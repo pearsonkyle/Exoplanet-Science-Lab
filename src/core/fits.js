@@ -1019,6 +1019,7 @@ export function headerLines(cards) {
     const q = quote(str.padEnd(8));
     if (q.length <= 70) { lines.push((key.padEnd(8) + '= ' + q.padEnd(20) + (cm ? ' / ' + cm : '')).slice(0, 80).padEnd(80)); continue; }
     // long string: pieces of at most 67 characters (quotes doubled inside, never split), '&' at the end of all but the last
+    if (!long) lines.push(...headerLines([['LONGSTRN', 'OGIP 1.0', 'long strings continue on CONTINUE cards']]));   // before the first long string, never before SIMPLE
     long = true;
     const pieces = []; let cur = '';
     for (const ch of str) { const add = ch === "'" ? "''" : ch; if (cur.length + add.length > 66) { pieces.push(cur); cur = ''; } cur += add; }
@@ -1028,7 +1029,6 @@ export function headerLines(cards) {
       lines.push(((i === 0 ? key.padEnd(8) + '= ' : 'CONTINUE  ') + body + (i === pieces.length - 1 && cm ? ' / ' + cm : '')).slice(0, 80).padEnd(80));
     });
   }
-  if (long) lines.unshift(...headerLines([['LONGSTRN', 'OGIP 1.0', 'long strings continue on CONTINUE cards']]));
   return lines;
 }
 

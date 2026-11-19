@@ -184,12 +184,14 @@ class SimCamera(Camera):
 
     @property
     def ccd_temperature(self) -> float:
-        # the sensor approaches the set point at about 1 degree per second when the cooler is on
+        # the sensor approaches the set point (or 20 C with the cooler off) at 1 degree per second
+        self._step_temp()
         return self._temp
 
     def _step_temp(self) -> None:
+        now = time.time(); dt = now - getattr(self, "_temp_at", now); self._temp_at = now
         target = self.set_temperature if self.cooler_on else 20.0
-        self._temp += max(-1.0, min(1.0, target - self._temp))
+        self._temp += max(-dt, min(dt, target - self._temp))
 
     @property
     def cooler_power(self) -> float:

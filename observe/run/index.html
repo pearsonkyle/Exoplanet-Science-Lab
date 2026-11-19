@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run · Exoplanet Science Lab</title>
+<meta name="description" content="Run an observing sequence: camera control through the local helper (ASCOM Alpaca, ZWO), trusted time, FITS files with full headers, and the light curve reduced while you observe.">
+<meta name="esl-root" content="../../">
+<script>try{var t=localStorage.getItem('esl.theme');if(t&&t!=='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>if(location.protocol==='file:')addEventListener('DOMContentLoaded',function(){var d=document.createElement('div');d.setAttribute('role','alert');d.style.cssText='position:fixed;inset:auto 12px 12px 12px;z-index:999;padding:14px 16px;border-radius:8px;background:#1a2133;color:#dfe6f3;border:1px solid #ffb454;font:14px/1.5 system-ui;max-width:640px';d.innerHTML='<b>This page needs a local web server.</b> In the folder that holds it, run <code>python3 -m http.server</code> and open the address it prints.';document.body.appendChild(d)})</script>
+<link rel="stylesheet" href="../../src/site/site.css">
+<link rel="stylesheet" href="../../src/observe/run/run.css">
+</head>
+<body class="page run-page">
+<header id="sitebar" data-active="observe"></header>
+<main id="run-app">
+  <div class="r-top">
+    <h1>Run an observation</h1>
+    <p class="r-sub">Camera control, trusted time and FITS files with full headers; the light curve is reduced while you observe and goes to Analyze at the end.
+      Real cameras go through the local helper on the observing computer: <code>python -m esl.bridge --zwo</code> (<a href="../../docs/guide/observing.html">how to set it up</a>).
+      <button type="button" class="eslclock" id="r-clock"></button></p>
+  </div>
+  <div class="r-layout">
+    <form class="r-side" id="r-form" autocomplete="off" onsubmit="return false">
+      <fieldset>
+        <legend>Camera</legend>
+        <label>Camera <select id="r-camkind">
+          <option value="sim">Simulated (in this page, no hardware)</option>
+          <option value="helper">Local helper (python -m esl.bridge)</option>
+          <option value="alpaca">Other Alpaca device</option>
+        </select></label>
+        <label id="r-trackrow">Simulated tracking <select id="r-tracking"><option value="good">good (0.3 px wander)</option><option value="average" selected>average (periodic error, jumps)</option><option value="poor">poor (large jumps)</option><option value="off">perfect</option></select></label>
+        <label id="r-urlrow" hidden>Address <input id="r-url" value="http://localhost:11111" spellcheck="false"></label>
+        <div class="row2"><button type="button" class="btn primary" id="r-connect">Connect</button><button type="button" class="btn" id="r-disconnect" disabled>Disconnect</button></div>
+        <p class="hint" id="r-caminfo" role="status">Not connected.</p>
+        <div class="row3">
+          <label>Gain <input id="r-gain" type="number" step="1"></label>
+          <label>Offset <input id="r-offset" type="number" step="1"></label>
+          <label>Bin <select id="r-bin"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+        </div>
+        <div class="row2">
+          <label class="chk"><input type="checkbox" id="r-cooler" checked> Cooler</label>
+          <label>Set point °C <input id="r-settemp" type="number" step="1" value="-10"></label>
+        </div>
+        <p class="hint" id="r-temp"></p>
+      </fieldset>
+      <fieldset>
+        <legend>Sequence</legend>
+        <p class="hint" id="r-seqfrom">Load one from Plan (“Observe this event”), from a file, or fill this in.</p>
+        <div class="r-rehearse">
+          <div class="row2"><label>Rehearse a transit of <select id="r-planet"></select></label><label>Speed <select id="r-speed"><option value="10">10× real time</option><option value="30">30×</option><option value="60" selected>60×</option><option value="120">120×</option></select></label></div>
+          <button type="button" class="btn" id="r-rehearse" title="The next transit of this planet that can be seen whole from the site, simulated on a clock running faster than real time: the simulated camera renders the planet's own transit">Rehearse its next transit</button>
+        </div>
+        <label>Target <input id="r-tname" placeholder="HAT-P-32 b"></label>
+        <div class="row2"><label>RA ° <input id="r-ra" type="number" step="any"></label><label>Dec ° <input id="r-dec" type="number" step="any"></label></div>
+        <div class="row3"><label>Lat ° <input id="r-lat" type="number" step="any"></label><label>Lon ° E <input id="r-lon" type="number" step="any"></label><label>Elev m <input id="r-elev" type="number" step="any"></label></div>
+        <div class="row2"><label>Start (UTC) <input id="r-start" type="datetime-local" step="1"></label><label>End (UTC) <input id="r-end" type="datetime-local" step="1"></label></div>
+        <div class="row3"><label>Exposure s <input id="r-exp" type="number" step="any" min="0.001" value="60"></label><label>Filter <input id="r-filter" placeholder="r"></label><label>Min alt ° <input id="r-minalt" type="number" value="25"></label></div>
+        <div class="row3"><label>Bias <input id="r-nbias" type="number" min="0" value="15"></label><label>Darks <input id="r-ndark" type="number" min="0" value="10"></label><label>Flats <input id="r-nflat" type="number" min="0" value="0"></label></div>
+        <div class="row2"><label>Calibration <select id="r-calwhen"><option value="before">before the lights</option><option value="after">after the lights</option><option value="both">half before, half after</option></select></label><label>Meridian <select id="r-meridian"><option value="pause">pause (German mount)</option><option value="none">no flip</option></select></label></div>
+        <div class="row2"><label>Telescope <input id="r-tel" placeholder="RC 8 inch"></label><label>Focal length mm <input id="r-focal" type="number" step="any"></label></div>
+        <div class="row2"><label>Observer <input id="r-observer"></label><label>Camera angle ° <input id="r-angle" type="number" step="any" value="0"></label></div>
+        <div class="row3"><button type="button" class="btn" id="r-simnow" title="A window starting now, for the simulated camera">Try now</button><label class="btn file">Open…<input type="file" id="r-seqfile" accept=".json,application/json" hidden></label><button type="button" class="btn" id="r-seqsave">Save</button></div>
+        <p class="hint" id="r-summary" role="status"></p>
+      </fieldset>
+      <fieldset>
+        <legend>Frames</legend>
+        <label>Save to <select id="r-save">
+          <option value="none">nowhere (light curve only)</option>
+          <option value="folder">a folder on this computer</option>
+          <option value="helper">the helper’s --save-dir</option>
+          <option value="zip">a zip at the end (small sequences)</option>
+        </select></label>
+        <button type="button" class="btn" id="r-pickdir" hidden>Choose folder…</button>
+        <p class="hint" id="r-saveinfo"></p>
+      </fieldset>
+    </form>
+    <section class="r-main">
+      <div class="r-controls">
+        <button type="button" class="btn primary" id="r-start-btn" disabled>Start</button>
+        <button type="button" class="btn" id="r-pause" disabled>Pause</button>
+        <button type="button" class="btn" id="r-stop" disabled>Stop</button>
+        <button type="button" class="btn" id="r-analyze" disabled title="The light curve so far, with the best aperture and comparison stars, in Analyze">Open in Analyze</button>
+        <span class="r-status" id="r-status" role="status">Connect a camera and set up a sequence.</span>
+      </div>
+      <div class="r-counts" id="r-counts"></div>
+      <div class="r-views">
+        <figure class="r-frame"><canvas id="r-framecv" width="480" height="360" aria-label="The last frame"></canvas><figcaption id="r-framecap">The last frame appears here.</figcaption></figure>
+        <figure class="r-lc"><canvas id="r-lccv" width="560" height="360" aria-label="The light curve so far"></canvas><figcaption><span id="r-lccap">Target over the comparison stars, as the frames come in.</span> <label class="r-priortoggle"><input type="checkbox" id="r-prior" checked> show the predicted transit</label></figcaption></figure>
+      </div>
+      <figure class="r-telem"><canvas id="r-telcv" width="1100" height="420" aria-label="Telemetry: pointing, star width, sky, airmass, transparency, sensor temperature and clock, per frame"></canvas>
+        <figcaption id="r-telcap">Telemetry, one point per light frame: where the target sits on the sensor (drift and tracking error), the star width, the sky, the airmass, the comparison stars’ total flux (transparency), the sensor temperature and the clock’s uncertainty.</figcaption></figure>
+      <details class="r-logbox" open><summary>Log</summary><ol id="r-log" class="r-log"></ol></details>
+    </section>
+  </div>
+</main>
+<script type="module" src="../../src/site/nav.js"></script>
+<script type="module" src="../../src/observe/run/main.js"></script>
+</body>
+</html>
