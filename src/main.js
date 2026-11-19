@@ -2169,10 +2169,11 @@ function finishFit(res, free, withLD, tie) {
     for (const prm of actParams()) if (prm.group === 'rv' || prm.group === 'baseline') q[prm.key] = v[prm.key] || 0;
     for (let j = 0; j < LD_LAWS[S.ldLaw].names.length; j++) q['ld' + j] = v['ld' + j];
     for (const k in q) (draws[k] = draws[k] || []).push(q[k]);
-    if (curves.length < 200) { const f = fluxFunction(v, S.fold && many ? S.pl : undefined), c = new Float64Array(NG); for (let j = 0; j < NG; j++) c[j] = f(G[j]); curves.push(c); }
+    if (S.use.lc && curves.length < 200) { const f = fluxFunction(v, S.fold && many ? S.pl : undefined), c = new Float64Array(NG); for (let j = 0; j < NG; j++) c[j] = f(G[j]); curves.push(c); }
   }
+  // the 68% model band, only when the light curve is in the fit (S.fit.band is null otherwise, so it is not computed)
   const lo = new Float64Array(NG), hi = new Float64Array(NG), tmp = new Float64Array(curves.length);
-  for (let j = 0; j < NG; j++) { for (let c = 0; c < curves.length; c++) tmp[c] = curves[c][j]; const s = Float64Array.from(tmp).sort(); lo[j] = s[Math.floor(0.16 * (s.length - 1))]; hi[j] = s[Math.ceil(0.84 * (s.length - 1))]; }
+  if (curves.length) for (let j = 0; j < NG; j++) { for (let c = 0; c < curves.length; c++) tmp[c] = curves[c][j]; const s = Float64Array.from(tmp).sort(); lo[j] = s[Math.floor(0.16 * (s.length - 1))]; hi[j] = s[Math.ceil(0.84 * (s.length - 1))]; }
   const sfxOf = (k) => (k.includes('@') ? k.slice(k.indexOf('@') + 1) : ''), medOf = (k) => (draws[k] ? (quant(draws[k]) || {}).med : NaN);
   const derived = {}; for (const k in draws) derived[k] = baseKey(k) === 'omega' ? summarizeDraws(draws[k], { period: 360, lo: (quant(draws[k]) || { med: 0 }).med - 180 })
     : baseKey(k) === 'emid' || baseKey(k) === 'tperi' ? summarizeEpoch(draws[k], baseKey(k), medOf(planetKey('tmid', sfxOf(k))), medOf(planetKey('per', sfxOf(k)))) : quant(draws[k]);

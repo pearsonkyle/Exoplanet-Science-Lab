@@ -106,7 +106,7 @@ export function sessionFromCatalog(sys, kinds, snapshot, system = null) {
 
 export function initIntro(app) {
   const { h } = app, root = document.getElementById('intro');
-  const st = { step: 'home', kinds: new Set(), index: null, sys: null, look: null, refs: {}, msg: '', busy: false };
+  const st = { step: 'home', kinds: new Set(), index: null, sys: null, look: null, refs: {}, msg: '', busy: false, loading: null };
   const close = () => { root.hidden = true; document.body.classList.remove('intro-open'); if (app.onClose) app.onClose(); };
   const kindsArr = () => KINDS.map((k) => k.key).filter((k) => st.kinds.has(k));
   const useOf = () => { const k = kindsArr(); return k.length === 1 ? k[0] : 'all'; };
@@ -120,6 +120,15 @@ export function initIntro(app) {
       st.look = L; st.refs = {}; st.sys = systemFromRows(L.rows, { use: useOf() }); st.step = 'system';
     } catch (err) { st.msg = err.message || String(err); }
     st.busy = false; render();
+  }
+  // An example opens with its stored posterior, which takes a moment on a slow machine: the button says so, the others are
+  // disabled so a second click cannot start a second load, and two frames pass so that state is painted before the work starts.
+  async function openExample(e) {
+    if (st.loading) return;
+    st.loading = e.id; st.msg = ''; render();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    try { await app.loadExample(e); st.loading = null; close(); render(); }
+    catch (err) { st.loading = null; st.msg = 'Could not load the example: ' + (err.message || err); render(); }
   }
   function rechoose() { st.sys = systemFromRows(st.look.rows, { use: useOf(), references: st.refs }); render(); }
 
@@ -143,7 +152,8 @@ export function initIntro(app) {
       h('div', { class: 'isearch' }, inp, dl, h('button', { class: 'btn primary', disabled: st.busy, onclick: () => inp.value.trim() && lookup(inp.value.trim()) }, st.busy ? 'Looking up…' : 'Look up parameters')),
       h('p', { class: 'note' + (st.msg ? ' bad' : '') }, st.msg || 'Parameters are filled in from a bundled snapshot of the NASA Exoplanet Archive. You will see where each value comes from before anything is used.'),
       h('p', { class: 'ilead second' }, 'Or start from a worked example'),
-      h('div', { class: 'iexamples' }, exs.map((e) => h('button', { class: 'iex', onclick: async () => { st.busy = true; try { await app.loadExample(e); close(); } catch (err) { st.msg = 'Could not load the example: ' + (err.message || err); render(); } st.busy = false; } }, h('b', {}, e.title), h('span', {}, e.sub)))),
+      h('div', { class: 'iexamples' + (st.loading ? ' loading' : ''), 'aria-busy': String(!!st.loading) }, exs.map((e) => h('button', { class: 'iex' + (st.loading === e.id ? ' busy' : ''), disabled: !!st.loading, onclick: () => openExample(e) },
+        h('b', {}, e.title), h('span', {}, e.sub), st.loading === e.id ? h('em', { class: 'iex-wait', role: 'status' }, h('i', { class: 'spin', 'aria-hidden': 'true' }), 'Opening the example and its stored posterior…') : null))),
       h('p', { class: 'ilead second' }, 'Your saved analyses'),
       (() => { const box = h('div', { class: 'isaved' }, h('p', { class: 'note' }, 'Looking in this browser…'));
         const fill = async () => { try { const list = await app.listSaved(); box.innerHTML = '';

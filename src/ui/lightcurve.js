@@ -272,7 +272,8 @@ export class LightCurvePlot {
     else if (!this.yLocked) this.view = autoView(d, this.view.x0, this.view.x1);   // keep the x-zoom, refit the flux axis
     this.draw();
   }
-  setCursor(t) { if (this.d) { this.d.cursor = t; if (!this.alt) this.draw(); } }
+  // called every animation frame: redraws only when the cursor moved (a paused view costs nothing)
+  setCursor(t) { if (this.d && this.d.cursor !== t) { this.d.cursor = t; if (!this.alt) this.draw(); } }
   draw() {
     const cv = this.cv, dpr = Math.min(window.devicePixelRatio || 1, 2), W = cv.clientWidth, H = cv.clientHeight;
     if (!W || !H || !this.d) return;

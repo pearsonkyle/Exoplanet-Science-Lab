@@ -66,7 +66,7 @@ export function buildCompanionExplorer(el, { app, ctx, grid, refined, onAdopt })
   const cvOrb = h('canvas', { class: 'cx-orbit', role: 'img', 'aria-label': 'The system seen from above, animated' });
   const cvOC = h('canvas', { class: 'cx-oc', role: 'img', 'aria-label': 'Observed and simulated transit timing variations' });
   const read = h('div', { class: 'cx-read', 'aria-live': 'polite' });
-  const play = h('button', { class: 'chip small', type: 'button', 'aria-pressed': 'true' }, 'Pause');
+  const play = h('button', { class: 'chip small', type: 'button', 'aria-pressed': 'false' }, 'Play');
   const speed = h('select', { class: 'cx-speed', 'aria-label': 'Animation speed' }, ...[['0.25', '¼ orbit/s'], ['1', '1 orbit/s'], ['4', '4 orbits/s']].map(([v, t]) => h('option', { value: v, selected: v === '1' }, t)));
   const cloudOn = h('input', { type: 'checkbox', checked: true });
   const adopt = h('button', { class: 'btn', type: 'button', hidden: true }, 'Add this companion and fit');
@@ -78,7 +78,7 @@ export function buildCompanionExplorer(el, { app, ctx, grid, refined, onAdopt })
   el.append(wrap);
 
   // ---- state
-  let sel = null, hover = null, spread = [], selCurve = null, t = obs.t[0], playing = true, last = 0;
+  let sel = null, hover = null, spread = [], selCurve = null, t = obs.t[0], playing = false, last = 0;   // still until the user presses Play
   const mapData = () => ({ basePeriod: me.per, letter: me.letter, grid: grid ? { period: grid.period, mass: grid.mass, np: grid.np, nm: grid.nm, dchi2: grid.dchi2 } : null, samples: samples.map((s) => ({ ratio: s.ratio, mass: s.mass })), best: gridBest && !draws ? gridBest : null, sel, hover });
   const fit = (cv) => { const W = cv.clientWidth, H = cv.clientHeight; if (!W || !H) return null; const k = Math.min(window.devicePixelRatio || 1, 2); if (cv.width !== Math.round(W * k)) { cv.width = Math.round(W * k); cv.height = Math.round(H * k); } const c = cv.getContext('2d'); c.setTransform(k, 0, 0, k, 0, 0); return { c, W, H }; };
   const drawMap = () => { const f = fit(cvMap); if (f) renderCompanionMap(f.c, f.W, f.H, mapData(), th()); };
@@ -130,9 +130,7 @@ export function buildCompanionExplorer(el, { app, ctx, grid, refined, onAdopt })
   play.addEventListener('click', () => { playing = !playing; play.textContent = playing ? 'Pause' : 'Play'; play.setAttribute('aria-pressed', String(playing)); if (playing) { last = 0; requestAnimationFrame(tick); } });
   cloudOn.addEventListener('change', () => { drawOrbit(); drawOC(); });
 
-  // ---- animation: inner orbits per second, only while the explorer is on the page and visible
-  const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduced) { playing = false; play.textContent = 'Play'; play.setAttribute('aria-pressed', 'false'); }
+  // ---- animation: inner orbits per second, only after Play and while the explorer is on the page
   function tick(now) {
     if (!wrap.isConnected) return;
     if (!playing) return;
@@ -140,13 +138,21 @@ export function buildCompanionExplorer(el, { app, ctx, grid, refined, onAdopt })
     last = now; drawOrbit(); requestAnimationFrame(tick);
   }
 
-  // ---- start: the best (median-ish) companion selected, the spread computed a few curves at a time
-  if (samples.length) { const byMass = [...samples].sort((a, b) => a.mass - b.mass); select(fromSample(byMass[byMass.length >> 1])); }
-  else if (grid) { const g = grid.best; select(fromCell(g.im, g.ip)); }
+  // ---- start: the best (median-ish) companion selected, the spread computed a few curves at a time. Each is an N-body
+  // integration, so none runs until the explorer is first on screen (its tab open and scrolled into view): opening an
+  // example, which rebuilds this panel several times, integrates nothing here.
   const queue = samples.slice(0, 24);
   const step = () => { if (!wrap.isConnected) return; const s = queue.shift(); if (!s) return; const c = curveOf(sysOf(s.draw), iMe); if (c) { spread.push(c); drawOC(); } setTimeout(step, 0); };
-  setTimeout(step, 50);
+  let started = false;
+  const start = () => {
+    if (started || !wrap.isConnected) return; started = true;
+    if (samples.length) { const byMass = [...samples].sort((a, b) => a.mass - b.mass); select(fromSample(byMass[byMass.length >> 1])); }
+    else if (grid) { const g = grid.best; select(fromCell(g.im, g.ip)); }
+    setTimeout(step, 50);
+  };
+  if (typeof IntersectionObserver === 'function') { const io = new IntersectionObserver((es) => { if (!wrap.isConnected) { io.disconnect(); return; } if (es.some((x) => x.isIntersecting)) { io.disconnect(); start(); } }); io.observe(wrap); }
+  else start();
   if (typeof ResizeObserver !== 'undefined') { const ro = new ResizeObserver(() => { if (!wrap.isConnected) { ro.disconnect(); return; } drawMap(); drawOrbit(); drawOC(); }); [cvMap, cvOrb, cvOC].forEach((c) => ro.observe(c)); }
   window.addEventListener('esl-theme', () => { if (wrap.isConnected) { drawMap(); drawOrbit(); drawOC(); } });
-  requestAnimationFrame(() => { drawMap(); drawOrbit(); drawOC(); if (playing) requestAnimationFrame(tick); });
+  requestAnimationFrame(() => { describe(); drawMap(); drawOrbit(); drawOC(); if (playing) requestAnimationFrame(tick); });
 }
