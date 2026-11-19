@@ -82,13 +82,13 @@ export function alpacaCamera(base = 'http://localhost:11111', n = 0) {
 }
 
 /** A camera that makes its frames in the page (src/core/simsky.js). `speed` > 1 runs exposures faster than real time (tests). */
-export function simCamera({ width = 320, height = 240, tmid = null, depth = 0.01, duration = 2, site = null, target = null, speed = 1, seed = 7, flux = 4000, t0 = null, tracking = 'average', lightCurve = null, now = null, clockInfo = null } = {}) {
+export function simCamera({ width = 320, height = 240, tmid = null, depth = 0.01, duration = 2, site = null, target = null, speed = 1, seed = 7, flux = 4000, t0 = null, tracking = 'average', lightCurve = null, clear = 0, now = null, clockInfo = null } = {}) {
   const tnow = now || (() => clock.now());
   let sky = null, frameNo = 0, ccdTemp = 20, setT = -10, coolerOn = false, bin = 1;
   const props = { name: 'Simulated camera (in this page)', width, height, pixelSize: 3.76, maxBin: 1, sensorType: 0, maxAdu: 65535, egain: 1, gain: [0, 300], offset: [0, 100], canCool: true, bayer: null, helper: false };
   return {
     kind: 'sim', props,
-    async connect() { sky = createSimSky({ width, height, tmid: tmid ?? tnow() + 3600e3, depth, duration, site, target, seed, flux, centre: true, tracking: tracking === 'off' ? null : tracking, lightCurve, ...(t0 != null ? { t0 } : {}) }); return props; },
+    async connect() { sky = createSimSky({ width, height, tmid: tmid ?? tnow() + 3600e3, depth, duration, site, target, seed, flux, centre: true, tracking: tracking === 'off' ? null : tracking, lightCurve, clear, ...(t0 != null ? { t0 } : {}) }); return props; },
     async disconnect() { sky = null; },
     async configure(o = {}) { if (o.setTemp != null) setT = o.setTemp; if (o.coolerOn != null) coolerOn = !!o.coolerOn; if (o.bin) bin = 1; },
     async status() { ccdTemp += Math.max(-3, Math.min(3, (coolerOn ? setT : 20) - ccdTemp)); return { ccdTemp, coolerPower: coolerOn ? Math.min(100, 3 * (20 - setT)) : 0, state: 0 }; },

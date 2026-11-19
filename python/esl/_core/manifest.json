@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "325fed163f3a2f9d",
+ "sourceHash": "1cb35cf9662661b4",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1400212,
-   "sha256": "5f10268e65973b99c407ab8c9bc5d7fb6ac7ec707374c21fe1b0cd016d586cd6"
+   "bytes": 1402955,
+   "sha256": "64edd2d42a83e881777e0dfcb481c5d114249964029d39b1e53470e52b61c0c1"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -824,6 +824,7 @@
    "whiteNoiseLevel"
   ],
   "reduce": [
+   "chooseStars",
    "createReducer",
    "growMeasurements"
   ],

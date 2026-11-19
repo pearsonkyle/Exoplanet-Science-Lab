@@ -492,7 +492,7 @@ function installRVSets(list, notes = []) {
 function handoffDetrend(hnd) {
   if (!hnd.columns || !hnd.time || !S.data) return;
   const d = S.data, A = alignColumns(hnd.time, hnd.columns, Float64Array.from(d.t, (x) => x + (d.tRef || 0)));
-  const notes = [...(d.notes || []), `${Object.keys(A.columns).length} detector columns from the photometry page on ${A.matched} of ${d.t.length} points`];
+  const notes = [...(d.notes || []), `${Object.keys(A.columns).length} detector columns from the ${hnd.source === 'run' ? 'Run page' : 'photometry page'} on ${A.matched} of ${d.t.length} points`];
   if (hnd.comparison && hnd.comparison.choice) notes.push(`comparison stars: ${hnd.comparison.choice}${Array.isArray(hnd.comparison.weights) ? ` (weights ${hnd.comparison.weights.map((w) => Number(w).toFixed(2)).join(', ')})` : ''}`);
   S.data = applyDetrend({ ...d, columns: A.columns, notes }, hnd.detrend || null);
   S.dataId++; buildPanels(); refresh(true);

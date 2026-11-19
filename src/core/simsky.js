@@ -13,7 +13,7 @@ import { makeRng } from './stats.js';
  *            target: { ra, dec }, site: { lat, lon } (airmass; else 1.2 fixed), bias = 300, dark = 0.02 [ADU/s/px],
  *            read = 6 [ADU], gain = 1 [e-/ADU], sky = 8 [ADU/s/px], flux = 4000 [ADU/s of the target], seeing = 1.8 [px sigma],
  *            drift = [dx, dy] px per hour from t0 (default tmid - 3 h), maxAdu = 65535, comps = 4, field = 30,
- *            centre: false (true: the target at the centre of the frame at t0),
+ *            centre: false (true: the target at the centre of the frame at t0), clear = 0 (px around the target kept free of field stars),
  *            lightCurve: null | (ms) -> relative flux of the target at mid-exposure (e.g. rehearsal.js fluxAtUtc of a real
  *                        planet); replaces the trapezoid of depth / duration,
  *            tracking: null | 'good' | 'average' | 'poor' | { walk [px/sqrt(h)], pe [px, periodic error amplitude], period [s],
@@ -35,7 +35,14 @@ export function createSimSky(o = {}) {
     do { x = 0.12 * W + rng0.next() * 0.76 * W; y = 0.12 * H + rng0.next() * 0.76 * H; } while (Math.hypot(x - target.x, y - target.y) < 0.15 * Math.min(W, H));
     stars.push({ x, y, flux: flux * (0.6 + 1.2 * rng0.next()), k: i + 1 });
   }
-  for (let i = 0; i < (o.field ?? 30); i++) stars.push({ x: 8 + rng0.next() * (W - 16), y: 8 + rng0.next() * (H - 16), flux: flux * 0.02 * Math.exp(3 * rng0.next()), k: -1 });
+  // field stars; none within `clear` px of the target (default 0: anywhere). A rehearsal of a real planet keeps the
+  // target clear: its real neighbours are not simulated, and an invented blend only dilutes the transit (2026-11-19)
+  const clear = o.clear ?? 0;
+  for (let i = 0; i < (o.field ?? 30); i++) {
+    let x, y, tries = 0;
+    do { x = 8 + rng0.next() * (W - 16); y = 8 + rng0.next() * (H - 16); } while (clear > 0 && Math.hypot(x - target.x, y - target.y) < clear && ++tries < 50);
+    stars.push({ x, y, flux: flux * 0.02 * Math.exp(3 * rng0.next()), k: -1 });
+  }
   const t0 = o.t0 ?? tmid - 3 * 3600e3;
   const track = trackingModel(o.tracking, t0, seed);
   const truth = { tmid, depth, duration: durH / 24, target: { x: target.x, y: target.y }, comps: stars.slice(1, 1 + nComp).map((s) => ({ x: s.x, y: s.y })), t0 };

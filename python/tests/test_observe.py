@@ -14,9 +14,9 @@ from esl.cameras import SimCamera
 
 def _seq(now_ms, **kw):
     return eo.make(target={"name": "Sim", "ra": 31.04, "dec": 46.69}, site={"name": "Kitt Peak", "lat": 31.9583, "lon": -111.5967, "elev": 2096},
-                   window={"start": now_ms + 300, "end": now_ms + 2500}, exposure={"duration": 0.2, "filter": "r"},
+                   window={"start": now_ms + 300, "end": now_ms + 4000}, exposure={"duration": 0.2, "filter": "r"},
                    calibration={"bias": 2, "darks": 2, "flats": 1, "flatDuration": 0.1}, limits={"minAlt": -90, "sunMax": 90, "meridian": "none"},
-                   cooler={"on": True, "setTemp": -10, "waitMax": 1}, **kw)
+                   cooler={"on": False, "setTemp": -10, "waitMax": 1}, **kw)   # cooling has its own tests; here it would only eat the window
 
 
 def test_run_writes_frames_with_the_core_headers(tmp_path):

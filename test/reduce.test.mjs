@@ -2,11 +2,12 @@
 // FITS by frameHeader + encodeFits and read back, calibrated with master bias / dark / flat, reduced one by one.
 // References: the injected transit (depth, mid-time, duration) of the simulation, and runStack's own arrays
 // (growing the measurement arrays frame by frame must give exactly what a stack sized up front gives).
-import { createReducer, growMeasurements } from '../src/core/reduce.js';
+import { createReducer, growMeasurements, chooseStars } from '../src/core/reduce.js';
 import { createSimSky } from '../src/core/simsky.js';
 import { frameHeader } from '../src/core/fitsheader.js';
 import { encodeFits, parseFits, readImage } from '../src/core/fits.js';
-import { fluxOf, makeMeasurements, trapezoid } from '../src/core/photometry.js';
+import { fluxOf, makeMeasurements, trapezoid, addStars, addNoise } from '../src/core/photometry.js';
+import { makeRng } from '../src/core/stats.js';
 import { jdFromMs } from '../src/core/timescale.js';
 import { utcToBjdTdb } from '../src/core/fits.js';
 
@@ -66,6 +67,25 @@ const depth = c[3] / c[0], err = sd * Math.sqrt(inv[3][3]) / c[0];
 check('injected 1.2% transit recovered from the live reduction', Math.abs(depth - T.depth) < 3 * err + 5e-4, `depth ${(depth * 100).toFixed(3)} ± ${(err * 100).toFixed(3)} % (injected ${(T.depth * 100).toFixed(1)} %), scatter ${(sd * 1e3).toFixed(2)} ppt per ${EXP} s frame`);
 check('the running light curve is there from the second frame', live.length === n && live.every((p) => Number.isFinite(p.live) && p.live > 0 && Number.isFinite(p.sky)), `${live.length} points; FWHM is measured only with PSF fits on`);
 check('stars tracked through the drift', Math.abs(A.M.x[(n - 1) * 5] - (T.target.x + 1.2 * 6.4 * 0.98)) < 2, `target x ${A.M.x[0].toFixed(1)} -> ${A.M.x[(n - 1) * 5].toFixed(1)} px`);
+
+// choosing the stars: crowded, edge, faint and saturated comparisons are left out (2026-11-19: a pair 2 FWHM apart,
+// a star whose sky annulus ran off the frame, and stars at 6-17 % of the target each took 5-90 % of a simulated depth)
+{
+  const w = 240, h = 180, img = new Float32Array(w * h).fill(200), s = 2;
+  const good = [[60, 50], [180, 60], [70, 130]], pair = [[175, 130], [184, 133]], edge = [[12, 90]], faint = [[150, 40]], sat = [[40, 90]];
+  addStars(img, w, h, [{ x: 119.5, y: 89.5, flux: 2e5, sigma: s }, ...good.map(([x, y]) => ({ x, y, flux: 2.2e5, sigma: s })), ...pair.map(([x, y]) => ({ x, y, flux: 2e5, sigma: s })),
+    ...edge.map(([x, y]) => ({ x, y, flux: 2e5, sigma: s })), ...faint.map(([x, y]) => ({ x, y, flux: 1.5e4, sigma: s })), ...sat.map(([x, y]) => ({ x, y, flux: 3e6, sigma: s }))]);
+  addNoise(img, makeRng(3), 5, 1);
+  for (let i = 0; i < img.length; i++) img[i] = Math.min(65535, img[i]);
+  const c = chooseStars(img, w, h);
+  const near = (p, q) => Math.hypot(p.x - q[0], p.y - q[1]) < 2;
+  const comps = c.stars.slice(1);
+  check('chooseStars: the target at the centre, the three isolated stars of similar brightness as comparisons', near(c.stars[0], [119.5, 89.5]) && comps.length === 3 && good.every((g) => comps.some((q) => near(q, g))) && !c.warnings.length,
+    comps.map((q) => `(${q.x.toFixed(0)}, ${q.y.toFixed(0)})`).join(' ') + (c.warnings.length ? ' · ' + c.warnings.join('; ') : ''));
+  check('chooseStars: no crowded pair, edge, faint or saturated star', ![...pair, ...edge, ...faint, ...sat].some((b) => comps.some((q) => near(q, b))));
+  const img2 = Float32Array.from(img); addStars(img2, w, h, [{ x: 129.5, y: 89.5, flux: 6e4, sigma: s }]);          // 10 px, 30 %
+  check('chooseStars: a neighbour of the target is reported', chooseStars(img2, w, h).warnings.some((x) => /target has 1 neighbour/.test(x)));
+}
 
 // tracking error: a poorly tracking mount (random walk, periodic error, 9 px jumps); the reducer must follow the
 // field (re-finding it after the jumps) and the target's measured positions must follow the simulation's pointing

@@ -8,8 +8,10 @@
 //   const R = createReducer(cfg)        cfg as runStack takes it (stars, apertures, psf, target, site, ...)
 //   R.add(frame)                        frame = { data (calibrated), width, height, header, comments, name } -> progress
 //   R.result()                          { M (count = frames measured), frames, sigma, refPos, shape0, meta, relocated, timeSystem, cfg }
+//   chooseStars(data, w, h, opts)       the target and comparison stars of a first frame, for cfg.stars
 
 import { frameTime, frameAirmass, framePointing, utcToBjdTdb, pierSide, pixelScale } from './fits.js';
+import { rankComparisons } from './imexam.js';
 import { centroidIter, fitPsf, detectSources, estimateShift, trackStars, makeMeasurements, measureFrame, linspace, medianOf, fitSimilarity, matchAsterism, placeStars } from './photometry.js';
 
 const clockMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
@@ -106,4 +108,47 @@ export function createReducer(cfg0, { capacity = 64, timing = { measure: 0, t0: 
       return { M, frames, sigma, refPos, shape0, meta, relocated, timeSystem: scaleSeen.size === 1 ? [...scaleSeen][0] : [...scaleSeen].join('+'), cfg, half, psf, timing };
     },
   };
+}
+
+/**
+ * The stars to measure on a first (calibrated) frame: the target is the star nearest the expected position (the
+ * field centre, where the pointing puts it, unless `at` is given) that is not a faint field star; the comparison
+ * stars are ranked by rankComparisons (src/core/imexam.js): similar brightness, unsaturated, no neighbour brighter
+ * than 10% of the star inside the largest sky annulus, and far enough from the edge for the largest sky annulus (`annulus` sigma of
+ * the PSF, 15 as createReducer's default range, plus the gap), and at least a quarter as bright as the target. Stars
+ * that fail those tests are used only when fewer than `min` (3) pass, and are reported in `warnings`.
+ * Crowded comparison stars bias a transit's depth: a neighbour's light moves in and out of the aperture and the sky
+ * annulus as the seeing changes, and the seeing follows the airmass through the night (2026-11-19: a pair 2 FWHM
+ * apart took 88% of a simulated transit's depth away).
+ * @returns { stars: [{ x, y }] target first, sigma (PSF of the target), comparisons: the ranked candidates used, warnings }
+ */
+export function chooseStars(data, w, h, { at = null, maxAdu = 65535, n = 5, min = 3, annulus = 15, gap = 2, crowd = null } = {}) {
+  const { sources } = detectSources(data, w, h, { max: 60, saturation: maxAdu * 0.8 });
+  if (!sources.length) return null;
+  const cx = at ? at.x : (w - 1) / 2, cy = at ? at.y : (h - 1) / 2, dist = (s) => Math.hypot(s.x - cx, s.y - cy);
+  // candidates: unsaturated stars not much fainter than the brightest unsaturated one (a saturated star must not set the bar)
+  const unsat = sources.filter((s) => !s.saturated), pool = unsat.length ? unsat : sources, fmax = Math.max(...pool.map((s) => s.flux));
+  const bright = pool.filter((s) => s.flux > 0.1 * fmax);
+  const tgt = (bright.length ? bright : pool).slice().sort((a, b) => dist(a) - dist(b))[0];
+  const fit = fitPsf(data, w, h, tgt.x, tgt.y, 8, {});
+  const sigma = fit.ok && Number.isFinite(fit.sx) ? Math.min(12, Math.max(0.8, 0.5 * (fit.sx + fit.sy))) : 2, fwhm = 2.3548 * sigma;
+  // isolation out to the largest sky annulus: a neighbour there changes the sky with the seeing
+  const ranked = rankComparisons(sources, tgt, { w, h, fwhm, edge: annulus * sigma + gap + 1, crowd: crowd ?? (annulus * sigma + gap) / fwhm, saturation: maxAdu * 0.8 });
+  // isolated stars at least a quarter as bright as the target; a faint comparison's flux is mostly sky, and its
+  // sky error follows the seeing (2026-11-19: three comparisons at 6-17 % of the target took a third of the depth)
+  const brightEnough = (r) => r.ratio >= 0.25 && !r.notes.includes('saturated');
+  const good = ranked.filter((r) => r.usable && brightEnough(r)), warnings = [];
+  let use = good.slice(0, n);
+  if (use.length < min) {
+    const extra = ranked.filter((r) => !use.includes(r) && brightEnough(r)).slice(0, min - use.length);
+    const last = extra.length + use.length < min ? ranked.filter((r) => !use.includes(r) && !extra.includes(r)).slice(0, min - use.length - extra.length) : [];
+    for (const r of extra.concat(last)) warnings.push(`comparison at (${r.x.toFixed(0)}, ${r.y.toFixed(0)}) used although ${r.notes.length ? r.notes.join(', ') : 'faint'}`);
+    use = use.concat(extra, last);
+  }
+  // the target's own neighbours, found with a small centroid box (the default box pulls a close neighbour onto the star)
+  const fine = detectSources(data, w, h, { max: 200, half: 3, minSep: 3, saturation: maxAdu * 0.8 }).sources;
+  const tf = fine.reduce((b, s) => (Math.hypot(s.x - tgt.x, s.y - tgt.y) < Math.hypot(b.x - tgt.x, b.y - tgt.y) ? s : b), fine[0] || tgt);   // the target in the same small box
+  const crowdT = fine.filter((s) => s !== tf && Math.hypot(s.x - tgt.x, s.y - tgt.y) > 1.5 * fwhm && s.flux > 0.1 * tf.flux && Math.hypot(s.x - tgt.x, s.y - tgt.y) < 4 * fwhm);
+  if (crowdT.length) warnings.push(`the target has ${crowdT.length} neighbour${crowdT.length > 1 ? 's' : ''} within 4 FWHM: its depth will be diluted unless the aperture excludes ${crowdT.length > 1 ? 'them' : 'it'}`);
+  return { stars: [tgt, ...use].map((s) => ({ x: s.x, y: s.y })), sigma, comparisons: use, warnings };
 }

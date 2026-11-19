@@ -4,6 +4,10 @@
 // simulated frames.
 import { REHEARSAL_PLANETS, t14, planetFlux, fluxAtUtc, nextObservableTransit, virtualClock } from '../src/core/rehearsal.js';
 import { createSimSky } from '../src/core/simsky.js';
+import { createReducer, chooseStars } from '../src/core/reduce.js';
+import { optimise } from '../src/core/photometry.js';
+import { frameHeader } from '../src/core/fitsheader.js';
+import { encodeFits, parseFits } from '../src/core/fits.js';
 import { altAz, sunAltAz } from '../src/core/observability.js';
 import { utcToBjdTdb } from '../src/core/fits.js';
 import { jdFromMs, msFromJd } from '../src/core/timescale.js';
@@ -42,6 +46,43 @@ check('BJD_TDB of that mid-time matches the ephemeris', Math.abs(utcToBjdTdb(jdF
   let d = 0; for (let i = 0; i < a.length; i++) d += b[i] - a[i];
   const want = (1 - g(t + 30e3)) * 4000 * 60 * A.last.transparency;
   check('the simulated sky follows the planet’s light curve', Math.abs(d / want - 1) < 0.02, `blocked ${d.toFixed(0)} ADU, model ${want.toFixed(0)} ADU (pixels rounded to whole ADU)`);
+}
+
+// the whole rehearsal pipeline on the night that came out shallow on the Run page (WASP-121 b from Las Campanas,
+// 2026-01-19, 'average' tracking), now with flats, chooseStars, the live reducer, optimise, and a depth fit with an
+// airmass, time and FWHM baseline (the columns the Run page now hands to Analyze). With the comparison stars Run used
+// to pick, no flats and no FWHM term, seeds 8 and 12 gave 0.30 and 0.79 times the model depth. The reference is the
+// injected model; the check is 3 sigma of the white-noise error (the residuals are slightly red: see the
+// validation notes).
+{
+  const site2 = { lat: -29.00333, lon: -70.70167, elev: 2282 }, tg = { name: 'WASP-121 b', ra: 107.6002312, dec: -39.0972705 };
+  const pl = { per: 1.27492504, tmid: 2460245.02038, rprs: 0.122551, ars: 3.7844, inc: 88.49, ld: [0.40, 0.25], ra: tg.ra, dec: tg.dec };
+  const w0 = Date.parse('2026-01-19T02:11:55.628Z'), w1 = Date.parse('2026-01-19T07:06:31.459Z'), mid = Date.parse('2026-01-19T04:39:13.544Z');
+  const W = 240, H = 180, EXP = 60, CAD = 92e3, pf = planetFlux(pl), lcU = fluxAtUtc(pl);
+  for (const seed of [8, 12]) {
+    const sky = createSimSky({ width: W, height: H, site: site2, target: tg, lightCurve: lcU, tmid: mid, duration: 3, t0: w0, tracking: 'average', flux: 4000 * 10 ** (0.4 * 0.486), centre: true, clear: 30, seed });
+    const bias = sky.frame('bias', w0, 0, 1), fl = sky.frame('flat', w0, 1, 2).map((v, i) => v - bias[i]);
+    const fm = [...fl].sort((a, b) => a - b)[fl.length >> 1], flat = fl.map((v) => v / fm);
+    let red = null; const cam = { name: 'sim', width: W, height: H, pixelSize: 3.76 };
+    for (let t = w0, k = 0; t + EXP * 1000 <= w1; t += CAD, k++) {
+      const img = sky.frame('light', t, EXP, k), f = parseFits(encodeFits(img, W, H, frameHeader({ exposure: { start: t, duration: EXP, kind: 'light' }, clock: { source: 'rehearsal', label: 'x', offset: 0, unc: 0 }, site: site2, target: tg, camera: cam, telescope: {} }))).hdus[0];
+      const d = Float32Array.from(img, (v, i) => (v - bias[i] - 0.02 * EXP) / flat[i]);
+      if (!red) red = createReducer({ stars: chooseStars(d, W, H).stars, target: tg, site: site2, timeAt: 'start', psf: 'gaussian', optimal: true });
+      red.add({ data: d, width: W, height: H, header: f.header, comments: f.comments, name: 'f' + k });
+    }
+    const M = red.result().M, o = optimise(M, { fit: { gain: 1 }, psf: true, weighted: true, fitter: null }), L = o.lc;
+    const idx = []; for (let i = 0; i < L.time.length; i++) if ((!L.keep || L.keep[i]) && Number.isFinite(L.norm[i]) && Number.isFinite(L.fwhm[i])) idx.push(i);
+    const tb = idx.reduce((a, i) => a + L.time[i], 0) / idx.length, fw0 = idx.reduce((a, i) => a + L.fwhm[i], 0) / idx.length;
+    const X = idx.map((i) => [1, L.time[i] - tb, L.airmass[i] - 1, L.fwhm[i] - fw0, -(1 - pf(L.time[i]))]), y = idx.map((i) => L.norm[i]), K = 5;
+    const G = Array.from({ length: K }, () => new Float64Array(K)), r = new Float64Array(K);
+    X.forEach((row, n) => { for (let a = 0; a < K; a++) { r[a] += row[a] * y[n]; for (let b = 0; b < K; b++) G[a][b] += row[a] * row[b]; } });
+    const A = G.map((row, i) => [...row, ...Array.from({ length: K }, (_, j) => (i === j ? 1 : 0))]);
+    for (let a = 0; a < K; a++) { const pv = A[a][a]; for (let q = 0; q < 2 * K; q++) A[a][q] /= pv; for (let b = 0; b < K; b++) if (b !== a) { const f2 = A[b][a]; for (let q = 0; q < 2 * K; q++) A[b][q] -= f2 * A[a][q]; } }
+    const inv = A.map((row) => row.slice(K)), c = inv.map((row) => row.reduce((a, v, j) => a + v * r[j], 0));
+    const res = X.map((row, n) => y[n] - row.reduce((a, v, j) => a + v * c[j], 0)), sd = Math.sqrt(res.reduce((a, v) => a + v * v, 0) / (res.length - K));
+    const scale = c[4] / c[0], err = sd * Math.sqrt(inv[4][4]) / c[0];
+    check(`WASP-121 b rehearsal, seed ${seed}: the depth recovered (flats, chooseStars, FWHM in the baseline)`, Math.abs(scale - 1) < 3 * err, `${scale.toFixed(3)} ± ${err.toFixed(3)} × the model's ${(100 * (1 - pf(pl.tmid))).toFixed(2)} %, ${idx.length} frames`);
+  }
 }
 
 // the virtual clock

@@ -102,6 +102,14 @@ The **telemetry** strips show what the reduction measured for every frame:
 
 For the simulator, the true pointing is drawn as orange dashes.
 
+## Getting the depth right
+
+A rehearsal of a WASP-121 b transit came out 5 % shallow; the causes are in the Validation notes. In short:
+
+- **Take flats.** Stars drift across the vignetting, and without flats they change brightness against each other. Run says so when a sequence has none.
+- **Let Run choose the comparison stars.** `chooseStars` takes isolated, unsaturated stars of similar brightness with room for the sky annulus. The log says when it had to relax a test, and when the target has a neighbour.
+- **Detrend against FWHM in Analyze.** The seeing follows the airmass, and so the transit. Run hands over xc, yc, sky, FWHM and airmass as detrending columns.
+
 ## What has not been checked
 
 - No real camera has been run. The ZWO backend was tested against a fake SDK that mimics `zwoasi`'s calls. The first run on a real ASI camera is yours: frame times, ImageBytes speed and the cooler go into the Validation notes.

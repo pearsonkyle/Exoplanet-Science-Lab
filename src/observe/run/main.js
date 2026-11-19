@@ -14,8 +14,8 @@ import { alpacaCamera, simCamera } from './cameras.js';
 import { makeSequence, validateSequence, nextAction, advance, startState, resume, stop, sequenceSummary, envAt } from '../../core/sequence.js';
 import { frameHeader } from '../../core/fitsheader.js';
 import { encodeFits, parseFits } from '../../core/fits.js';
-import { createReducer } from '../../core/reduce.js';
-import { detectSources, optimise, medianOf } from '../../core/photometry.js';
+import { createReducer, chooseStars as pickStars } from '../../core/reduce.js';
+import { optimise, medianOf } from '../../core/photometry.js';
 import { makeZip } from '../../core/zip.js';
 import { REHEARSAL_PLANETS, nextObservableTransit, virtualClock, fluxAtUtc, t14 as transitDuration } from '../../core/rehearsal.js';
 import { fromPlanEvent } from '../../core/sequence.js';
@@ -93,7 +93,7 @@ function simFor(seq) {
   return simCamera({ width: 240, height: 180, depth: 0.012, site: seq?.site, target: seq?.target, now: nowMs, speed: VC ? VC.speed : 1, clockInfo: VC ? vclockInfo : null,
     lightCurve: real ? fluxAtUtc({ ...pl, ra: seq.target.ra, dec: seq.target.dec }) : null,
     tmid: ev ? ev.mid : w ? (w.start + w.end) / 2 : null, duration: ev ? (ev.egress - ev.ingress) / 3600e3 : w ? (w.end - w.start) / 7200e3 : 2,
-    t0: w ? w.start : null, tracking: $('r-tracking').value,
+    t0: w ? w.start : null, tracking: $('r-tracking').value, clear: 30,
     // ADU/s of the target: 4000 at V = 11 (a 20-40 cm telescope); short test frames get a bright target so the transit shows
     flux: seq && seq.exposure.duration < 10 && !real ? 40000 : 4000 * 10 ** (-0.4 * (vmag - 11)) });
 }
@@ -129,6 +129,7 @@ function readForm(quiet = false) {
     });
     const sm = sequenceSummary(s), now = nowMs(), env = envAt(s, s.window.start), past = s.window.end < now && !R.rehearse;
     $('r-summary').textContent = `${sm.hours.toFixed(2)} h window: about ${sm.lights} light frames of ${s.exposure.duration} s, ${s.calibration.bias} bias, ${s.calibration.darks} darks, ${s.calibration.flats} flats (${sm.calibrationMinutes.toFixed(0)} min). At the start the target is at ${env.alt.toFixed(0)}° and the Sun at ${env.sun.toFixed(0)}°.` +
+      (s.calibration.flats ? '' : ' No flats: stars drifting across the vignetting change brightness against each other; take flats (a panel or the twilight sky) or detrend against the centroid in Analyze.') +
       (past ? ` This window ended ${new Date(s.window.end).toISOString().slice(0, 10)}: Start would end at once (choose a later night in Plan, or rehearse it).` : '');
     $('r-summary').className = past ? 'hint warn' : 'hint';
     return s;
@@ -324,17 +325,12 @@ function calibrate(d, M) {
   if (ok(M.flat)) for (let i = 0; i < n; i++) d[i] = M.flat[i] > 0.05 ? d[i] / M.flat[i] : NaN;
 }
 
-// the target: the star nearest the centre of the field (where the pointing puts it); comparisons: the next brightest unsaturated stars of similar flux
+// the target and comparison stars: src/core/reduce.js chooseStars (isolated, unsaturated, room for the sky annulus)
 function chooseStars(data, w, h) {
-  const { sources } = detectSources(data, w, h, { max: 40, saturation: (R.props.maxAdu || 65535) * 0.8 });
-  if (!sources.length) return null;
-  const cx = (w - 1) / 2, cy = (h - 1) / 2, dist = (s) => Math.hypot(s.x - cx, s.y - cy);
-  // the pointing puts the target at the centre: the nearest star there that is not a faint field star
-  const fmax = Math.max(...sources.map((s) => s.flux)), bright = sources.filter((s) => s.flux > 0.1 * fmax);
-  const tgt = (bright.length ? bright : sources).slice().sort((a, b) => dist(a) - dist(b))[0];
-  const comps = sources.filter((s) => s !== tgt && s.flux > 0.25 * tgt.flux && s.flux < 4 * tgt.flux && s.x > 12 && s.y > 12 && s.x < w - 12 && s.y < h - 12 && Math.hypot(s.x - tgt.x, s.y - tgt.y) > 15)
-    .sort((a, b) => Math.abs(Math.log(a.flux / tgt.flux)) - Math.abs(Math.log(b.flux / tgt.flux))).slice(0, 5);
-  return [tgt, ...comps].map((s) => ({ x: s.x, y: s.y }));
+  const c = pickStars(data, w, h, { maxAdu: R.props.maxAdu || 65535 });
+  if (!c) return null;
+  for (const wn of c.warnings) log(wn, 'warn');
+  return c.stars;
 }
 
 // ------------------------------------------------------------------------------------------------ drawing
@@ -457,7 +453,8 @@ function bestCurve() {
   const opt = optimise(M, { fit: { gain: R.props.egain || 1 }, psf: true, weighted: true, fitter: null });
   const lc = opt.lc, row = opt.tried[opt.best];
   const keep = []; for (let i = 0; i < lc.time.length; i++) if ((!lc.keep || lc.keep[i]) && Number.isFinite(lc.norm[i]) && Number.isFinite(lc.time[i])) keep.push(i);
-  const am = M.airmass, text = ['BJD_TDB,flux,flux_err,airmass'].concat(keep.map((i) => `${lc.time[i].toFixed(7)},${lc.norm[i].toFixed(7)},${(Number.isFinite(lc.normErr?.[i]) ? lc.normErr[i] : lc.err[i]).toFixed(7)},${Number.isFinite(am[i]) ? am[i].toFixed(5) : ''}`)).join('\n') + '\n';
+  const am = M.airmass, f = (v, d) => (Number.isFinite(v) ? v.toFixed(d) : '');
+  const text = ['BJD_TDB,flux,flux_err,airmass,xc,yc,sky,fwhm'].concat(keep.map((i) => `${lc.time[i].toFixed(7)},${lc.norm[i].toFixed(7)},${(Number.isFinite(lc.normErr?.[i]) ? lc.normErr[i] : lc.err[i]).toFixed(7)},${f(am[i], 5)},${f(lc.x?.[i], 3)},${f(lc.y?.[i], 3)},${f(lc.background?.[i], 3)},${f(lc.fwhm?.[i], 3)}`)).join('\n') + '\n';
   return { res, opt, lc, row, keep, text };
 }
 async function finish() {
@@ -481,7 +478,11 @@ $('r-analyze').addEventListener('click', () => {
   const b = R.final && !R.running ? R.final : bestCurve(), seq = R.seq, ex = seq.exposure.duration;
   const hand = { kind: 'lightcurve', name: `${seq.target.name} ${new Date(seq.window.start).toISOString().slice(0, 10)}`, text: b.text, source: 'run', version: VERSION, exptime: ex, exptimeDays: ex / 86400,
     target: seq.target.name, ra: seq.target.ra, dec: seq.target.dec, timeSystem: 'BJD_TDB', filter: seq.exposure.filter || null, planet: seq.planet || null,
-    time: b.keep.map((i) => b.lc.time[i]), columns: {}, detrend: null, comparison: null };
+    // the columns Analyze can detrend against, as from the Photometry page: centroid, sky, FWHM, airmass (2026-11-19:
+    // without FWHM in the baseline a simulated WASP-121 b transit came out 5-25 % shallow, the seeing following the airmass)
+    time: b.keep.map((i) => b.lc.time[i]), columns: Object.fromEntries([['xc', b.lc.x], ['yc', b.lc.y], ['sky', b.lc.background], ['fwhm', b.lc.fwhm], ['airmass', b.lc.airmass]]
+      .filter(([, a]) => a && b.keep.some((i) => Number.isFinite(a[i]))).map(([k, a]) => [k, b.keep.map((i) => (Number.isFinite(a[i]) ? +a[i].toPrecision(9) : null))])),
+    detrend: null, comparison: null };
   try { localStorage.setItem('esl.handoff', JSON.stringify(hand)); } catch { status('Could not hand the light curve over (storage full): save the CSV and open it in Analyze.', 'err'); return; }
   location.href = new URL('analyze/?handoff=1', siteRoot()).href;
 });

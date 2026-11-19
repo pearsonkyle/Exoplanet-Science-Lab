@@ -879,7 +879,25 @@ In the browser, Run drove `python -m esl.bridge --simulate` over Alpaca. The 55 
 - **Simulated night.** 256 frames of a 1.2 % injected transit, calibrated with bias, dark and flat, gave 1.01 ± 0.10 % (1.9σ).
 - **Poor tracking.** A simulated mount with walk, periodic error and 9 px jumps was followed to 0.28 px median, 0.82 px worst.
 - **Rehearsal.** A rehearsal of the 2026-12-01 HAT-P-32 b transit (60× speed, 62 s frames, "average" tracking, 279 light frames) gave a light curve whose depth, fitted with the predicted shape, is 1.007 × the model's 2.68 %, at 3.50 ppt per frame. Its measured track followed the simulated pointing to 0.02 px.
-- **Rehearsal from Plan.** A WASP-121 b transit from Las Campanas (2026-01-19), handed over by Plan's "Observe this event" and rehearsed at 120×, paused once at the meridian with the rehearsal clock stopped. It gave 0.951 × the model's 1.81 % depth (2.15 ppt per frame). The 5 % shortfall is not explained yet: dilution by a simulated field star inside the 6.2 px aperture is the first suspect.
+- **Rehearsal from Plan.** A WASP-121 b transit from Las Campanas (2026-01-19), handed over by Plan's "Observe this event" and rehearsed at 120×, paused once at the meridian with the rehearsal clock stopped. It gave 0.951 × the model's 1.81 % depth (2.15 ppt per frame).
+
+**Why that rehearsal came out shallow (investigated 2026-11-19).** The night was reproduced in Node with the Run page's settings, and the simulated star field varied by seed (7 to 22). The depth relative to the model was fitted with a baseline (time, airmass, and FWHM where said), with its white-noise error. Four causes were found:
+
+1. **Run chose bad comparison stars** (a bug, fixed).
+   - **What went wrong.** It took any star at least 15 px from the target. That included pairs 2 FWHM apart, stars whose sky annulus ran off the frame (NaN fluxes), and stars at 6–17 % of the target's brightness. A neighbour's light moves in and out of the aperture and the annulus as the seeing changes, and the seeing follows the airmass, which is lowest near mid-transit.
+   - **Worst cases.** Dropping one crowded pair took seed 8 from 0.30 to 1.05.
+   - **The fix.** `chooseStars` in `src/core/reduce.js` takes stars that are isolated out to the largest sky annulus, have room for that annulus, are unsaturated and are at least a quarter as bright as the target. It warns when it has to relax a test and when the target itself has a neighbour. It is checked on a constructed field in `test/reduce.test.mjs`.
+2. **The simulator put field stars on top of the target.** Most seeds had stars 6–14 px from it at 6–33 % of its flux, an invented blend that dilutes the transit. Rehearsals now keep 30 px around the target clear (`clear` in `src/core/simsky.js`): a real target's neighbours are not simulated anyway.
+3. **No FWHM in the baseline.** Run handed Analyze the light curve without detrending columns. It now sends xc, yc, sky, FWHM and airmass, as Photometry does.
+   - Seed 7: 0.74 → 0.98 with FWHM added.
+   - Seed 11: 0.42 → 1.03.
+4. **No flats.** The sequence from Plan takes no flats (they need a panel or the twilight sky). Stars carried across the uncorrected vignetting by drift and the tracking errors change brightness against each other.
+   - With flats, the spread over nine seeds fell from ±0.14 to ±0.08.
+   - Run's summary now says when a sequence has no flats.
+
+**After the fixes**, with flats and FWHM in the baseline, the nine seeds give 0.82–1.06, mean 0.975 ± 0.026, against white-noise errors of about ±0.045. A few-percent residual remains and is **not explained**. The residuals are slightly red (the mount's 8-minute periodic error, the seeing cycle), so the white-noise errors are too small by a factor of about 1.7.
+
+`test/rehearsal.test.mjs` runs that night with the fixed pipeline: seed 8 gives 1.109 ± 0.055 and seed 12 gives 1.020 ± 0.061, both within 3σ. The HAT-P-32 b rehearsal (1.007, flats taken) was not affected.
 
 **Not run.** No real camera, mount, filter wheel or USB GPS has been connected. No transit fit in Analyze has been run on a Run light curve; the hand-off to Analyze was checked, not the fit. Plate solving inside Run is not done.
 
