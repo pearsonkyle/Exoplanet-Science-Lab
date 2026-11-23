@@ -31,6 +31,7 @@ import { weightedQuantiles, makeRng } from './stats.js';
 import { rmsVsBin } from './psd.js';
 import { C } from './derive.js';
 import { TELESCOPES, instrumentChannels, LD_TABLE_MAX_NM } from './missionbands.js';
+import { resampleFlux } from './stellarspec.js';
 
 const MJD0 = 2400000.5;
 const median = (a) => { const b = Float64Array.from(a).filter(Number.isFinite).sort(); const n = b.length; return n ? (n % 2 ? b[(n - 1) / 2] : 0.5 * (b[n / 2 - 1] + b[n / 2])) : NaN; };
@@ -713,10 +714,35 @@ const H_PLANCK = 6.62607015e-34, C_LIGHT = 299792458, PC = 3.0856775814913673e16
  * (pi B_lambda is the surface flux; dividing by the photon energy h c / lambda gives photons). Simpson's rule, 400 intervals.
  *   { teff [K], rstar [R Sun], distance [pc] }
  */
-export function photonRate({ teff, rstar, distance }, lo, hi) {
+export function photonRate({ teff, rstar, distance, spectrum = null }, lo, hi) {
+  // a model spectrum when one is given ({ edges, flux } of src/core/stellarspec.js: W m^-2 micron^-1 at the surface): an M
+  // dwarf is far from a blackbody in the optical. Photons = flux x lambda / (h c), summed over 24 steps of the channel
+  if (spectrum) {
+    const n = 24, e = Float64Array.from({ length: n + 1 }, (_, i) => lo + ((hi - lo) * i) / n), f = resampleFlux(spectrum, e, teff); let s = 0;
+    for (let i = 0; i < n; i++) s += (f[i] * (e[i + 1] - e[i]) * 0.5 * (e[i] + e[i + 1]) * 1e-6) / (H_PLANCK * C_LIGHT);
+    return ((rstar * C.Rsun) / (distance * PC)) ** 2 * s;
+  }
   const a = lo * 1e-6, b = hi * 1e-6, n = 400, h = (b - a) / n, f = (l) => (2 * C_LIGHT) / (l ** 4 * Math.expm1((H_PLANCK * C_LIGHT) / (l * K_B * teff)));
   let s = f(a) + f(b); for (let i = 1; i < n; i++) s += (i % 2 ? 4 : 2) * f(a + i * h);
   return Math.PI * ((rstar * C.Rsun) / (distance * PC)) ** 2 * (s * h) / 3;
+}
+
+/**
+ * Noise of a telescope's channels on a star, as ArielRad writes it (Mugnai et al. 2020, eq. 12, 17, 22):
+ *   relative noise in one hour:  sigma_1h^2 = (1 + margin) / N_1h + gain^2      (N: detected photons in an hour)
+ *   on a transit or eclipse depth from one observation of (1 + out) transit durations, `out` of them outside:
+ *     sigma_depth^2 = sigma_1h^2 (1 + 1 / out) / T14[hr] + floor^2
+ * telescope: an entry of TELESCOPES (area, pce or throughput, margin, gainPpmSqrtHr, noiseFloorPpm); star: { teff, rstar,
+ * distance, spectrum? }; channels: [{ lo, hi, band }]. No detector read noise, dark current or pointing jitter: at
+ * the red edge of AIRS-Ch1 and for faint stars ArielRad's totals are higher (test/arielnoise.test.mjs has the numbers).
+ */
+export function hourlyNoise(telescope, star, channels) {
+  const tel = typeof telescope === 'string' ? TELESCOPES[telescope] : telescope, gain = (tel.gainPpmSqrtHr || 0) * 1e-6;
+  return channels.map((ch) => { const eff = tel.pce && tel.pce[ch.band] != null ? tel.pce[ch.band] : tel.throughput, n = photonRate(star, ch.lo, ch.hi) * tel.area * eff * 3600; return { photon: 1 / Math.sqrt(n), total: Math.sqrt((1 + (tel.margin || 0)) / n + gain * gain) }; });
+}
+export function depthNoise(telescope, star, channels, t14Hr, { out = 1.5 } = {}) {
+  const tel = typeof telescope === 'string' ? TELESCOPES[telescope] : telescope, floor = (tel.noiseFloorPpm || 0) * 1e-6;
+  return hourlyNoise(tel, star, channels).map((x) => Math.sqrt((x.total * x.total * (1 + 1 / out)) / t14Hr + floor * floor));
 }
 
 /**
@@ -743,7 +769,8 @@ export function toySpectrum(wl, { depth0, slope = 0, wl0 = 1, features = [] }) {
  * can reach. dt is the cadence and t_exp = dt * duty.
  *
  *   o = { system: { rprs, ars, inc, per, tmid, ecc, omega, fpfs? }, star: { teff, rstar, distance, logg, feh },
- *         telescope: 'Ariel' | 'JWST' | { area, throughput, noiseFloorPpm }, area, throughput, noiseFloorPpm, excess (overrides),
+ *         telescope: 'Ariel' | 'JWST' | { area, throughput, noiseFloorPpm, pce: { band: efficiency }, margin, gainPpmSqrtHr }, area, throughput, noiseFloorPpm, excess, margin, gainPpmSqrtHr (overrides),
+ *         star.spectrum: { edges, flux } of stellarFlux (src/core/stellarspec.js) in place of a blackbody,
  *         channels: [{ lo, hi, wl, name }] (default: instrumentChannels of the telescope), bands, simR,
  *         kind: 'transit' | 'eclipse', depth: (wl) => depth or a toySpectrum description (default: flat at rprs^2 or fpfs rprs^2),
  *         cadence [s] (60), duty (1), baselineHr (out-of-transit time each side, default one T14), slopePpmPerHr (0),
@@ -753,10 +780,27 @@ export function toySpectrum(wl, { depth0, slope = 0, wl0 = 1, features = [] }) {
  * Returns { cube (columns are the channels, with lo / hi), truth: [{ wl, lo, hi, depth, rprs or fpfs, sigma (per point),
  *           electrons, ld }], inputs (everything that went in, with units), t14 }.
  */
+/**
+ * A depth function for simulateSpectroscopy from a tabulated spectrum (for example the Atmosphere page's model):
+ * the mean of the table's points inside a channel, or, for a channel narrower than the table's spacing, the value
+ * interpolated linearly in log wavelength at its centre. Outside the table the nearest end value is used.
+ *   table: { wl: [micron, ascending], depth: [] }
+ */
+export function tabulatedDepth(table) {
+  const { wl, depth } = table, n = wl.length;
+  const at = (w) => { if (w <= wl[0]) return depth[0]; if (w >= wl[n - 1]) return depth[n - 1]; let i = 0; while (wl[i + 1] < w) i++; const f = Math.log(w / wl[i]) / Math.log(wl[i + 1] / wl[i]); return depth[i] + f * (depth[i + 1] - depth[i]); };
+  return (w, ch) => {
+    if (ch && ch.hi > ch.lo) { let s = 0, k = 0; for (let i = 0; i < n; i++) if (wl[i] >= ch.lo && wl[i] <= ch.hi) { s += depth[i]; k++; } if (k >= 2) return s / k; }
+    return at(w);
+  };
+}
+
 export function simulateSpectroscopy(o) {
   const tel = typeof o.telescope === 'string' ? TELESCOPES[o.telescope] : (o.telescope || TELESCOPES.Ariel);
   if (!tel) throw new Error('Unknown telescope: ' + o.telescope);
   const area = o.area ?? tel.area, thr = o.throughput ?? tel.throughput, floor = (o.noiseFloorPpm ?? tel.noiseFloorPpm ?? 0) * 1e-6, excess = o.excess ?? 0;
+  // per-channel efficiency, a margin on the photon variance and gain noise, where the telescope's entry has them (Ariel, after ArielRad)
+  const pce = o.throughput == null ? tel.pce || null : null, margin = o.margin ?? tel.margin ?? 0, gain = (o.gainPpmSqrtHr ?? tel.gainPpmSqrtHr ?? 0) * 1e-6;
   const channels = o.channels || instrumentChannels(tel, o.bands, o.simR || {}), kind = o.kind || 'transit', sys = o.system, star = o.star;
   if (!(star.distance > 0)) throw new Error('The simulator needs the distance of the star (pc) to estimate photon noise.');
   const d = derived(sys), t14 = d.t14, cad = (o.cadence ?? 60) / 86400, duty = o.duty ?? 1;
@@ -768,9 +812,10 @@ export function simulateSpectroscopy(o) {
   const depthOf = typeof o.depth === 'function' ? o.depth : o.depth ? (wl) => toySpectrum(wl, o.depth) : () => (kind === 'eclipse' ? (sys.fpfs ?? 1e-3) * sys.rprs * sys.rprs : sys.rprs * sys.rprs);
   const ns = autoSupersample(cad, sys), slope = (o.slopePpmPerHr || 0) * 1e-6 * 24;
   channels.forEach((ch, j) => {
-    const depth = depthOf(ch.wl), ld = o.ldFor ? o.ldFor(ch.lo, ch.hi) : { law: 'quadratic', coeffs: [0.1, 0.1] };
-    const Ne = photonRate(star, ch.lo, ch.hi) * area * thr * cad * 86400 * duty;
-    const sigma = Math.sqrt((1 + excess) ** 2 / Ne + floor * floor * (t14 / cad));
+    const depth = depthOf(ch.wl, ch), ld = o.ldFor ? o.ldFor(ch.lo, ch.hi) : { law: 'quadratic', coeffs: [0.1, 0.1] };
+    const eff = pce && pce[ch.band] != null ? pce[ch.band] : thr, Ne = photonRate(star, ch.lo, ch.hi) * area * eff * cad * 86400 * duty;
+    // per exposure: photon noise with its margin and any excess factor, gain noise (given per sqrt hour), and the floor spread over the transit
+    const sigma = Math.sqrt(((1 + excess) ** 2 * (1 + margin)) / Ne + (gain * gain) / (cad * 24) + floor * floor * (t14 / cad));
     const tp = { rprs: kind === 'eclipse' ? sys.rprs : Math.sqrt(depth), ars: sys.ars, inc: sys.inc, per: sys.per, tmid: sys.tmid, ecc: sys.ecc || 0, omega: sys.omega || 0, ldLaw: ld.law, ld: ld.coeffs };
     const fn = kind === 'eclipse' ? makeEclipse({ ...tp, fpfs: depth / (sys.rprs * sys.rprs) }) : makeTransit(tp);
     for (let i = 0; i < nT; i++) {
@@ -782,7 +827,7 @@ export function simulateSpectroscopy(o) {
   });
   const cube = { time, wave: Float64Array.from(channels, (c) => c.wl), lo: Float64Array.from(channels, (c) => c.lo), hi: Float64Array.from(channels, (c) => c.hi), flux, err, bad: new Uint8Array(nT * nW), nT, nW, exptime: cad,
     meta: { source: 'simulation', telescope: tel.name || 'custom', timeSystem: 'BJD_TDB', simulated: true, kind } };
-  return { cube, truth, t14, inputs: { telescope: tel.name || 'custom', area_m2: area, throughput: thr, noise_floor_ppm: floor * 1e6, excess, cadence_s: cad * 86400, duty, kind, teff_K: star.teff, rstar_Rsun: star.rstar, distance_pc: star.distance, t14_d: t14, seed: o.seed ?? 1, slope_ppm_per_hr: o.slopePpmPerHr || 0 } };
+  return { cube, truth, t14, inputs: { telescope: tel.name || 'custom', area_m2: area, throughput: pce ? 'per channel' : thr, photon_variance_margin: margin, gain_noise_ppm_sqrt_hr: gain * 1e6, star_spectrum: star.spectrum ? 'model atmosphere' : 'blackbody', noise_floor_ppm: floor * 1e6, excess, cadence_s: cad * 86400, duty, kind, teff_K: star.teff, rstar_Rsun: star.rstar, distance_pc: star.distance, t14_d: t14, seed: o.seed ?? 1, slope_ppm_per_hr: o.slopePpmPerHr || 0 } };
 }
 
 /** Time from mid-transit to the next mid-eclipse (days): half a period for a circular orbit, shifted by about (2 P / pi) e cos(omega) otherwise. */

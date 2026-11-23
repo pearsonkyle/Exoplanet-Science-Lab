@@ -20,6 +20,12 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprot
 import { createTools } from '../src/assistant/tools.js';
 import { createDocApi, blankSession } from '../src/assistant/docApi.js';
 import { describeText } from '../src/assistant/ops.js';
+import { runAtmosphere, tablesNeeded, tablesFrom, worlds, retrieveAtmosphere, retrievalNeeds } from '../src/core/atmoapi.js';
+import { loadMixKernel } from '../src/core/opacity.js';
+import { parseStellar } from '../src/core/stellarspec.js';
+import { fitSed } from '../src/core/sed.js';
+import { matchSpectrum } from '../src/core/specmatch.js';
+import { PASSBANDS } from '../src/core/passbands.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url)), PUBLIC = resolve(HERE, '../public'), REPO = resolve(HERE, '..');
 const log = (...a) => process.stderr.write('[esl-mcp] ' + a.join(' ') + '\n');
@@ -83,6 +89,113 @@ function workspaceStore(files) {
   };
 }
 
+// ---- the atmosphere model: a tool of this server alone (it needs the opacity tables on disk, which the page's assistant fetches differently)
+const ATMOSPHERE_TOOL = {
+  name: 'atmosphere_spectrum', readOnly: false,
+  description: `Compute the transmission and emission spectrum of a model atmosphere (the forward model of the Atmosphere page; independent of the session). Start from a preset world (${worlds().map((w) => w.name).join('; ')}) and/or give a model or changes to it: planet {mplanet [M Jup], rplanet [R Jup], pRef [bar]}, star {rstar, teff, ars}, tp {kind: "isothermal"|"guillot"|"consistent" (temperatures from the gases; teq, tint, f)}, vmr {H2O: 1e-3, ...}, chemistry {mh, co} (chemical equilibrium), condensation {rainout: true}, cloudTop [bar], haze {factor, slope}, cloud {top, base, tau, radius, material: "tholin"}, bulk "N2"|"CO2". The spectrum is written to a CSV file in the workspace (save_as); the result describes it: range, the largest and smallest transit depth, clouds, temperatures at a few pressures, and whether a self-consistent profile settled. Report those numbers as returned.`,
+  parameters: { type: 'object', properties: {
+    world: { type: 'string', description: 'A preset world to start from (optional).' },
+    model: { type: 'object', description: 'A model description, or changes to the world\'s (merged one level deep).' },
+    wl_min: { type: 'number', description: 'Shortest wavelength [micron] (default 0.3).' }, wl_max: { type: 'number', description: 'Longest wavelength [micron] (default 50).' },
+    R: { type: 'number', description: 'Resolving power to bin the spectrum to (default 100).' },
+    save_as: { type: 'string', description: 'CSV file name in the workspace (default atmosphere.csv).' } } },
+};
+const atmo = { tables: { lines: [], cia: [] }, kernel: undefined };
+async function atmosphereSpectrum(args, files) {
+  const req = { world: args.world, model: args.model, wlMin: args.wl_min, wlMax: args.wl_max, R: args.R ?? 100 }, need = tablesNeeded(req), have = new Set([...atmo.tables.lines, ...atmo.tables.cia].map((t) => t.species));
+  const buf = (f) => { const b = readFileSync(resolve(PUBLIC, f)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
+  const add = tablesFrom(Object.fromEntries([...need.lines, ...need.cia].filter((n) => !have.has(n)).map((n) => [n, buf(`opacity/${n}.eslo`)])), need.chem && !atmo.tables.chem ? buf('chem/equilibrium.eslc') : null);
+  atmo.tables.lines.push(...add.lines); atmo.tables.cia.push(...add.cia); if (add.chem) atmo.tables.chem = add.chem;
+  if (atmo.kernel === undefined) { try { atmo.kernel = await loadMixKernel(readFileSync(resolve(PUBLIC, 'wasm/mix.wasm'))); } catch { atmo.kernel = null; } }
+  const r = runAtmosphere(req, atmo.tables, { kernel: atmo.kernel }), n = r.wl.length, col = (x, i) => (x ? x[i].toExponential(6) : '');
+  const csv = ['wavelength_micron,lo,hi,transit_depth,eclipse_depth_fpfs,brightness_temperature_K', ...r.wl.map((w, i) => [w.toFixed(6), r.lo[i].toFixed(6), r.hi[i].toFixed(6), col(r.depth, i), col(r.fpfs, i), r.brightness ? r.brightness[i].toFixed(2) : ''].join(','))].join('\n') + '\n';
+  const saved = await files.write(args.save_as || 'atmosphere.csv', csv), arg = (x, f) => x.reduce((b, v, i) => (f(v, x[b]) ? i : b), 0), at = (P) => { let j = 0; while (j < r.profile.p.length - 1 && r.profile.p[j] < P) j++; return j; };
+  const hi = arg(r.depth, (a, b) => a > b), lo = arg(r.depth, (a, b) => a < b), top = r.profile.p.length - 1;
+  return { written: saved, bins: n, range_micron: [+r.wl[0].toFixed(4), +r.wl[n - 1].toFixed(3)], resolving_power: req.R,
+    transit_depth_ppm: { largest: { value: +(1e6 * r.depth[hi]).toFixed(2), at_micron: +r.wl[hi].toFixed(3) }, smallest: { value: +(1e6 * r.depth[lo]).toFixed(2), at_micron: +r.wl[lo].toFixed(3) } },
+    temperatures_K: Object.fromEntries([1e-6, 1e-4, 1e-2, 1].filter((P) => P >= r.profile.p[0] && P <= r.profile.p[top]).map((P) => [`${P} bar`, +r.profile.t[at(P)].toFixed(1)])),
+    mean_molecular_weight: +r.profile.mu[top].toFixed(3), clouds: r.clouds.map((c) => ({ condensate: c.name, base_bar: c.deep ? 'below the model' : +c.base.toPrecision(3) })),
+    self_consistent_profile: r.climate ? { settled: r.climate.converged, passes: r.climate.iterations, emitted_over_absorbed: +r.climate.balance.toFixed(3) } : null,
+    gases_used: need.lines, collision_induced: need.cia, note: 'A one-dimensional model; the limits are in docs/guide/validation.md, "Atmosphere".' };
+}
+
+// ---- a retrieval: the same model fitted to spectra in workspace files (src/core/retrieval.js through atmoapi.js)
+const RETRIEVE_TOOL = {
+  name: 'atmosphere_retrieve', readOnly: false,
+  description: 'Fit a model atmosphere to measured spectra with nested sampling (an atmospheric retrieval; independent of the session). Data are CSV files in the workspace, one per spectrum, rows of numbers with header lines allowed: either "wavelength, value, error" or "wavelength, bin_low, bin_high, value, error" (wavelengths in micron); kind says what the value is: "transit" (transit depth), "eclipse" (eclipse depth Fp/Fs), "night" (the same for the night side). The model starts from a preset world and/or a model as in atmosphere_spectrum; the temperature profile must be "guillot" or "isothermal". free lists what is fitted: teq, tint, logKappaIR, logGamma (Guillot profile); t (isothermal); mh, co ([M/H] and C/O of chemical equilibrium, switched on when freed); logX_<gas> (log10 of a constant mixing ratio, e.g. logX_H2O); rplanet; logCloudTop, cloudFraction, logHaze, hazeSlope; nightDT; offset_<n> (a constant added to data set n; needs a prior). Priors are uniform, [low, high]; those not given are wide defaults, returned in the result. Takes from half a minute (four parameters, 50 points) to many minutes: each model costs 3 to 30 ms and a fit needs 2000 to 30000 models per free parameter. It stops at max_models or max_seconds; "converged": false then means the numbers are NOT a posterior: raise the budget or free fewer parameters. To compare two descriptions of the same data (with and without a gas or a cloud), run both and subtract ln Z: above 5 is strong, within 1 the data do not tell them apart. Writes the result (JSON) and the best-fit spectrum (CSV) to the workspace. Report the values exactly as returned, with their errors.',
+  parameters: { type: 'object', required: ['data', 'free'], properties: {
+    world: { type: 'string', description: 'A preset world to start from (optional).' },
+    model: { type: 'object', description: 'A model description, or changes to the world\'s (merged one level deep), as in atmosphere_spectrum.' },
+    data: { type: 'array', minItems: 1, items: { type: 'object', required: ['file', 'kind'], properties: { file: { type: 'string', description: 'CSV file in the workspace.' }, kind: { type: 'string', enum: ['transit', 'eclipse', 'night'] }, unit: { type: 'string', enum: ['fraction', 'percent', 'ppm'], description: 'Unit of the value and error columns (default fraction).' } } }, description: 'The spectra to fit.' },
+    free: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'Parameter keys to fit.' },
+    priors: { type: 'object', description: 'Key -> [low, high] (uniform). Optional except for offsets.' },
+    gases: { type: 'array', items: { type: 'string' }, description: 'Gases whose opacity to include (default: the model\'s; a freed gas is always included).' },
+    merge: { type: 'integer', description: 'Join this many opacity bins (1 to 8) for speed; default: chosen from the data\'s resolving power so that three model bins fall in one data bin. Larger is faster and less accurate.' },
+    live_points: { type: 'integer', description: 'Live points of the sampler (default 100).' },
+    max_models: { type: 'integer', description: 'Budget of forward models (default 20000).' }, max_seconds: { type: 'number', description: 'Time limit [s] (default 600).' },
+    save_as: { type: 'string', description: 'Base name of the files written (default "retrieval": retrieval.json and retrieval_best.csv).' } } },
+};
+async function atmosphereRetrieve(args, files) {
+  const scale = { fraction: 1, percent: 1e-2, ppm: 1e-6 }, data = [];
+  if (!Array.isArray(args.data) || !args.data.length) throw new Error('data: give at least one { file, kind }');
+  for (const d of args.data) {
+    const text = await files.readText(d.file), rows = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && /^[-+.\d]/.test(l)).map((l) => l.split(/[,;\s]+/).filter((x) => x !== '').map(Number));
+    if (!(d.unit === undefined || d.unit in scale)) throw new Error(`${d.file}: unit must be fraction, percent or ppm`);
+    const ok = rows.filter((x) => (x.length === 3 || x.length >= 5) && x.slice(0, 5).every(Number.isFinite)), wide = ok.length > 0 && ok.every((x) => x.length >= 5), k = scale[d.unit || 'fraction'];
+    if (ok.length < 3 || (!wide && !ok.every((x) => x.length === 3))) throw new Error(`${d.file}: needs at least 3 rows of "wavelength, value, error" or "wavelength, bin_low, bin_high, value, error" (${rows.length} rows of numbers read, ${ok.length} usable)`);
+    ok.sort((x, y) => x[0] - y[0]);
+    data.push({ name: d.file, kind: d.kind, wl: ok.map((x) => x[0]), ...(wide ? { lo: ok.map((x) => x[1]), hi: ok.map((x) => x[2]) } : {}), y: ok.map((x) => k * x[wide ? 3 : 1]), err: ok.map((x) => k * x[wide ? 4 : 2]) });
+  }
+  const req = { world: args.world, model: args.model, species: args.gases, data, free: args.free, priors: args.priors, ...(args.merge ? { merge: Math.max(1, Math.min(8, Math.round(args.merge))) } : {}), sampler: { nlive: args.live_points ?? 100, maxCalls: args.max_models ?? 20000, maxSeconds: args.max_seconds ?? 600 } };
+  const need = retrievalNeeds(req), have = new Set([...atmo.tables.lines, ...atmo.tables.cia].map((t) => t.species));
+  const buf = (f) => { const b = readFileSync(resolve(PUBLIC, f)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
+  const wantChem = (need.chem || ['mh', 'co', 'logQuench'].some((x) => (args.free || []).includes(x))) && !atmo.tables.chem;
+  const add = tablesFrom(Object.fromEntries([...need.lines, ...need.cia].filter((n) => !have.has(n)).map((n) => [n, buf(`opacity/${n}.eslo`)])), wantChem ? buf('chem/equilibrium.eslc') : null);
+  atmo.tables.lines.push(...add.lines); atmo.tables.cia.push(...add.cia); if (add.chem) atmo.tables.chem = add.chem;
+  if (atmo.kernel === undefined) { try { atmo.kernel = await loadMixKernel(readFileSync(resolve(PUBLIC, 'wasm/mix.wasm'))); } catch { atmo.kernel = null; } }
+  const r = retrieveAtmosphere(req, atmo.tables, { kernel: atmo.kernel }), base = String(args.save_as || 'retrieval').replace(/\.(json|csv)$/i, '');
+  const csv = ['data_set,kind,wavelength_micron,observed,error,best_fit_model', ...data.flatMap((d, j) => d.wl.map((w, i) => [j + 1, d.kind, w.toFixed(6), d.y[i].toExponential(6), d.err[i].toExponential(3), r.best.spectra[j][i].toExponential(6)].join(',')))].join('\n') + '\n';
+  const w1 = await files.write(base + '.json', JSON.stringify({ request: { world: args.world, model: args.model, free: args.free, data: args.data }, result: r }, null, 1)), w2 = await files.write(base + '_best.csv', csv);
+  const sig = (v) => +v.toPrecision(5), par = Object.fromEntries(r.keys.map((key) => { const q = r.summary[key]; return [key, { label: r.labels[r.keys.indexOf(key)], value: sig(q.median), plus: +(q.hi - q.median).toPrecision(2), minus: +(q.median - q.lo).toPrecision(2), best_fit: sig(q.best), prior: r.priors[key].type === 'uniform' ? [r.priors[key].a, r.priors[key].b] : r.priors[key], prior_given: !!(args.priors && args.priors[key]) }]; }));
+  return { converged: r.converged, ...(r.converged ? {} : { warning: 'NOT converged: the budget ran out before the sampler\'s stopping rule; the values below are not a posterior. Raise max_models / max_seconds or free fewer parameters.' }),
+    parameters: par, ln_Z: r.converged ? { value: +r.logZ.toFixed(2), error: +r.logZerr.toFixed(2) } : null, chi2: +r.chi2.toFixed(1), data_points: r.ndata, models_computed: r.ncalls, seconds: +r.seconds.toFixed(1), ms_per_model: +r.msPerModel.toFixed(1),
+    opacity_bins_joined: r.merge, gases_used: r.gases, collision_induced: r.cia, warnings: r.warnings, written: [w1, w2],
+    note: 'Values are the median with the 16 to 84% range. The spectra and their errors are taken as given; the limits of the model and of the retrieval are in docs/guide/validation.md, "Atmosphere" and "Retrieval".' };
+}
+
+// ---- the star: an SED fit and a spectrum match (src/core/sed.js, specmatch.js), on the stellar grid in public/stellar
+const pm = (v, d) => ({ value: +v.median.toPrecision(d), plus: +(v.hi - v.median).toPrecision(2), minus: +(v.median - v.lo).toPrecision(2) });
+const STAR_TOOLS = [{
+  name: 'star_fit', readOnly: true,
+  description: `Fit a star's spectral energy distribution: catalogue magnitudes in, effective temperature and angular diameter out, and with a parallax the radius and luminosity (independent of the session). Bands: ${Object.keys(PASSBANDS).join(', ')}. Use each catalogue's own system (Vega for Gaia, Tycho, Johnson, 2MASS, WISE, APASS B/V; AB for SDSS, PS1, APASS g/r/i, GALEX). Leave out saturated or blended bands. Magnitudes hardly constrain log g and [Fe/H]: give them when a spectrum has measured them. av_max bounds the extinction searched; use 0 for stars within about 70 pc. Models: PHOENIX, main-sequence stars from 2300 to 8000 K. Report the numbers with the errors returned.`,
+  parameters: { type: 'object', required: ['magnitudes'], properties: {
+    magnitudes: { type: 'object', description: 'Band name -> [magnitude, error], e.g. {"Gaia G": [7.521, 0.003], "2MASS J": [6.591, 0.02]}. At least three bands.' },
+    parallax: { type: 'array', items: { type: 'number' }, description: '[mas, error]' }, logg: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' }, feh: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' },
+    av_max: { type: 'number', description: 'Largest extinction A_V considered [mag] (default 0.1; 0 fixes it at zero).' } } },
+}, {
+  name: 'star_match_spectrum', readOnly: true,
+  description: 'Match a low-resolution spectrum of a star (a CSV file in the workspace: wavelength in micron, flux, and optionally its error, one row per point, header lines allowed) against the PHOENIX grid: effective temperature, log g and [Fe/H], and the angular diameter when the flux is calibrated in W m^-2 micron^-1 and degree is 0. degree > 0 fits a smooth polynomial factor with the star, for spectra whose overall slope is not calibrated. The models are sampled every 5 nm: this matches spectrophotometry (Gaia XP, SpeX prism, JWST prism), not echelle spectra line by line; a finer spectrum is binned down and the result says so.',
+  parameters: { type: 'object', required: ['file'], properties: { file: { type: 'string', description: 'CSV file in the workspace.' }, degree: { type: 'integer', description: 'Degree of the smooth factor (0 to 4; default 0: one scale factor).' },
+    logg: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' }, feh: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' } } },
+}];
+let starGrid = null;
+async function starTool(name, args, files) {
+  starGrid ??= (() => { const b = readFileSync(resolve(PUBLIC, 'stellar/phoenix.esls')); return parseStellar(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); })();
+  const priors = { ...(args.logg ? { logg: args.logg } : {}), ...(args.feh ? { feh: args.feh } : {}) };
+  if (name === 'star_fit') {
+    const obs = Object.entries(args.magnitudes || {}).map(([band, v]) => ({ band, mag: Number(v[0]), err: Number(v[1]) }));
+    const r = fitSed(starGrid, obs, { priors: { ...priors, ...(args.parallax ? { plx: args.parallax } : {}), avMax: args.av_max ?? 0.1 } }), p = r.parameters;
+    return { teff_K: pm(p.teff, 4), angular_diameter_mas: pm(p.theta_mas, 4), ...(p.rstar ? { radius_Rsun: pm(p.rstar, 4), luminosity_Lsun: pm(p.lum, 4), distance_pc: pm(p.dist_pc, 5) } : {}), bolometric_flux_W_m2: pm(p.fbol, 4), extinction_Av_mag: pm(p.av, 2), logg: pm(p.logg, 3), feh: pm(p.feh, 2), extra_scatter_mag: pm(p.scatter_mag, 2),
+      bands: r.bands.map((b) => ({ band: b.band, observed: b.mag, model: +b.model.toFixed(3), residual_mag: +b.residual.toFixed(3) })), chi2: +r.chi2.toFixed(1), converged: r.converged, warnings: r.warnings.filter((x) => !/edge of its prior|not constrained by the data/.test(x)),
+      note: `${args.logg ? '' : 'No prior on log g: its value is not a measurement. '}${args.feh ? '' : 'No prior on [Fe/H]: its value is not a measurement. '}${p.rstar ? '' : 'No parallax: no radius or luminosity. '}One model grid (PHOENIX-ACES); limits in docs/guide/validation.md, "SED fitting".` };
+  }
+  const text = await files.readText(args.file), rows = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && /^[-+.\d]/.test(l)).map((l) => l.split(/[,;\s]+/).map(Number)).filter((x) => x.length >= 2 && x.every(Number.isFinite));
+  if (rows.length < 8) throw new Error(`${args.file}: fewer than 8 rows of numbers (wavelength in micron, flux[, error])`);
+  rows.sort((a, b) => a[0] - b[0]); const hasErr = rows.every((x) => x.length >= 3 && x[2] > 0);
+  const r = matchSpectrum(starGrid, { wl: rows.map((x) => x[0]), flux: rows.map((x) => x[1]), err: hasErr ? rows.map((x) => x[2]) : null }, { degree: Math.max(0, Math.min(4, args.degree ?? 0)), priors }), p = r.parameters;
+  return { points_read: rows.length, points_fitted: r.n, range_micron: [+r.wl[0].toFixed(4), +r.wl[r.n - 1].toFixed(4)], errors: hasErr ? 'from the file' : 'none in the file: a fractional scatter was fitted', teff_K: pm(p.teff, 4), logg: pm(p.logg, 3), feh: pm(p.feh, 2), ...(p.theta_mas ? { angular_diameter_mas: pm(p.theta_mas, 4) } : {}), scatter_fraction: pm(p.scatter, 2), chi2: +r.chi2.toFixed(1), converged: r.converged, warnings: r.warnings };
+}
+
 const INSTRUCTIONS = `Exoplanet Science Lab: model and fit exoplanet transits, radial velocities and transit timing with nested sampling.
 The server holds ONE analysis (an ESL session) in memory; every tool acts on it. Typical flow:
 1. Start: lookup_planet (catalogue values and wide priors), load_example, import_session (a session file in the workspace) or new_session.
@@ -93,7 +206,8 @@ The server holds ONE analysis (an ESL session) in memory; every tool acts on it.
 5. Timing: fit_ephemeris and timing_periodogram. Files: export_file (session JSON, Markdown report, Python script, CSV), write_file.
 Keys: rprs, ars, inc, per, tmid, ecc, omega, mplanet, ld0..ld3, a2, rvlin, rvquad, jit@rv1, mstar, rstar, teff, feh; later planets carry their letter (per@c). Times are days (BJD when dated).
 Report numbers exactly as returned, each with the uncertainty it came with; never convert or compute one. For model comparison relay the "reading", "verdict" and "cautions" fields rather than interpreting ln Z yourself.
-Results that hold a table also carry it as a second text block (Markdown), ready to show as it is.`;
+Results that hold a table also carry it as a second text block (Markdown), ready to show as it is.
+Apart from the session: star_fit gives a star's temperature, angular diameter and radius from catalogue magnitudes, star_match_spectrum the same from a low-resolution spectrum file; atmosphere_spectrum computes the transmission and emission spectrum of a model atmosphere (preset worlds or your own) and writes it to the workspace; atmosphere_retrieve fits such a model to measured spectra in workspace files (a retrieval: minutes; check "converged").`;
 
 /** Build the server on a workspace folder. Returns { server, tools, api, files }. */
 export function createEslServer({ workspace, session } = {}) {
@@ -106,7 +220,7 @@ export function createEslServer({ workspace, session } = {}) {
   const tools = createTools({ api, files, fetchJson, where: 'mcp', blankSession, readSource });
   const server = new Server({ name: 'exoplanet-science-lab', version: '0.1.0' }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: tools.specs.map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters, annotations: { readOnlyHint: !!t.readOnly, destructiveHint: !!t.confirm, openWorldHint: false, title: t.name.replace(/_/g, ' ') } })),
+    tools: [...tools.specs, ATMOSPHERE_TOOL, RETRIEVE_TOOL, ...STAR_TOOLS].map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters, annotations: { readOnlyHint: !!t.readOnly, destructiveHint: !!t.confirm, openWorldHint: false, title: t.name.replace(/_/g, ' ') } })),
   }));
   server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
     const { name, arguments: args } = req.params, token = req.params._meta && req.params._meta.progressToken;
@@ -116,6 +230,18 @@ export function createEslServer({ workspace, session } = {}) {
       const fr = (api.state().sampler.fracRemain) || 0.01, done = Math.min(0.99, Math.max(0, 1 - Math.log(Math.max(p.remFrac, fr) / fr) / Math.log(1 / fr)));
       extra.sendNotification({ method: 'notifications/progress', params: { progressToken: token, progress: Math.round(done * 100), total: 100, message: `${p.variant ? p.variant + ': ' : ''}iteration ${p.it}, ${p.ncalls} likelihood calls, ln Z ${Number(p.logZ).toFixed(2)}, ${(p.elapsed || 0).toFixed(0)} s` } }).catch(() => {});
     };
+    if (STAR_TOOLS.some((t) => t.name === name)) {
+      try { return { content: [{ type: 'text', text: JSON.stringify(await starTool(name, args || {}, files)) }] }; }
+      catch (err) { return { content: [{ type: 'text', text: JSON.stringify({ error: String((err && err.message) || err) }) }], isError: true }; }
+    }
+    if (name === RETRIEVE_TOOL.name) {
+      try { return { content: [{ type: 'text', text: JSON.stringify(await atmosphereRetrieve(args || {}, files)) }] }; }
+      catch (err) { return { content: [{ type: 'text', text: JSON.stringify({ error: String((err && err.message) || err) }) }], isError: true }; }
+    }
+    if (name === ATMOSPHERE_TOOL.name) {
+      try { return { content: [{ type: 'text', text: JSON.stringify(await atmosphereSpectrum(args || {}, files)) }] }; }
+      catch (err) { return { content: [{ type: 'text', text: JSON.stringify({ error: String((err && err.message) || err) }) }], isError: true }; }
+    }
     const r = await tools.call(name, args || {}, { signal: extra.signal, onProgress });
     // the result as JSON for the model, and its table (when it has one) as Markdown the client can show verbatim
     return { content: [{ type: 'text', text: r.text }, ...(r.ok && r.table ? [{ type: 'text', text: r.table }] : [])], isError: !r.ok };

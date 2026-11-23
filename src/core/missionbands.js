@@ -50,7 +50,13 @@ export const bandsOf = (mission) => Object.entries(MISSION_BANDS).filter(([, b])
  * edit, not a value taken from a mission document. `noiseFloorPpm` likewise.
  */
 export const TELESCOPES = {
-  Ariel: { name: 'Ariel', area: 0.64, throughput: 0.3, noiseFloorPpm: 20, bands: ['Ariel VISPhot', 'Ariel FGS1', 'Ariel FGS2', 'Ariel NIRSpec', 'Ariel AIRS-Ch0', 'Ariel AIRS-Ch1'], simR: { 'Ariel NIRSpec': 15, 'Ariel AIRS-Ch0': 50, 'Ariel AIRS-Ch1': 15 } },
+  // Ariel as ArielRad models it (Mugnai et al. 2020, Exp. Astron. 50, 303): collecting area 0.63 m^2 (the 1.1 x 0.73 m
+  // ellipse); photon conversion efficiency (optics x quantum efficiency) per channel, the in-band means of their fig. 2;
+  // a margin chi = 0.4 on the photon variance; gain noise of 40 ppm sqrt(hr); a floor of 20 ppm on a whole observation.
+  // Channels at Tier 2 resolving powers (10, 50, 15: the mission's Definition Study Report, table 3-3); Tier 3 is 20, 100, 30.
+  Ariel: { name: 'Ariel', area: 0.63, throughput: 0.3, noiseFloorPpm: 20, margin: 0.4, gainPpmSqrtHr: 40,
+    pce: { 'Ariel VISPhot': 0.29, 'Ariel FGS1': 0.29, 'Ariel FGS2': 0.40, 'Ariel NIRSpec': 0.42, 'Ariel AIRS-Ch0': 0.29, 'Ariel AIRS-Ch1': 0.30 },
+    bands: ['Ariel VISPhot', 'Ariel FGS1', 'Ariel FGS2', 'Ariel NIRSpec', 'Ariel AIRS-Ch0', 'Ariel AIRS-Ch1'], simR: { 'Ariel NIRSpec': 10, 'Ariel AIRS-Ch0': 50, 'Ariel AIRS-Ch1': 15 }, tier3: { 'Ariel NIRSpec': 20, 'Ariel AIRS-Ch0': 100, 'Ariel AIRS-Ch1': 30 } },
   JWST: { name: 'JWST', area: 25.4, throughput: 0.3, noiseFloorPpm: 10, bands: ['JWST NIRSpec PRISM'], simR: { 'JWST NIRSpec PRISM': 50, 'JWST NIRSpec G395H': 100, 'JWST NIRSpec G395M': 100, 'JWST NIRISS SOSS order 1': 100, 'JWST NIRCam F322W2': 100, 'JWST NIRCam F444W': 100, 'JWST MIRI LRS': 30 } },
 };
 

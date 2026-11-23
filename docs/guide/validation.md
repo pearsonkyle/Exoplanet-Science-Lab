@@ -614,6 +614,850 @@ radial velocity along a sky axis; transit times are interpolated linearly betwee
 hot Jupiter with an outer giant stops at t = 0; RVs from the simulation are off by up to 38 m/s at HD 80606 b's
 periastron; `nbody_fitter` uses its priors only as cuts; `exomoon2.py` uses 4π for 4π² in Kepler's law.
 
+## Atmosphere: transmission and emission spectra
+
+`/analyze/atmosphere/` turns a planet, a temperature-pressure profile and a composition into a transmission and
+an emission spectrum (`src/core/rtmodel.js`). The parts:
+
+- **Structure** (`atmosphere.js`): layers uniform in log pressure, isothermal each, hydrostatic under
+  g = GM/r²; profiles: isothermal, Guillot (2010) eq. 29, Madhusudhan & Seager (2009); mixing ratios constant
+  with height, H2 and He filling the rest.
+- **Opacity** (`opacity.js`, `continuum.js`): k-tables of H2O, CO2, CO, CH4, NH3, HCN, SO2, H2S, TiO, VO, Na and K
+  from ExoMolOP (Chubb et al. 2021; line lists in `tools/opacity/README.md`), interpolated in (log P, 1/T) and
+  mixed by random overlap; H2-H2 and H2-He collision-induced absorption from HITRAN (Karman et al. 2019);
+  Rayleigh scattering by H2 (Dalgarno & Williams 1962) and He (Chan & Dalgarno 1965); a grey cloud deck; a
+  power-law haze. H- cross-sections (Gray 2005) are implemented and checked, and unused until the model carries
+  H, e- and H- abundances.
+- **Clouds and hazes** (`continuum.js`, `rtmodel.js`), each a parameter of the model: a grey opaque deck
+  (`cloudTop`); a power-law haze (`haze`: a cross-section per molecule in units of H2's Rayleigh value at 0.35 µm,
+  and a slope); the gas's own Rayleigh scattering scaled up (`rayleighFactor`, a haze of very small particles); a
+  layer of particles of one grain size between two pressures (`cloud`: optical depth at 1 µm, radius, the Q0 of
+  Kitzmann & Heng 2018, a scattering share); and a covered share of the planet (`cloudFraction`, Line & Parmentier
+  2016: the spectrum is that share of the cloudy column plus the rest of the clear one). Rayleigh scattering of
+  H2O, CO2, CO, CH4, N2, O2 and NH3 is included from their polarisabilities.
+- **Transmission** (`transmission.js`): one ray per level through spherical shells, the pressure variation inside
+  each shell integrated along the ray; no refraction.
+- **Emission** (`emission.js`): the formal solution through isothermal layers at 8 Gauss angles, plane-parallel,
+  absorption only (scattering is left out, as in petitRADTRANS without its scattering option), over a blackbody star.
+- **Colour** (`colour.js`): spectrum to CIE XYZ with the analytic colour-matching functions of Wyman, Sloan &
+  Shirley (2013), then sRGB.
+
+### Checks (`test/atmosphere.test.mjs` 33, `test/opacity.test.mjs` 21, `test/rt_reference.test.mjs` 63, `test/chemistry.test.mjs` 5, `test/escape.test.mjs` 11, `test/climate.test.mjs` 8, `test/condensation.test.mjs` 6, `test/haze.test.mjs` 8, `test/stellarspec.test.mjs` 6, `test/sed.test.mjs` 11, `test/retrieval.test.mjs` 8, `test/bundle.test.mjs` 3)
+
+References: adaptive quadrature in scipy, petitRADTRANS 3.4.0, colour-science 0.4.7, the ExoMolOP and HITRAN
+files themselves (`test/make_atmosphere_reference.py`, `test/make_rt_reference.py`, run with `.venv-rt`).
+
+| What | Result |
+| --- | --- |
+| Hydrostatic radii of a Guillot profile under g = GM/r², against quadrature | 4.9e-6 of the atmosphere's thickness with 80 layers, 3.1e-7 with 320 |
+| Transit radius, isothermal, constant opacity, against nested quadrature (7 cases, H/R up to 0.047) | 0.018, 0.004, 0.001, 0.0002 scale heights at 5, 10, 20, 40 layers per decade of pressure |
+| The closed form of Heng & Kitzmann (2017) eq. 8 against the same quadrature | within 0.036 scale heights at H/R = 0.004 (the formula is first order in H/R) |
+| Emergent flux of a grey atmosphere with a Guillot profile, against quadrature | 0.69%, 0.17%, 0.043%, 0.011% at 5, 10, 20, 40 layers per decade; 4, 8 or 16 angles make no difference at that level |
+| Eclipse depth of two blackbodies; brightness temperature | 2.3e-11 against (Rp/R★)² (e^x★ - 1)/(e^xp - 1) from the SI constants; the Planck function inverts to 2e-13 K |
+| H- cross-sections against petitRADTRANS's functions | 1.4e-7 (bound-free), 3e-14 (free-free) |
+| Blackbody chromaticities, 2500-20000 K, against the tabulated CIE 1931 observer | 0.0021 in (x, y) at worst (a just-noticeable difference is about 0.003) |
+| Limb colours of a grey star (4000, 5772, 9000 K; μ = 0.2, 0.5, 1) against quadrature with the tabulated observer | 0.0046 in a linear sRGB channel at worst |
+| Collision-induced absorption table against the HITRAN files | 1.2% at worst over 18 values |
+| The per-absorber opacity the page plots, against the extinction the spectrum uses | identical for one gas (4e-16); the mixed distribution's mean is within 0.49% rms of the sum of the parts |
+
+Clouds and hazes:
+
+| What | Result |
+| --- | --- |
+| Power-law haze (κ = 0.05 cm²/g at 0.35 µm, slope -2) against petitRADTRANS, same tables | transit 3.0 ppm rms, 6.6 at worst |
+| Rayleigh scattering × 30 against petitRADTRANS's `haze_factor` | 3.6 ppm rms, 6.8 at worst |
+| Opaque deck at 1 mbar, 120 layers / 480 layers | 22.3 ppm rms (mean +21.1) / 5.4 ppm (mean +4.7); flux 0.02% |
+| Half the planet under that deck against `cloud_fraction` | 16.1 ppm rms (half the deck's difference); 0.3 cloudy + 0.7 clear reproduced to 0.6 ppm |
+| Deck top swept from 1 to 3.2 mbar in 20 steps, 60 layers | each step lowers the depth by 22.4-23.3 ppm; never below the opaque disc at the deck (lowest: +1.9 ppm) |
+| A particle layer whose edges fall inside layers | carries the optical depth asked for to 1e-12, split by the scattering share |
+| Particle extinction, Kitzmann & Heng (2018): limits | 5x⁴/Q0 and 5x^-0.2 to 1e-7 |
+| The same against Mie theory over a log-normal size distribution (σ = 0.5), silicate-like and ice-like | within 0.66-1.48 for x ≥ 1; for x < 1 the fit is 0.03-0.55 of Mie |
+| Rayleigh cross-sections of H2O, CO2, CH4, N2, O2 against petitRADTRANS's | 0.71-1.17 of them; CO 1.82 (unresolved) |
+
+The deck is where the two codes differ in kind. Rays tangent below the deck's top are blocked. petitRADTRANS (and
+this model before an independent audit of it, below) gets that from layers made opaque, so the ring between the
+deck's level and the next one down counts as half blocked: the depth is low by half a layer's ring, and the deck
+snaps to the layer grid as its top is varied. Here a level is moved onto the deck and every ring below it counts
+in full. The difference from petitRADTRANS falls from 21 to 5 ppm when both use four times the layers, which is
+its discretisation closing on ours. The emission of a deck still depends a little on the grid (the first cloudy
+layer radiates at its own mean temperature): about 0.5% steps in eclipse depth as the top is swept.
+
+An independent audit of this code (a second reader given the files and no conclusions) found, and these were then
+fixed: the deck quantised to layers (114 ppm steps, up to 96 ppm under the bare disc); an opacity table that
+could be loaded and counted twice when a gas was ticked during a run; table errors that never reached the page;
+a silent loss of collision-induced absorption on a failed download; a crash with no table loaded; H2 or He given
+alone switching the fill gas off without a check on the sum; a particle radius of zero giving NaN; a writer that
+accepted an encoding it could not write; a placeholder DOI ("qqq") copied from ExoMol's CO2 file; and four
+comments that said what the code did not do. Found correct on reading: the hydrostatic structure, the H- and
+Rayleigh coefficients, the units of collision-induced absorption, clamping outside the tables, the sort in the
+species mixing, the table format on both sides, and the page's latest-wins sequencing.
+
+A temperature profile that follows from the gas (`src/core/climate.js`):
+
+| What | Result |
+| --- | --- |
+| The closure with constant opacities against petitRADTRANS's own Guillot function, 1e-6 to 100 bar | 2e-13 K |
+| Mean opacities and grey-equivalent depths on a grey gas, and on two opacities 100 times apart | exact (1e-15); Rosseland harmonic, Planck arithmetic; visible depth 0.47 where the arithmetic mean says 6.3 |
+| HD 209458 b, solar composition in equilibrium, H2O, CO2, CO, CH4, Na, K | settles in 6 passes; emits 1.005 of what it must; level factor c = 1.04; at 1 bar γ = 0.31 and an equivalent thermal opacity of 2.0e-3 cm²/g |
+| The same against the opacities Guillot (2010) calibrated on detailed models of that planet | γ 0.4 and 1e-2 cm²/g there: ours within a factor 1.3 and a factor 5 |
+| Its temperatures | 1262 K at 0.1 mbar, 1345 K at 10 mbar, 1636 K at 1 bar, 1907 K at 50 bar; no step back below 0.1 bar |
+| A fixed Guillot profile with those calibrated numbers typed in, same planet | emits 1.08 of what it must |
+| 30 × the metals; a 3500 K star with the same irradiation | thermal depth at 1 bar 2.5 → 6.2, 10 mbar 1345 → 1504 K; γ at 10 mbar 0.17 → 0.34 |
+| An inversion: WASP-121 b's day side (Teq 2358 K, f = 1/2) with gas-phase TiO and VO | settles in 9 passes, emits 0.998; coolest 2729 K at 22 mbar, rising to 2984 K at 1.8 mbar (255 K); γ = 1.91 at 1 mbar |
+| The same without the lines of TiO and VO | 10 passes, 1.000; a rise of 91 K, γ = 0.17 |
+| A grey deck at 1 mbar, the deck over half the planet, a particle layer | each settles; the solver's balance equals `forwardModel`'s on the returned profile to 0.002 |
+
+How the energy budget is met changed on 2026-11-20. The first version multiplied the thermal optical depth by a
+number s. That has no hold on an atmosphere with an inversion, whose hot upper layers do the emitting: on the
+ultra-hot case s wandered between 0.84 and 1.22 while the emitted flux stayed 8% too high, and the profile never
+settled. Now T⁴ of the grey solution is multiplied by one factor c, found so that the emitted flux equals the
+required one. Emission rises with c whatever the profile's shape, so inverted and ordinary profiles settle alike
+(c = 0.96 for WASP-121 b's day side, 1.03 for HD 209458 b). For WASP-121 b a retrieval of its eclipse spectrum
+gives about 2500 K rising to 2800 K between 30 and 5 mbar (Mikal-Evans et al. 2019); ours rises from 2729 to
+2984 K between 22 and 1.8 mbar: the same sense and size, from another kind of analysis, not a layer-by-layer
+comparison. Whether such inversions are real on a given planet is debated; the model produces one when the gas it
+is given absorbs starlight better than it holds heat, and removes it when TiO and VO rain out (below).
+
+What was tried and dropped on the way. Mean opacities in the grey solution: a Rosseland mean of these tables is set
+by the floor of the windows between bands (the source line wings are cut) and gave an isothermal atmosphere emitting
+half its budget; a Planck mean for the heat and a stellar mean for the light are set by saturated line cores and
+gave γ of several hundred and 6000 K at 50 bar. Not compared: a radiative-convective profile from another code
+(PICASO, HELIOS, petitCODE). The comparison with Guillot's numbers is of order, and our thermal depth at 1 bar is
+5 times smaller than his. The emitted flux is integrated over the tables' 0.3 to 50 µm only.
+
+The second audit (2026-11-20, again a reader given the files and no conclusions) found no error of units or physics
+and nine defects, fixed: the self-consistent profile ignored the grey deck and the cloud cover (a deck at 1 mbar
+left the profile unchanged while the forward model then emitted 0.61 of the budget and the page said 99%); the
+balance it reported belonged to the profile before the last update; the night side and the limb were photoionized
+like the day side (the night side now has none); the cross-section cache was keyed on the first and last pressure
+only, so a deck moving a level under an isothermal profile reused stale values (0.4 to 0.7 ppm); ionization
+asked for without the star's distance did nothing and said nothing (now an error); a temperature that is not a
+number returned a cross-section of 1e-4 m² (now refused); with patchy cloud the contribution map was mixed without
+weighting by flux; unticking "each gas alone" did not stop the curves arriving; the layer slider re-ran the whole
+model. Left as they are and stated: H- is not recomputed after photoionization changes H and e-; temperatures
+outside the tables (100 to 3400 K, 300 to 4000 K for the chemistry) are held at the edge.
+
+Condensation with rain-out (`src/core/condensation.js`, `test/condensation.test.mjs`):
+
+| What | Result |
+| --- | --- |
+| Vapour pressure of water at the triple point, the boiling point, and ice at 200 K (Murphy & Koop 2005) | 0.00%, -0.02%, +0.07% |
+| Ammonia at its triple point (NIST) | +0.6% |
+| Methane at the boiling point, the triple point (NIST), and the solid at 77 and 70 K (Armstrong et al. 1955) | -0.2%, +1.3%, +1.0%, -0.3% |
+| Condensation temperatures at 1e-4 bar against Lodders (2003, table 7): corundum, perovskite, iron, forsterite, enstatite | +0.7%, +0.7%, +0.1%, +0.2%, -0.8% |
+| A cold trap whose answer is known (100 K minimum under warmer air) | the gas above equals the smallest saturation ratio below, to 1e-12; without rain-out it returns |
+| Jupiter (166.1 K at 1 bar, dry adiabat 0.306), solar N/H and O/H | ammonia ice from 0.58 bar and water from 5.1 bar; Atreya & Wong (2005): 0.72 and 5.7 bar |
+| The same at three times solar | 0.68 and 6.4 bar; theirs 0.84 bar and "5 to 8 bar" |
+| In the model, profile from the gases: 2358 K day side, 1450 K, 900 K | TiO stays (inversion +231 K); TiO × 5e-4, no inversion; Na × 0.18 above an Na2S cloud from 0.46 bar |
+
+The coefficients (Morley et al. 2012; Visscher, Lodders & Fegley 2010; Wakeford et al. 2017; Ackerman & Marley
+2001; Buck; the NIST Antoine fit and Fray & Schmitt 2009 for methane) were each read again in the source before
+use; Fray & Schmitt's only as quoted by Marboeuf et al. (2014). Ackerman & Marley print their ammonia expression
+with the unit dyne cm⁻²; it evaluates to bar. The Jupiter cloud bases are 10 to 20% above Atreya & Wong's
+(lower pressure): their profile follows a moist adiabat and their ammonia is also taken up by NH4SH; neither is
+modelled. Not done: the chemistry is not solved again without the condensed elements (silicates would take about a
+fifth of the water's oxygen), nothing lifts condensed material back up, and no particle size or cloud thickness
+follows from it: the model says where a cloud begins, the particle layer placed there is still set by hand.
+
+Hazes of a real material, nitrogen atmospheres, Titan and Jupiter (`src/core/mie.js`, `optical.js`, `worlds.js`,
+`test/haze.test.mjs`):
+
+| What | Result |
+| --- | --- |
+| Mie efficiencies against scipy's spherical Bessel functions, 30 cases, x = 0.05 to 30, m from 1.33 to 2 + 1i | Qext, Qsca within 3.9e-8; g within 1.8e-8 |
+| Limits: Rayleigh at x = 0.01; Qext at x = 2000; no absorption without k | exact; 2.012; 0 |
+| Tholin optical constants against Khare et al. (1984) as tabulated in NASA's Optical Constants Database, 8 wavelengths | n within 0.1%, k within 17% (their stated accuracy: 3% and 30%) |
+| A particle layer of tholin: optical depth at the reference wavelength, albedo split, spread with height | exact (1e-12); 9.1% above 1 mbar for τ ∝ P^0.5, as the formula gives |
+| N2-N2, N2-CH4, N2-H2 collision-induced absorption: 14 bin means read straight from the HITRAN files | within 1.6e-4 |
+| Titan: altitude of 115 mbar and of 0.3 mbar (Huygens: 44 km and 250 km) | 46.2 km and 250 km |
+| Titan: surface gravity; methane at the surface and above the cold trap | 1.354 m/s²; 5.65% and 2.55% (measured: 1.48 ± 0.09%, Niemann et al. 2010) |
+| Titan in transit at 0.88 µm (Robinson et al. 2014: about 300 km); haze slope 0.88 to 2 µm (theirs −1.9 ± 0.2, −2.2 ± 0.2) | 302 km; −2.16 |
+| Titan's colour and brightness (visual geometric albedo 0.22) | sRGB 1.00 : 0.67 : 0.40; estimated albedo 0.31 at 0.5 to 0.6 µm |
+| Jupiter at three times solar: cloud bases; brightness temperature at 5 µm, 7.8 µm, 45 µm | 0.56 and 6.0 bar; 237 K, 138 K, 137 K |
+
+What these do and do not show. The haze on Titan has three numbers (grain radius 0.2 µm, optical depth 6 at 1 µm,
+spread τ ∝ P^0.55) and they were tuned to the first two occultation numbers in the table; the hydrostatic
+altitudes, the methane cold trap, the colour and the albedo were not tuned. The methane left above the cold trap is
+1.7 times the measured value: nitrogen dissolves in the condensate and lowers its vapour pressure, which the
+pure-methane curve does not know ("Saturation allowed" on the page, about 0.6, reproduces it). Titan's real haze is made
+of fractal aggregates of 0.05 µm monomers (Tomasko et al. 2008); spheres of 0.05 µm give a slope near −3.8, so the
+0.2 µm is an effective size. The albedo is a two-stream estimate, 40% above the measured visual value. The profile
+between Huygens's published points was read off, not taken from the data file. Jupiter's 45 µm brightness (137 K)
+is above its effective temperature (124 K) and the albedo contrast in the 0.89 µm methane band is weaker than the
+real one (0.50 to 0.30 against about 0.5 to 0.1). The opacity tables stop at 100 K (methane) and the nitrogen
+collision-induced absorption at 70 K and 400 K; outside, the edge value is used. Not compared: a Cassini image, a
+VIMS or CIRS spectrum, or any radiative-transfer code on Titan.
+
+Stellar spectra (`src/core/stellarspec.js`, `tools/stellar/build_spectra.py`, `test/stellarspec.test.mjs`):
+
+| What | Result |
+| --- | --- |
+| The Sun from the grid (5772 K, log g 4.44) at 1 au: total irradiance | 1346 W/m² (measured 1361) |
+| Its mean over 0.5 to 0.6 µm and over 1.5 to 1.7 µm | 1.808 and 0.245 W/m²/nm (ASTM E490: about 1.84 and 0.245) |
+| Flux of each of the 519 models, with its infrared tail, over σT⁴ | 0.964 to 1.047 |
+| A model left out and interpolated from its neighbours 100 K either side, 0.4 to 2.5 µm | within 4.1% in every bin (worst at 4000 K) |
+| Synthetic photometry of a flat band | the photon-weighted mean, exactly |
+| Eclipse depth over a 5400 K model star against the same over a blackbody | 0.80 at 1.6 µm, 1.12 at 4.5 µm, 1.34 at 30 µm |
+
+The fluxes are the PHOENIX-ACES specific intensities of the limb darkening table (Husser et al. 2013, 5 nm sampling,
+78 angles) integrated over the disc. The two ASTM values are quoted from memory of the standard's table, not read
+from it for this test. Beyond 5.5 µm a blackbody of the star's temperature is joined on, scaled to the model in the
+3.6 to 4.2 µm window and lowered as (λ / 4 µm)^−0.08 (see SED fitting below). The atmosphere page now divides the planet's flux by this model star
+unless "blackbody" is chosen, which changes eclipse depths by the factors in the last row; transit depths are not
+affected. The fit built on this grid is the next part.
+
+SED fitting (`src/core/sed.js`, `extinction.js`, `passbands.js`; the Star page; `test/sed.test.mjs` 7 checks):
+
+| What | Result |
+| --- | --- |
+| Fitzpatrick (1999) extinction against the dust_extinction package, 40 wavelengths, R_V 2.5, 3.1, 4.5 | within 1.07% below 2.5 µm; 0.004 in A/A_V everywhere |
+| 31 passbands (thinned to 90 points): pivot wavelengths against the SVO service's own | within 0.05% |
+| A synthetic 5350 K star, θ = 0.25 mas, 11 magnitudes scattered by 0.02 mag | Teff 5349 +68 −66 K; θ 0.2515 ± 0.0022 mas; R 1.352 ± 0.012 (1.344 put in) |
+| The Sun through the passbands: V, B−V, V−Ks, J−Ks | −26.747 (−26.76); 0.707 (0.653); 1.523 (1.49); 0.380 (0.37) |
+| The shipped grid and thinned passbands against magnitudes computed in Python from the raw PHOENIX files and full passband curves, 4 models × 9 bands | within 0.6 mmag |
+| The Sun in Gaia's bands: BP−RP, G | 0.818 (0.82); −26.891 (−26.90) |
+| HD 209458 against interferometry (Boyajian et al. 2015: 0.2254 ± 0.0072 mas, 6092 ± 103 K) | 0.2245 ± 0.0022 mas (−0.4%); 6087 ± 31 K (−5 K) |
+| GJ 436 (von Braun et al. 2012: 0.417 ± 0.013 mas, 3416 ± 54 K) | 0.4095 ± 0.0133 mas (−1.8%); 3422 ± 41 K (+6 K) |
+| HD 97658 (Ellis et al. 2021: 0.314 ± 0.004 mas, 5212 ± 43 K) | 0.3202 ± 0.0044 mas (+2.0%); 5174 ± 32 K (−38 K) |
+| HD 189733 (Boyajian et al. 2015: 0.3848 ± 0.0055 mas, 4875 ± 43 K) | 0.3588 ± 0.0032 mas (−6.7%); 5027 ± 19 K (+152 K) |
+| The two Boyajian stars against AstroARIADNE's published fits (Vines & Jenkins 2022, table 5) | HD 209458: 6087 K against 5994 K, 0.2245 against 0.2328 mas; HD 189733: 5027 against 5049 K, 0.3588 against 0.3593 mas |
+| WASP-39 (Mancini et al. 2018: 0.939 ± 0.022 R☉, 5485 ± 50 K) and GJ 1214 (Cloutier et al. 2021: 0.215 ± 0.008 R☉, 3250 ± 100 K) | 0.919 ± 0.010 R☉, 5507 ± 95 K; 0.222 ± 0.005 R☉, 2998 ± 20 K |
+| Spectrum matching: a synthetic R ≈ 90 spectrum of a 5230 K star, flux-calibrated; and with a slope, matched with a quadratic factor | 5227 ± 2 K, θ 0.3004 mas (0.3); 5200 ± 30 K |
+
+Are the differences from interferometry our approximations? They were looked for and three things were found
+(2026-11-20, second pass). (1) Not the data handling: binning the models to 420 points and thinning the passbands to
+90 changes no magnitude by more than 0.6 mmag against a calculation from the raw 5 nm files with the full curves, and
+the model Sun has the right Gaia colour. Broad bands average over hundreds of nanometres; the 5 nm sampling is not a
+limit for them. (2) The extinction prior was: the first runs let A_V range from 0 to 0.1 mag for stars 20 to 50 pc
+away, inside the Local Bubble, and the prior's mean of 0.05 mag made every star 45 to 70 K hotter. With A_V fixed at
+zero for the stars within 50 pc, HD 209458, GJ 436 and HD 97658 land within 40 K and 2% of interferometry. (3) HD 189733
+does not move: its magnitudes fix a colour temperature of 5027 ± 19 K, its bolometric flux then needs 0.359 mas, and
+AstroARIADNE's published fit agrees with ours to 22 K and 0.1%. This is a disagreement between SED fits and that
+interferometric measurement, not something our approximations produce. GJ 1214's published 3250 K is itself from
+an SED fit with other models; ours is 250 K cooler, the grid being poor in the optical for the coolest stars
+(scatter 0.09 mag): that one is a limit of the models. AstroARIADNE itself was still not run.
+
+What was adjusted on the way, and why. The first fits left WISE W3 and W4 0.1 to 0.2 mag fainter than the model in
+every star: the blackbody tail joined on beyond 5.5 µm was too bright. It now falls as (λ / 4 µm)^−0.08, the size of
+the fall of the Sun's brightness temperature between 4 and 20 µm (5600, 5000 and 4800 K at 4, 10 and 20 µm are
+quoted from memory, not from a table read for this). After it W3 and W4 fit to 0.02 to 0.09 mag in FGK stars and
+the fitted scatter falls from 0.06 to 0.08 mag to 0.01 to 0.04; M dwarfs keep +0.18 mag at W3. WISE W1 and W2 of
+the four bright stars are saturated and are listed in the examples but not fitted; GALEX NUV likewise. The model
+Sun is 0.05 mag too red in Johnson B−V (not in Gaia's or Tycho's colours, which the fits use).
+
+Spectrum matching (`src/core/specmatch.js`) fits the grid, times a smooth polynomial factor, to a low-resolution
+spectrum. It was tested on spectra made from the grid itself, so the test shows the method works and nothing about
+how well the models match a real star: no observed spectrum was matched. It is not a substitute for SpecMatch-type
+codes on echelle spectra: the models are sampled every 5 nm and a finer spectrum is binned down to that.
+
+One set of stars. The limb darkening table, the atmosphere model's star (eclipse depths, the colour figure), the SED
+fit and the spectrum match all use the same PHOENIX-ACES files through one module, with one solar radius
+(`test/stellarspec.test.mjs`). Not yet on it: the 3D view's star colour and the ionizing ultraviolet (blackbodies),
+and a star fitted on the Star page is not passed to the light-curve and radial-velocity fits, which still take the
+star's parameters from the catalogue or by hand. The orbit model is not involved in any of this page's calculations.
+
+Limits. One model grid (PHOENIX-ACES at 5 nm), main-sequence gravities, 2300 to 8000 K, [Fe/H] ±0.5: no giants, no
+hot stars, no metal-poor stars. M dwarfs fit with 0.09 to 0.10 mag of scatter and GJ 1214 comes out 240 K cooler than
+the published value. Magnitudes do not constrain log g or [Fe/H]; without priors their posteriors are the grid's
+range. Extinction is one R_V = 3.1 curve bounded by a number the user gives; no dust map is consulted. Magnitudes are
+typed or pasted: the page does not query catalogues (the CDS services were down when this was written and their
+cross-origin access could not be checked). No fit to a spectrum, and no isochrone step for mass and age.
+
+Which method each fit uses, and why (surveyed 2026-11-20). The rule: where the answer is a physical quantity whose
+uncertainty matters, the posterior comes from the nested sampler (`src/core/nested.js`) with explicit priors, and
+alternatives are compared by ln Z. A faster method is used only where speed matters more than the error bar, or
+where the problem is linear and the exact answer is cheaper than sampling.
+
+| Fit | Method | Why |
+| --- | --- | --- |
+| Transits, eclipses, radial velocities, timing, phase curves, moons, N-body (`buildProblem`, `runFit`) | nested sampling | the site's main results; evidence for model comparison |
+| White-light and per-channel spectroscopic light curves (`fitWhiteLight`, `fitChannel`) | nested sampling through `buildProblem`; a channel with only its depth free is integrated exactly on a grid | same likelihood; the one-dimensional case is exact and deterministic |
+| Star from magnitudes (`fitSed`), from a spectrum (`matchSpectrum`) | nested sampling | physical parameters with uncertainties; fits compared by ln Z |
+| Atmosphere from spectra (`runRetrieval`) | nested sampling, priors of `priors.js` | as above; with and without a gas or a cloud compared by ln Z |
+| Linear and quadratic ephemerides (`fitEphemeris`) | weighted linear least squares, models compared by BIC | linear in its parameters: the least-squares answer and covariance are the exact Gaussian posterior |
+| Baselines and regressors inside a light-curve fit | solved analytically at every sample | linear nuisance parameters, marginalised exactly |
+| Limb-darkening laws from model intensities (`fitLaw`) | linear least squares | fitting a formula to a computed curve: no noise, no posterior |
+| Self-consistent temperature profile (`consistentProfile`) | fixed-point iteration | solving equations, not fitting data |
+| Star profiles for photometry (`fitPsf`, `lmFit`) and focus | Levenberg-Marquardt | thousands of stars per frame, in real time; only the centroid and width are used, their errors come from the scatter between frames |
+| Plate solution and frame alignment (`fitWcs`, `fitSimilarity`) | least squares on matched stars | linear; checked by the residual of the matches |
+| Quick-look transit on a live light curve (`quickFit`) | grid in mid-time and duration, linear least squares for the rest, BIC to accept a dip | a preview while observing; the published numbers come from the nested-sampling fit afterwards |
+| Periodograms (timing, Lomb-Scargle) | least squares per trial period | a search, followed by a sampled fit of what it finds |
+
+Not yet inside the one likelihood: the SED fit, the spectrum match and the retrieval each build their own (same
+sampler, same prior definitions, same result format), beside `buildProblem` rather than in it. A star's fitted
+radius is therefore not yet a prior in the transit fit, nor a retrieval fitted jointly with the light curves.
+
+Ariel's noise in the simulator (`TELESCOPES.Ariel` in `src/core/missionbands.js`; `hourlyNoise`, `depthNoise`,
+`simulateSpectroscopy` in `src/core/spectroscopy.js`; `test/retrieval.test.mjs`). ArielRad is not public and PandExo
+needs STScI's reference data, so neither was run; the numbers ArielRad's paper publishes were used instead (Mugnai
+et al. 2020, Exp. Astron. 50, 303): collecting area 0.63 m², photon conversion efficiency per channel (in-band means
+of its fig. 2: 0.29, 0.29, 0.40, 0.42, 0.29, 0.30 for VISPhot, FGS1, FGS2, NIRSpec, AIRS-Ch0, AIRS-Ch1), a 40% margin
+on the photon variance, 40 ppm √hr of gain noise, a 20 ppm floor, an observation of 2.5 transit durations; Tier 2
+resolving powers 10, 50, 15 from the Definition Study Report. The star is its PHOENIX model, not a blackbody.
+
+| HD 209458, relative noise in one hour (ppm), Tier 3 bins | Photon: ours / ArielRad | Total: ours / ArielRad |
+| --- | --- | --- |
+| VISPhot, FGS1, FGS2 | 12.9 / 13.4, 9.5 / 9.9, 7.7 / 7.9 | 43 / 43.1, 42 / 43.2, 41 / 41.3 |
+| NIRSpec 1.51 µm (R = 20) | 20.6 / 19.1 | 47 / 46.1 |
+| AIRS-Ch0 3.01 µm (R = 100) | 93.3 / 87.4 | 117 / 112 |
+| AIRS-Ch1 4.99 µm (R = 30) | 80.5 / 77.4 | 103 / 102 |
+| AIRS-Ch1 7.64 µm (R = 30), the red edge | 118 / 133 | 146 / 206 |
+
+Photon noise within 8% and totals within 5% over 0.5 to 5 µm; GJ 1214's totals within 12%. Not modelled: detector
+read noise, dark current and pointing jitter, and the fall of the efficiency toward each band's edges, so the red
+edge of AIRS-Ch1 is 29% too quiet and faint stars will be optimistic. ArielRad's values were read from the paper's
+vector figure by a helper, not from a table. For JWST nothing was changed: PandExo's paper gives no per-transit
+numbers to test against (its benchmarks are figures); the measured WASP-39 b precisions (NIRSpec G395H: 221 ppm per
+10-pixel bin at 1.46 times photon noise; PRISM: median 99 ppm over 207 channels) are recorded on the roadmap as the
+test to build.
+
+Atmospheric retrieval (`src/core/retrieval.js`, `test/retrieval.test.mjs`):
+
+| What | Result |
+| --- | --- |
+| Isothermal atmosphere with H2O and CO2, one Ariel transit of HD 209458 b (54 channels, 36 to 96 ppm) | T 1257 +39 −37 K (1300), log H2O −3.27 +0.20 −0.18 (−3.3), log CO2 −6.34 +0.34 −0.36 (−6), radius 1.3808 ± 0.0017 (1.38) |
+| The same data fitted without water | Δ ln Z = 404: water detected |
+| Cost | 7413 models at 3.5 ms each (tables cut to Ariel's range and joined to R = 50, 30 layers, WebAssembly kernel) |
+
+The end-to-end example (`tools/examples/ariel_retrieval.mjs`, results stored beside it and checked by the test)
+simulates one transit, three eclipses and the night side from three orbits of a hot Jupiter around HD 209458, once
+clear and once with a haze and a cloud deck, and retrieves temperature, [M/H], C/O, radius, aerosols and the
+night-side contrast. Run again on 2026-11-23, after model bins came to be weighted by their overlap with each data
+bin ("Reached from" below; 54 channels; 36 to 96 ppm on a depth from one observation; two fits sharing the machine):
+
+| Fit | Result |
+| --- | --- |
+| Clear planet, the transit alone, clear model (44,272 models, 5 min) | limb Teq 1166 +74 −100 K (1200), [M/H] 0.55 +0.30 −0.29 (0.3; 0.8σ, the furthest), C/O 0.55 ± 0.16 (0.55), radius 1.379 ± 0.002 (1.38) |
+| The same data with haze and cloud free (80,948 models) | Δ ln Z = −4.7 ± 0.5: no aerosols called for |
+| Hazy planet, the transit alone, haze and cloud free (92,795 models, 10 min) | haze strength 10^3.06 (+0.42 −0.30; 10^3 put in), [M/H] 0.27 +0.37 −0.35, C/O 0.54 ± 0.16, limb Teq 1227 ± 120 K; cloud top 10^−1.2 bar (+1.7 −0.9) |
+| The same data fitted as clear (75,056 models) | χ² 330 for 54 points, C/O 0.95, [M/H] −0.9: wrong; Δ ln Z = 153.8 ± 0.6 for the aerosols |
+| Clear planet, transit + three eclipses + night side (96,045 models at 23 ms, 38 min) | night side cooler by 486 +13 −15 K (500), day-side Teq 1372 +34 −41 K (1450; 2.1σ), [M/H] 0.26 ± 0.15, C/O 0.49 +0.07 −0.08, log κ_IR −1.90 +0.21 −0.20 (−2.5; 2.9σ, the furthest), log γ −0.46 +0.05 −0.06 (−0.4), radius 1.380 ± 0.001; χ² 156 for 162 points |
+| Hazy planet, the same (227,380 models at 22 ms, 85 min) | night side cooler by 501 +32 −24 K, Teq 1463 +74 −65 K, [M/H] 0.15 +0.16 −0.21 (0.8σ, the furthest), C/O 0.49 ± 0.09, haze 10^2.98 (+0.19 −0.15), cloud top 10^−1.29 bar (+1.3 −0.24; 10^−1.5), log γ −0.46 +0.12 −0.55, radius 1.381 ± 0.002; χ² 132 for 162 points |
+
+All six fits reached the sampler's own stopping rule (1% of the evidence left) with a budget of
+400,000 models a fit; an earlier run with 60,000 had stopped four of them short, the joint fits without usable
+posteriors. This is the third converged run of the same noise draw: 2026-11-20 with the chemistry table
+interpolated linearly, 2026-11-22 with it smooth, and this one with the new binning. The clear planet's numbers
+moved by a fifth of their errors or less between the last two. The hazy planet's joint fit is less steady: its cloud
+top came out 10^−1.35 bar (+1.1 −0.24), then 10^−0.44 (+1.2 −0.9), now 10^−1.29 (+1.3 −0.24), and with it the
+night-side contrast's error went from 17 K to 28 K and Teq's from 40 K to 70 K. The deck's pressure has a posterior
+with two parts, and which one holds the median changes with small changes of the data: it is not a robust result,
+and the errors of what trades with it are known only to a factor of 1.7.
+
+Reading these. From one transit Ariel's noise gives C/O to about 0.15, [M/H] to 0.3 to 0.4 dex and a haze to a
+third of a dex, and tells a hazy atmosphere from a clear one decisively; fitting a hazy planet as clear returns
+confident, wrong chemistry. The transit's temperature is the limb's, 250 K under the day side's in this planet,
+which is what the one-column fit returns (1166 K; the simulated limb is 1200 K). Adding three eclipses and the
+night side gives the day-side temperature (to 35 to 70 K), the night-side contrast to 14 to 28 K, halves the error
+on [M/H] and C/O, and on the hazy planet halves the error on the haze. The cloud deck's pressure stays poorly
+known either way (±1.3 dex from the transit, ±0.8 to 1.1 from all three). In the clear planet the infrared opacity of the profile came out 2.5 to 2.9σ high (over the three runs of this draw) and
+Teq 1.8 to 2.1σ low together (the two trade against each other in the Guillot profile). To tell chance from bias the joint
+fit was repeated on twelve other draws of the noise (2026-11-21; `tools/examples/ariel_retrieval_clear_seeds.json`,
+all converged, 89,000 to 126,000 models each). Chance: over the twelve, the mean of (median − truth)/σ times √12 is
+−0.8 for log κ_IR, 0.6 for Teq, −2.0 for log γ, −1.7 for [M/H], −1.4 for C/O, 0.1 for the radius and 0.2 for the
+night-side contrast (±1 expected without bias; log γ's −2.0 is the largest of seven).
+
+| Parameter | Scatter of (median − truth)/σ (1 expected, ±0.2) | 16 to 84% range holds the truth (8.2 of 12 expected) |
+| --- | --- | --- |
+| Teq, log κ_IR, log γ | 0.95, 1.09, 0.84 | 8, 7, 9 |
+| radius, night-side contrast | 1.24, 0.75 | 7, 11 |
+| **[M/H]** | **1.44** | **5** |
+| **C/O** | **1.54** | **5** |
+
+In these twelve the error bars on [M/H] and C/O look about a third too small, which forty draws (below) show to
+be chance; the tests made on the way are kept here ([M/H] and C/O move together along one ridge, so this
+is one effect, not two; taken alone C/O's scatter has a chance of about 0.5% under correct errors, a few per cent
+after allowing for seven parameters looked at). It is not the number of live points: the first eight data sets
+fitted again with 400 (335,000 to 454,000 models, 3.2 to 4.1 hours each) give medians within 0.2σ, error bars
+within 5% and ln Z within its error of the 100-point runs (`test/retrieval.test.mjs`). Nor is it how new points are drawn: the default
+runs take 85% of their points from the region and the rest by slice sampling with 14 steps (insertion-order test
+p = 0.18); the same eight data sets with slice sampling alone at 56 steps a point (403,000 to 529,000 models, 3.3
+to 4.3 hours) give medians within 0.15σ, error bars within 6% and ln Z within 1.4 of its error. Three sampler
+set-ups agree, so the posterior is what the likelihood gives.
+
+What was found in looking for the cause, and ruled out (2026-11-22). The chemistry table was interpolated
+linearly between its nodes ([M/H] 0, 0.5; C/O 0.5, 0.6, 0.7, 0.8), so the model's sensitivity to [M/H] and C/O was
+constant inside a cell and jumped at each node: in units of the joint data's errors, 41 per dex in [M/H] below 0.5
+and 37 above; per unit C/O 79 between 0.5 and 0.6, 90 to 0.7, 120 to 0.8, 233 above. [M/H] and C/O are now
+interpolated by a monotone cubic (`src/core/chemistry.js`; "Chemical equilibrium" below for its check), which
+removes the steps (second difference of the spectra across a node 0.04 to 0.07σ, from 0.24 to 0.63σ). The twelve
+draws were then repeated, data and fit both with the cubic (89,600 to 123,500 models, all converged):
+
+| Parameter | Scatter, cubic (linear) | Range holds the truth, cubic (linear) |
+| --- | --- | --- |
+| Teq, log κ_IR, log γ | 0.90, 1.03, 0.83 (0.95, 1.09, 0.84) | 8, 8, 8 (8, 7, 9) |
+| radius, night-side contrast | 1.13, 0.73 (1.24, 0.75) | 7, 11 (7, 11) |
+| **[M/H]** | **1.42** (1.44) | **5** (5) |
+| **C/O** | **1.47** (1.54) | **6** (5) |
+
+Nothing moved: medians shift by a few hundredths. The kinks were real and the interpolation is better for being
+smooth, but they are not the cause.
+
+It was chance. Twenty-eight further draws (seeds 33 to 60, 2026-11-22, all converged, 85,000 to 118,000 models)
+with the twelve make forty:
+
+| Parameter | Scatter of (median − truth)/σ (1 expected) | Range holds the truth (27.2 ± 3.0 of 40 expected) | Mean of (median − truth)/σ (0 ± 0.16) |
+| --- | --- | --- | --- |
+| Teq | 0.80 ± 0.09 | 27 | +0.31 |
+| log κ_IR | 0.85 ± 0.10 | 28 | −0.33 |
+| log γ | 0.72 ± 0.08 | 28 | −0.49 |
+| [M/H] | 1.05 ± 0.12 | 27 | −0.39 |
+| C/O | 1.13 ± 0.13 | 27 | −0.41 |
+| radius | 1.09 ± 0.12 | 24 | −0.05 |
+| night-side contrast | 0.98 ± 0.11 | 29 | +0.16 |
+
+The error bars on [M/H] and C/O are the right size; in the 28 new draws alone their scatter is 0.88 and 0.99 and
+their ranges hold the truth 22 and 21 times. The first twelve were an unlucky dozen (and the 400-point, slice and
+cubic repeats reused the same twelve, so they could not show it).
+
+What forty draws show that twelve could not: the medians of the five parameters that trade against each other
+(Teq, κ_IR, γ, [M/H], C/O) sit 0.3 to 0.5 of an error to one side of the truth, log γ by 3.1 times the error of
+that mean, [M/H] and C/O by 2.5. Coverage is unaffected (the ranges are wide enough to hold it). It matters only where many fits are
+averaged: the offset does not shrink with the number of fits.
+
+Where the offsets come from (2026-11-23). Two tests: the best-fit points of the same forty fits, and one fit of the
+same data with no noise added (`noise=0`; 92,426 models, best χ² 0.23; a median is known to about ±0.05σ).
+
+| Parameter | Median, forty draws | Best-fit point, forty draws (±0.16) | Skewness of the posterior | Median, no noise |
+| --- | --- | --- | --- | --- |
+| Teq | +0.31 | +0.11 | −0.03 | +0.09 |
+| log κ_IR | −0.33 | −0.16 | 0.00 | −0.04 |
+| log γ | −0.49 | −0.29 | −0.10 | −0.23 |
+| [M/H] | −0.39 | −0.41 | 0.00 | +0.01 |
+| C/O | −0.41 | −0.42 | −0.02 | −0.10 |
+| radius | −0.05 | +0.03 | −0.02 | −0.08 |
+| night-side contrast | +0.16 | +0.08 | +0.01 | +0.09 |
+
+(Offsets in units of each fit's error; skewness is (hi + lo − 2 median)/(hi − lo).) Without noise the fit returns
+what was put in: it has no offset of its own beyond log γ's −0.23σ, which is the median of a skewed posterior and
+about half of log γ's offset. For Teq and log κ_IR the best-fit point is nearer the truth than the median, as a
+shape effect would have it. For [M/H] and C/O it is not that: their posteriors are symmetric, the noise-free
+medians are on the truth, and the best-fit points are as far off as the medians. Their −0.4σ over forty draws is
+either chance (2.5 times the error of the mean; one effect, the two move together) or a bias of second order in
+the noise (the estimate of a non-linear model is not unbiased). Not told apart: that needs a hundred or more
+further draws. Either way it is under half of one fit's error and the 68% ranges hold the truth as often as they
+should. Also slightly narrow in scatter: log γ (0.72) and Teq (0.80), whose quoted errors are then a little generous.
+Reached from (2026-11-23). One call, `retrieveAtmosphere` in `src/core/atmoapi.js`, checks the data, fills in wide
+uniform priors where none are given (and returns them), cuts the tables to the data's range and runs the sampler.
+The MCP server's `atmosphere_retrieve`, Python's `esl.retrieve_atmosphere` and the Atmosphere page's worker (the
+assistant's `atmosphere_fit_spectrum`) all use it.
+
+| Check | Result |
+| --- | --- |
+| The call against the direct run on the 54 Ariel points (`test/retrieval.test.mjs`) | medians within 0.05σ (the call does not join opacity bins for these data, the direct run joins 4), each within 2.5σ of what was put in; with 400 models it reports that it has not converged; six kinds of bad request refused |
+| MCP: a model spectrum written by `atmosphere_spectrum`, 60 ppm noise added, fitted from the file (`mcp/test.mjs`) | T 1304 +42 −35 K (1300), log H2O −3.08 +0.45 −0.34 (−3.30), radius 1.3774 +0.0047 −0.0067 (1.38); 5908 models in 32 s |
+| Python: the same kind of spectrum through `esl.retrieve_atmosphere` (`python/tests/test_atmosphere.py`) | each of three parameters within 3σ; an unconverged run says so |
+| What the speed-ups cost, same model against 60 layers and the tables as shipped, R = 30 bins, hot Jupiter in equilibrium | 30 layers: 8 ppm rms; bins joined by 2: 4 ppm (9 with 30 layers); by 4: 20 ppm; by 7 (model bins as wide as the data's): 57 ppm |
+| A spectrum file without bin edges | the bins are taken to meet halfway between neighbouring wavelengths, exact on a regular grid; a gap is not bridged |
+
+Two faults were found by fitting, in the page, a spectrum made by the page's own full model (60 points at 50 ppm;
+the answer came back 3σ off), and are mended:
+
+1. A file with wavelengths and no bin edges was compared with the model at each wavelength, not with its average over
+   the band. Bands are now worked out from the spacing.
+2. The model was put on the data's bins by counting whole model bins whose centres fall inside, which is wrong by up
+   to half a model bin at each edge: 23 ppm rms with bins joined by 2, 31 by 4, 102 by 7. Model bins are now weighted
+   by their overlap with the data bin (`binner` in `src/core/retrieval.js`): 4, 20, 57 ppm. The default joins only as
+   far as leaves three model bins in one data bin.
+
+The stored runs made before this (the forty noise draws, the 400-point and slice-sampling repeats) used the first
+binning for data and fit alike, so they are self-consistent and what they show about the sampler and the error bars
+stands; they were not rerun. The two end-to-end examples were (below). After the two changes the same fit in the
+page returned Teq 1090 +7 −6 K (1100), [M/H] 0.35 ± 0.09 (0.48), C/O 0.48 ± 0.04 (0.5) and radius 1.2806 ± 0.0007
+(1.279; 2.4σ, the furthest), χ² 44 for 60 points, in 17,186 models and 6 minutes (30 layers, bins joined by 2,
+against data from 80 layers and no joining). Not automated: the page's tool was run by hand in a browser (also isothermal, three
+parameters: 8 s, T 1282 +13 −15 K for 1300); there is no scripted dialogue for it yet. The fit in the page blocks the
+page's worker until it ends and cannot be cancelled before its time limit.
+
+The cost is the limit: 38 and 85 minutes on one core, so models in parallel are the next step.
+What it is not: the spectra are the model's own, binned
+and given Gaussian noise of ArielRad's size. Data and fit both use opacity bins joined by 4 (see "Reached from"
+above for what that costs against the full tables: about 20 ppm rms, a third of Ariel's errors, which a
+retrieval of real data would feel and this one does not). No light curves were simulated and reduced in it, no systematics or
+stellar activity were added, and the model that fits is the model that made the data (the same opacities, the same
+assumptions): it shows that the pipeline recovers what it is given and how tight Ariel's noise makes the answer, not
+that a real planet would be recovered. The night side is taken as measured with the precision of an eclipse per
+orbit, an assumption standing in for a phase-curve fit.
+
+The Star page's lookup (`src/core/starcat.js`). Magnitudes and the parallax come from Gaia DR3, 2MASS, AllWISE and
+Tycho-2 through VizieR; the CfA mirror answered requests from a web page on 2026-11-20 and is asked first (the CDS
+service was down). A planet host's position, log g and [Fe/H] come from the site's own catalogue; other names are
+resolved by the server, which failed for some names while CDS was down. Gaia is asked first and the other
+catalogues at the position the star had at their epochs: for GJ 1214 (0.95 arcsec a year) 2MASS is asked 15.6
+arcsec from Gaia's position and the right star is found. Saturated WISE bands, 2MASS bands not of quality A and
+upper limits are listed and switched off. The test uses stored answers; the live lookup was run once in a headless
+browser (GJ 1214: 10 magnitudes found and fitted). One mirror failed to return AllWISE for WASP-39 on one try: the
+page then says which catalogue did not answer. NASA's Exoplanet Archive does not allow requests from a web page and
+is not used.
+
+The Atmosphere page while it computes, and its colour figures (2026-11-20). While a model is running the figures
+and status lines are dimmed and a "Calculating" tag is shown, because what is on the page then belongs to the
+previous model. The colour figure has two axes: the eye's three responses on the left; on the right the planet's
+reflected light, its thermal glow and their sum on one scale (reflected = estimated albedo × the star's flux at
+the planet, (R★/a)² of its surface flux; thermal = the day side's emission; both per unit area and wavelength), and
+the star's spectrum on its own scale. A second figure shows, across the same wavelengths, the extinction of every
+constituent at the level where the atmosphere turns opaque to visible light from above (vertical optical depth 1 at
+0.55 µm), with which of them leads at how many wavelengths and what share scatters. For the default planet: Rayleigh
+scattering leads over 43% of the visible, sodium over 41%, potassium over 17%; at a typical wavelength 5.5% of the
+extinction scatters, so the planet is dark, and what it does reflect is blue, shortward of 0.5 µm. That edge at
+0.5 µm is where the sodium table's blue wing ends: far-wing profiles of the sodium D lines broadened by hydrogen do
+fall steeply beyond a satellite feature in the blue, but the sharpness of the step in the shipped table was not
+checked against the source profile, and the planet's colour hangs on it. Checked by headless screenshots.
+
+The assistant on the Atmosphere and Star pages (2026-11-20). Both pages now declare tools to the site's assistant
+by the contract the Photometry and Spectroscopy pages use (`window.__esl.<page>`, `src/assistant/pages.js`), and
+`navigate` knows them. Atmosphere: `atmosphere_get`, `atmosphere_set` (profile, chemistry, gases, clouds, planet and
+star), `atmosphere_load_world`, `atmosphere_lookup_planet`, `atmosphere_spectrum`. Star: `star_get`, `star_lookup`,
+`star_set`, `star_export`. Each goes through the page's own state and functions, waits for the calculation, and
+returns numbers with their errors, never whole spectra or samples. Checked by calling the tools in a headless
+browser: on the Atmosphere page a cloud deck at 1 mbar with ten times the metals was set (the spectrum's range fell
+from 2056 to 1502 ppm), Titan was loaded and its spectrum tabulated, and a negative temperature was refused; on the
+Star page a band was left out and refitted (6087 to 6093 K), the fits were listed for comparison and the LaTeX was
+written. Not checked: a conversation with a language model using these tools (the assistant's own test suite still
+passes, 130 checks, but holds no scripted dialogue for the two pages), and the Plan, Observe and Search pages'
+existing tools were not revisited. The MCP server has `atmosphere_spectrum`, `star_fit` and `star_match_spectrum`;
+a retrieval tool is not there yet.
+
+Speed, profiled (2026-11-20). SED fit: 30 to 55 thousand models in 2 to 4 s (0.08 ms each: an interpolation of
+eight spectra and 420 extinction factors); nothing to gain worth the complexity. Retrieval model: 4.8 ms
+(isothermal, two gases) to about 20 ms (chemistry, four gases, three columns for day, night and limb); of that the
+mixing kernel is already WebAssembly and the cross-section interpolation is the largest remaining part. A retrieval
+of 7 to 9 parameters takes 10 to 40 thousand models. Not done: models in parallel workers.
+
+The download (`src/atmosphere/bundle.js`, `test/bundle.test.mjs`): the zip's files hold the spectrum (1023 bins, with
+each gas alone), the profile (every layer and gas), the opacity by absorber at one level per decade of pressure and
+every wavelength (8 levels for Titan, not its 80 layers; the value in the file equals the model's to 1e-4), both maps
+and the colour data; `figures.py` in the zip redrew all five figures from those files alone. In the browser the
+download was run once headlessly (11 files, 2.3 MB); the figures it makes were not compared pixel by pixel with the
+page's. The hover highlight was checked by a headless pointer and one screenshot, not on a touch screen.
+
+Line strength in the source tables, and a repair (2026-11-20, after the owner asked for the sodium "line math" to be
+checked). A line's cross-section integrated over frequency is (πe²/m_e c)·f whatever its width. Integrating each
+ExoMolOP k-table over all its bins, at 1e-5, 1e-3, 0.1, 10 and 100 bar relative to 10 bar:
+
+| Gas | 1e-5 bar | 1e-3 bar | 0.1 bar | 100 bar |
+| --- | --- | --- | --- | --- |
+| CO2, CH4, SO2, TiO, VO, HCN, NH3 (1000 K) | 0.98 to 1.02 | 0.99 to 1.02 | 1.00 to 1.01 | 0.86 to 0.93 |
+| CO (1000 K) | 0.94 | 0.93 | 0.99 | 0.93 |
+| H2O (1000 K; at 500 K) | 0.78; 0.59 | 1.00; 1.20 | 0.94; 1.00 | 0.96; 0.94 |
+| H2S (1000 K) | 0.85 | 0.95 | 0.95 | 0.95 |
+| **Na (1000 K)** | **1.7e5** | **1.7e3** | **17** | 1.1 |
+| **K (1000 K)** | **1.0e5** | **1.0e3** | **10** | 1.1 |
+
+The molecules conserve their strength to a few per cent (water loses up to 40% at the lowest pressure and
+temperature; every gas loses 5 to 20% at 100 bar, where wings leave the tabulated range or are cut). Sodium and
+potassium do not: against (πe²/m_e c)·f with the NIST oscillator strengths of the D lines (0.320 + 0.641 for Na,
+0.333 + 0.670 for K) the tables are right at 10 bar (1.05) and too strong as 1/pressure below it. The far wings
+scale with pressure as they should; the excess sits in the bins holding the line centres, with a top k-value
+15,000 times the Doppler-core peak at 1e-5 bar, as if a core narrower than the calculation's grid step had been
+given the width of the step. `repair_resonance` in `tools/opacity/build_opacity.py` now replaces, wherever the
+doublet's strength exceeds 1.3 times the rule, the bins within 200 cm⁻¹ of it by the k-distribution of two Voigt
+profiles: Doppler width from the temperature, strength from the oscillator strengths, and a Lorentz width chosen
+so that the profile meets the table's own wings at the edge of the replaced region. After it the strength is 1.00
+at every node, the wings join to 0.3% (Na) and 20% (K), and the fitted width is 0.33 cm⁻¹ per bar at 1000 K
+(for comparison only: of the size of published Na-H2 broadening).
+
+What it changed. Transit depths in the bins of the D lines by up to 106 ppm (Na) and 137 ppm (K) for the default
+planet; the shipped tables against the repaired full-resolution ones are now within 2 ppm rms, 14 ppm at most.
+The heating of the thin upper layers by those two lines, which made the hot, atomic-hydrogen top described below,
+is gone without any hold: 1022 K at 1e-8 bar where the unrepaired tables gave 1884 K. The comparison with
+petitRADTRANS is untouched: it uses the unrepaired tables in both codes, so it never could see this.
+Not checked: the second resonance doublets (330 nm, 404 nm; below the repair's threshold), lines from excited
+states, and whether Allard's far-wing shape itself survived ExoMolOP's processing (the step at 0.5 µm in sodium's
+blue wing is in the source). The cause is inferred from the numbers, not from ExoMolOP's code, and has not been
+reported to its authors: that is the owner's to do. `--no-repair` builds the tables as shipped.
+
+The hot, hydrogen-rich top of the first self-consistent profiles was an artefact, found when the owner asked where
+the atomic hydrogen came from (2026-11-20). With the model's top at 1e-8 bar the closure gave 1884 K there over
+1010 K at 1e-5 bar, and the chemistry, read at 1884 K and 1e-8 bar, made 89% of the hydrogen atomic. The cause:
+in the thinnest layers the ratio of starlight absorbed to heat lost (γ = 14) is set by the cores of the sodium and
+potassium lines, which were counted as heating. With those two gases' lines left out the top is 978 K. In gas that
+thin an excited atom re-emits its photon long before a collision can take the energy (at 1e-8 bar by a factor of
+millions), so the lines scatter and heat nothing; and the opacity tables end at 1e-5 bar. The profile is now held
+at its 1e-5 bar value above that pressure (`tp.pIso`; `null` removes the hold): 1008 K at the top, atomic
+hydrogen 2e-5 (`test/climate.test.mjs`). (Written before the tables were repaired: the paragraph above gives the
+root cause. The scattering argument holds for a real atmosphere, but what produced 1884 K here was the tables'
+excess line strength; with it removed the unheld top is 1022 K.) An estimate of the
+thermalisation probability of each line was tried first; it needed a quenching cross-section known to me only to a
+factor of a few and changed nothing below 1e-6 bar, so the hold was preferred. What this leaves out is real: hot
+Jupiters do have hot, atomic upper atmospheres, heated by the star's extreme ultraviolet and feeding the escaping
+wind, and the model has none. Its temperatures above 1e-5 bar are a placeholder, and transit depths in the cores of
+the strongest lines, which form up there, inherit that.
+
+The sodium and potassium lines in emission. With the hot top they appeared in emission (brightness temperature
++349 K in the sodium bin); with the hold they are in absorption (−68 K). Either way they make no visible eclipse
+depth, and not because of the bin width: at 0.59 µm a 1100 K planet is some 1e-10 of its star per unit area, and the
+eclipse depth there is 1.5e-4 ppm (0.1 ppm with the hot top), against 870 ppm at 4.5 µm.
+
+The 3D view and the page's defaults (2026-11-20). In the planet view the star now hides the planet when it lies in
+front of it, so an "Eclipse" viewpoint (from beyond the star, the full day side beside the star's limb) shows the
+planet going behind as the view is turned; the "Against the star" view no longer rotates, since it is a view along
+the line of sight and its planet disc stayed in front from every side. The "two day sides" came from a night side
+that glowed like the day side: the page now starts with a night side 300 K cooler. It also starts in chemical
+equilibrium with nine gases ticked, condensation on and the profile from the gases ("Radiative balance"); the first
+model takes several seconds and each later one about 1.1 s. The cutaway has a legend (the colour scale with its
+ends, what the rings are, which half is day); the level where half the starlight passes the limb is a red ring. The
+swatches under the view are the star, the planet (reflected light and its own glow together) and, with the
+cutaway, that ring. The spectrum plot's curves can be picked out by pointer or tap like the other two plots'. Checked by headless screenshots; the eclipse view was not looked at
+on a real GPU.
+
+Speed (`tools/opacity/speed_study.mjs`; six gases, transmission only, Node 22 on this machine):
+
+| Tables and layers | Bins | ms per model | Against the shipped tables at R = 100 |
+| --- | --- | --- | --- |
+| As shipped (0.3 to 50 µm, R = 200), 60 layers, JavaScript | 1023 | 274 | |
+| The same with the WebAssembly kernel | 1023 | 189 | identical (1e-14) |
+| Cut to 0.6 to 5.3 µm | 437 | 81 | identical |
+| Bins joined in pairs (R = 100) | 218 | 41 | 2.1 ppm rms, 20.5 ppm at most |
+| 40 layers | 218 | 26 | 3.5 ppm rms, 24.2 ppm at most |
+| The same, temperatures unchanged and only abundances moved | | 18 | |
+
+Three quarters of a run is the mixing of the gases' k-distributions (a sort of 144 sums per pair of gases, bin and
+layer). That loop was compiled to WebAssembly from Rust (`tools/wasm/mix.rs`, 28 kB): 2.6 times faster than the
+JavaScript loop on its own, with the same extinction to 1e-14; a straight port gave 1.4 times, the rest came from
+sorting the bit patterns as integers and a series for ln k (7e-10 from `Math.log`), which the JavaScript loop now
+uses too. SIMD made no difference. The GPU was not tried: the cost is a sort per bin, which a fragment shader does
+badly, and transmission and emission, which it would do well, are a fifth of the time. With a cache the mixed
+result is also kept, so a change of cloud, star or radius costs 48 ms where it cost 240. For a retrieval the
+remaining factor is running several models at once in workers, which is not built.
+
+Chemical equilibrium (`src/core/chemistry.js`; the table is made by `tools/chem/build_chem.py` with FastChem 4.0.4):
+
+| What | Result |
+| --- | --- |
+| The table against FastChem at 165 points off its nodes (400-3400 K, 1e-7 to 30 bar, [M/H] -0.9 to 2.4, C/O 0.15 to 1.4), 18 species, mixing ratios above 1e-10 | 0.061 dex rms, 1.38 at worst (SO2); away from C/O 0.9-1.1 and up to 100 × solar 0.018 dex rms, 0.16 at worst; mean molecular weight within 1.1% (with straight lines in [M/H] and C/O, before 2026-11-22: 0.071, 1.49; 0.028, 0.29; 3.3%) |
+| [M/H] and C/O interpolated by a monotone cubic (Fritsch & Butland 1984) against straight lines, FastChem at off-node points away from C/O 0.9 to 1.1 (1595 values) | 0.018 dex rms against 0.028; equal at the nodes; leaves the range of two neighbouring nodes by 7e-3 dex at most; jump of d log H2O / d(C/O) at the nodes 0.5 to 0.8 at most 0.001 where the lines gave 0.06 to 3.7. Temperature and pressure are still linear |
+| FastChem against our own solution of the H-He-C-N-O gas (15 species, mass action and element conservation, Newton iteration; sharing only the equilibrium constants), 92 points | CO, CO2, H2, H, He identical to 4 decimals; H2O 0.009 dex rms, CH4 0.010, HCN 0.023 (0.10 at worst, C/O > 1 above 2200 K) |
+| The same with FastChem's full set of elements | 0.079 dex rms for C/O up to 0.7, orders of magnitude at C/O = 0.95-1: oxygen held by Si, Mg and other metals shifts the balance, so the table uses the full set |
+| The 1/T coefficient of ln K against dissociation energies | H2 4.473 eV (4.478), CO 11.116 (11.09), N2 9.756 (9.76), OH 4.391 (4.39) |
+
+The first version of the grid (8 metallicities, 10 values of C/O) was off by up to 3.5 dex near C/O = 1 and above
+100 × solar; nodes were added there. No second thermochemical database was compared, and the table is gas phase
+only: TiO, VO, Na and K are overstated where they would condense.
+
+Escape and ionization (`src/core/escape.js`, `src/core/ionization.js`). These are estimates; the checks are of the
+arithmetic, not of the physics against a planet:
+
+| What | Result |
+| --- | --- |
+| Energy-limited rate, Roche factor and absorption radius against Table 2 of the owner's mass-fractionation notes (GJ 1214 b, HD 97658 b) | within 0.32% (1.47e9 and 1.98e9 g/s) |
+| Crossover mass against the formula by hand; limits of the fractionation factor | to 1e-12 |
+| Diffusion coefficient scaled from the measured H-O value, against the measured H-He and H-D | 0.57 and 0.92 of them: C, N, S, Na carry about a factor of two |
+| Time integral with a constant flux | rate × time to 1e-9; the Rayleigh enrichment to 1e-6; 200 log-time steps within 3e-5 of 2000 |
+| The Sun's XUV flux today from 29.7 t^-1.23 | 4.58 erg cm⁻² s⁻¹ at 1 AU (Ribas et al. 2005 measure 4.64) |
+| Sodium cross-section, electron-impact and recombination fits against a second evaluation of the published formulas | 3.2e-3 at worst over 12 values |
+| The same fits for hydrogen against textbook values | 6.33e-18 cm² at threshold (6.30e-18), 4.19e-13 cm³ s⁻¹ at 10⁴ K (4.18e-13) |
+| Sodium balance in a 1300 K atmosphere | the rate equation closes to 6e-11 in every layer; half ionized at 1.8e-4 bar (the notes' figure for XO-2 b reads about 1e-4 bar, with a solar spectrum) |
+
+| Recombination to the ground state from the cross-section by detailed balance, on hydrogen | 1.59e-13 cm³ s⁻¹ at 10⁴ K (textbook 1.58e-13) |
+| Potassium (Verner & Yakovlev 1995 4s shell; coefficients read from Verner's `phfit2.f`, whose H and Na entries equal the ones already in the code) | 9.1e-21 cm² at 285 nm; half ionized at 5.6e-4 bar where sodium is at 1.8e-4. Its recombination rate is sodium's and its electron-impact rate sodium's fit at 4.34 eV: estimates, not checked |
+| Hydrogen and sodium ionized together | electrons equal the ions of both to 2e-16; hydrogen half ionized at 8e-9 bar, sodium at 1.8e-4 bar |
+| Ionization in the model's plots (Na at 2e-6) | sodium's extinction falls to 0.2% at 3.7e-7 bar and is unchanged at 21 mbar; the D-line bin drops from 22368 to 22340 ppm at R = 200 |
+| The sodium D lines | the depth Na adds peaks in the bin at 0.588 µm (2003 ppm, with the line cores recomputed) with wings on both sides (1098 at 0.58, 1054 at 0.60, 313 at 0.52, 167 at 0.80); table bin mean 5.8e-13 cm² there against 3.6e-20 at 0.58 µm |
+| A night side 500 K cooler | limb layers at the mean of day and night to 1e-9 K; day and night fluxes those of the two profiles run alone; with no contrast identical to the one-column model (2e-9 ppm) |
+
+A report that sodium showed only a slope, not a peak, was the plot and not the data: the spectrum's default range
+began at 0.6 µm and showed the red wing alone. It now begins at 0.3 µm. The escape estimates are no longer on the
+page (the spectra hardly respond to them); the code and its checks remain.
+
+The crossover masses in those notes (24.5 and 30.8 amu) are not reproduced: their diffusion coefficient took
+masses in grams where its table wanted amu, and was doubled. With the measured H-He coefficient the same rates give
+14.1 and 16.6 amu.
+
+Against petitRADTRANS 3.4.0, gases, 16 cases: each of the twelve gases alone and four mixtures, on a low-gravity
+planet (1100 K, one scale height about 400 ppm of depth), a hot Jupiter (1600 K) and an ultra-hot Jupiter
+(2300 K, for Na, K, TiO, VO; from 0.35 µm). Rayleigh scattering on, collision-induced absorption off, 120 layers.
+"Same tables": ExoMolOP's R = 1000, 16 g-point k-tables in both codes, 2996 or 3535 bins. "Shipped": the tables
+in `public/opacity/` with 60 layers, both spectra binned to R = 100.
+
+| Case | Same tables, same interpolation: transit rms / max (ppm), flux rms | Same tables, our interpolation | Shipped tables |
+| --- | --- | --- | --- |
+| H2O + CO2 + CO + CH4, low gravity | 3.7 / 6.8, 0.32% | 5.8 / 56 | 10.4 / 57, 0.46% |
+| H2O + CO2 + CO + CH4, hot Jupiter | 1.2 / 2.0, 0.20% | 2.6 / 21 | 3.6 / 16, 0.31% |
+| Eight molecules, low gravity | 3.4 / 13.8, 0.36% | 5.4 / 50 | 13.5 / 50, 0.51% |
+| H2O, CO, Na, K, TiO, VO, ultra-hot | 1.2 / 1.8, 0.41% | 3.2 / 41 | 7.2 / 29, 0.89% |
+| H2O alone | 4.4 / 8.7, 0.31% | 5.1 / 54 | 8.7 / 51, 0.44% |
+| CO2 alone | 4.5 / 11.4, 0.91% | 3.2 / 14 | 4.6 / 22, 1.69% |
+| CO alone | 6.0 / 12.6, 0.97% | 9.2 / 85 | 12.9 / 81, 1.81% |
+| CH4 alone | 2.9 / 5.2, 0.75% | 2.3 / 3.9 | 3.6 / 12, 1.28% |
+| NH3 alone | 3.2 / 5.0, 0.47% | 2.6 / 4.1 | 3.5 / 13, 0.79% |
+| HCN alone | 5.3 / 9.9, 0.76% | 3.5 / 12 | 5.6 / 17, 1.41% |
+| SO2 alone | 3.4 / 8.5, 0.96% | 3.2 / 6.2 | 3.8 / 25, 1.80% |
+| H2S alone | 4.5 / 8.0, 0.71% | 2.8 / 23 | 5.3 / 25, 1.30% |
+| Na alone | 5.5 / 6.8, 0.16% | 4.4 / 35 | 10.4 / 54, 0.61% |
+| K alone | 5.1 / 6.5, 0.08% | 5.3 / 27 | 13.9 / 65, 0.55% |
+| TiO alone | 3.3 / 6.6, 0.22% | 1.6 / 4.0 | 5.6 / 28, 0.79% |
+| VO alone | 2.7 / 6.7, 0.30% | 1.7 / 3.5 | 4.6 / 23, 0.66% |
+
+With the same tables and the same interpolation the two codes agree to 1.2-6.0 ppm rms and 14 ppm at worst. The
+reference has Rayleigh scattering by H2 and He only; this model also by the trace gases, which is worth up to
+1 ppm of these differences (CO at 1e-3). Most
+of that rms is a constant offset of +3 to +5 ppm in the single-gas cases (the scatter about it is near 1 ppm); its
+origin was not found. The flux differences of the single trace gases (up to 1.8% with 60 layers) are at
+wavelengths where such an atmosphere is transparent to the bottom of the model, so that the flux is the lowest
+layer's temperature: for SO2 alone 1.80%, 0.94% and 0.49% with 60, 120 and 240 layers.
+
+Three things this comparison found, each then settled against something other than petitRADTRANS:
+
+1. **Putting a combined distribution back on the g-points** (`overlap` in `opacity.js`). Species are combined two
+   at a time and the ng² sums reduced to ng values after each pair. The first version took the value interpolated
+   at each node; that loses opacity at every step. `tools/opacity/mixing_study.mjs` carries random overlap out
+   without intermediate steps (4096 joint samples per bin and layer, 64 intervals of g) on every tenth bin:
+
+   | Reduction after each pair | Eight molecules: transit rms / mean (ppm), flux rms | Four molecules | Six absorbers, ultra-hot |
+   | --- | --- | --- | --- |
+   | value at the node (first version) | 36.6 / -26.3, 1.00% | 23.8 / -14.3, 0.50% | 8.1 / -4.6, 1.09% |
+   | mean of k over the node's interval | 13.1 / +8.3, 0.34% | 7.5 / +0.7, 0.17% | 1.9 / +0.6, 0.67% |
+   | exp of the mean of ln k (used) | 5.3 / -3.8, 0.09% | 6.2 / -5.0, 0.11% | 1.1 / -0.8, 0.18% |
+   | petitRADTRANS, for comparison | 3.9 / -2.2, 0.37% | 6.0 / -2.9, 0.34% | 3.8 / +0.1, 0.33% |
+
+   Reversing the order of the species changes the result by about 1 ppm rms; keeping the running sum on two or four
+   times as many intervals gains 3-4 ppm at three to seven times the cost and was dropped. An earlier version of
+   these notes blamed the 20.7 ppm of the four-molecule case on the top of the model; it was mostly this.
+2. **Interpolating a table in temperature.** With identical tables, CO alone still differed by up to 95 ppm in the
+   far wings of its bands, where σ rises tenfold per 100 K. petitRADTRANS's spectra are reproduced when σ itself
+   is interpolated linearly in T (the "same interpolation" column); the model interpolates log σ in 1/T. Predicting
+   each temperature node of the ExoMolOP tables from its two neighbours (400-2600 K, four pressures, 0.6-12 µm,
+   σ > 1e-26 cm²; the spacing the shipped tables have), log10(predicted/actual):
+
+   | | log σ in T | log σ in ln T | log σ in 1/T (used) | σ in T |
+   | --- | --- | --- | --- | --- |
+   | mean, twelve species [dex] | -0.021 to +0.004 | -0.010 to +0.005 | -0.001 to +0.006 | +0.010 to +0.068 |
+   | rms, CO / CH4 / TiO [dex] | 0.065 / 0.034 / 0.049 | 0.054 / 0.019 / 0.030 | 0.050 / 0.017 / 0.026 | 0.141 / 0.071 / 0.146 |
+
+   In spectra, a table with every second temperature node against the full one (R = 1000, one gas), transit rms
+   in ppm for log σ in 1/T, log σ in T, σ in T: CO 0.7, 4.3, 15.0; CH4 3.0, 8.9, 4.7; CO2 4.0, 7.1, 15.5; TiO 0.5,
+   2.0, 3.3; H2O 17.5, 20.3, 42.1 (means +3.0, -9.9, +31.1). So where the two codes differ by tens of ppm it is the
+   interpolation, and the tables themselves favour log σ in 1/T. The other rules remain as `interpolation` in `gasExtinction` for these comparisons only
+   (`tools/opacity/interp_study.py` for the nodes, `interp_study.mjs` for the spectra).
+3. **Reducing the tables to fewer g-points** (`rebin_k` in `tools/opacity/build_opacity.py`). The mean of k over a
+   node's interval keeps the bin's mean opacity but lets the top of each interval count for too much; with the
+   interpolation fixed, the shipped H2O table was then 25.5 ppm rms (mean +20.7) from petitRADTRANS. The log mean
+   gives 8.7 ppm (mean -1.6), and 10.3 against 23.3 for four molecules; it is the default.
+
+The top of the model still matters in the strongest bands of a low-gravity planet: with a top at 1e-6 bar the
+highest ray has an optical depth up to 0.20 at R = 1000, and moving the top to 1e-8 bar changes those bins by 100
+to 250 ppm. The page reports this optical depth and warns above 0.05; its own default is a top at 1e-8 bar with
+80 layers. Mixing two gases by random overlap is itself approximate: for two synthetic uncorrelated line spectra
+whose joint distribution is known exactly, the transmittance after mixing two 16-point distributions is off by up
+to 0.008, against 0.002 for the exact joint distribution on the same 16 points. petitRADTRANS drops a species
+whose largest k is under 1% of the largest window opacity of the others; here such a species is added as a grey
+term (under 1 ppm of difference from resorting everything).
+
+### Resolution, size and speed (`tools/opacity/study.py`, `study.mjs`)
+
+Two planets (a WASP-39 b-like Saturn-mass planet, where one scale height is about 400 ppm of depth, and an
+HD 189733 b-like hot Jupiter), H2O + CO2 + CO + CH4 with CIA and Rayleigh scattering, 60 layers; spectra binned to
+R = 100 over 0.6-12 µm and compared with a reference run with 240 layers. Times are for one forward model
+(transmission and emission) in Node 22 on an Apple M-series laptop, with the layers' cross-sections cached
+(only abundances changed). The k-table rows were rerun after the changes above (log-mean mixing, 1/T); the
+sampled rows were not (no mixing is involved; their times are from before).
+
+**Which source.** ExoMolOP's R = 15000 cross-sections give transit depths 63 ppm higher on average (94 ppm rms)
+than its own R = 1000 k-tables for water on the low-gravity planet (`study_single.mjs`): the lines are narrower
+than R = 15000, and unresolved cross-sections overestimate absorption (Garland & Irwin 2019). The k-tables,
+made from the full line lists, are therefore the source of what ships and the reference of the second table.
+No line-by-line calculation was run to settle it independently.
+
+Made from the R = 15000 cross-sections, against those cross-sections as they are:
+
+| Table | MB per molecule | Transit rms / max (ppm), low gravity | Hot Jupiter | Emission rms | ms |
+| --- | --- | --- | --- | --- | --- |
+| sampled, R = 1000 | 5.5 | 221 / 820 | 62 / 236 | 6.7% | 32 |
+| sampled, R = 3000 | 16.4 | 121 / 473 | 34 / 127 | 3.1% | 96 |
+| sampled, R = 10000 | 54.7 | 46 / 148 | 13 / 48 | 1.4% | 325 |
+| k-table, R = 100, 8 g | 4.4 | 52 / 159 | 14 / 45 | 1.6% | 39 |
+| k-table, R = 300, 8 g | 13.1 | 44 / 145 | 12 / 38 | 1.4% | 114 |
+| k-table, R = 300, 16 g | 26.3 | 26 / 101 | 7 / 28 | 0.7% | 455 |
+
+Sampling leaves noise that falls only as the square root of the number of points per bin; a k-table is better
+per byte at every size.
+
+Made from the R = 1000 k-tables (16 g-points), against those tables as they are:
+
+| Table | MB per molecule | Transit rms / max (ppm), low gravity | Hot Jupiter | Emission rms | ms |
+| --- | --- | --- | --- | --- | --- |
+| R = 1000, 8 g | 48.6 | 31 / 87 | 8 / 19 | 0.95% | 418 |
+| R = 333, 16 g | 32.4 | 14 / 78 | 4 / 20 | 0.35% | 559 |
+| R = 333, 8 g | 16.2 | 39 / 127 | 11 / 31 | 1.2% | 137 |
+| R = 333, 4 g | 8.1 | 147 / 370 | 36 / 85 | 4.0% | 49 |
+| R = 200, 16 g | 19.5 | 15 / 48 | 4 / 14 | 0.43% | 338 |
+| R = 200, 12 g | 14.6 | 22 / 61 | 6 / 17 | 0.64% | 181 |
+| R = 200, 8 g | 9.7 | 39 / 98 | 11 / 27 | 1.2% | 83 |
+| R = 91, 8 g | 4.4 | 45 / 163 | 13 / 48 | 1.5% | 39 |
+| R = 333, 8 g, uint8 instead of uint16 | 8.1 | 40 / 127 | 11 / 32 | 1.2% | 139 |
+| R = 333, 8 g, float16 | 16.2 | 39 / 126 | 11 / 31 | 1.2% | 138 |
+| R = 333, 8 g, every 2nd T and P node | 4.6 | 43 / 123 | 11 / 33 | 1.4% | 137 |
+| R = 333, 8 g, every 3rd T and P node, uint8 | 1.1 | 45 / 140 | 12 / 36 | 1.7% | 137 |
+| **shipped: R = 200, 12 g, every 2nd node, uint8, log mean** | **2.06** | **14.0 / 85** | **4.1 / 15** | **0.41%** | **183** |
+
+Every row but the last reduces the g-points by the mean of k over each node's interval. There, what decides the
+accuracy is the number of g-points: 16 give about 14 ppm rms on the low-gravity planet, 8 about 39, 4 about 147,
+whatever the resolution between R = 200 and 1000. Resolution above 200 buys nothing for data at R = 100. uint8
+against uint16 changes the result by under 1 ppm; half the temperature and pressure nodes by about 4 ppm. The
+shipped tables use the log mean instead (point 3 above), and at 12 g-points and 2 MB do as well as the 16-point
+tables of 19 and 32 MB. With the log mean fewer points cost less than the table suggests: against petitRADTRANS at
+R = 100, 8 and 10 g-points give 14.3 and 11.6 ppm rms for four molecules on the low-gravity planet (12: 10.3) and
+21.6 and 16.3 for eight molecules (12: 13.4), at 1.4 and 1.7 MB per molecule; 12 is kept for the mixtures.
+float16 is no better than uint16 at the same size (its steps near log10 σ = -25 are 1.8% in σ against 0.02%) and
+`Float16Array` is absent in Node 22; it is decoded by hand and not used for storage. Time grows with the square
+of the number of g-points (the species are resorted pairwise); the log mean costs about 40% more in that step than
+the value at the node. With temperatures changing at every call (nothing cached), one model takes 220 ms for four
+molecules and 60 layers, 300 ms with the page's 80 layers, and 870 ms with all twelve gases switched on.
+Layers: 30, 60 and 120 layers differ from 240 by 11, 3.8 and 1.0 ppm rms in transit on the low-gravity planet and
+by 0.44%, 0.11% and 0.02% in emission; an adaptive layer grid was not tried, because 60 uniform layers already
+cost less than the tables.
+
+### Not verified, not included
+
+- HITRAN's site states no licence or redistribution terms for its data (searched 2026-11-20: the home page, the
+  documentation, the citation policy, the CIA page and its readme); the five CIA tables shipped are derived from its
+  files. The decision to ship them is the owner's. The tholin constants are Khare et al.'s published measurements,
+  taken from the compilation distributed with LX-MIE (a GPL code; none of its code is used).
+- No line-by-line reference; the comparison with petitRADTRANS shares its k-tables, so it says nothing about the
+  line lists or about ExoMolOP's k-table generation.
+- Collision-induced absorption was switched off in the petitRADTRANS comparison (the two codes' CIA files differ);
+  ours is checked against the HITRAN file and as k n² in a slab. HITRAN's H2-H2 file stops at 1 µm and 3000 K:
+  shortward and hotter the table is empty or clamped.
+- The 3D "Planet" view (`atmoPlanetFrag` in `src/viz/shaders.js`) follows one ray per pixel through the model's
+  layers: single scattering only, straight rays (no refraction), a point-like star for the shadow, the same
+  atmosphere on the day and night sides (the model is one-dimensional). Its extinction per layer and colour
+  channel is found from the model's limb transmittance by onion peeling (recovered to 5.5e-7 on a known profile),
+  so the ring it draws in transit is the model's; its scattering coefficient is the model's; the interior's
+  reflectance is the two-stream estimate below. Checked by eye, headlessly on a built copy: day side, terminator,
+  transit, a silicate cloud, a Rayleigh haze. No reference image or second renderer was compared.
+- Colours: true colour uses 0.38-0.75 µm of the model. For data that do not reach the visible a wavelength range
+  (the plotted one, or an instrument's) is laid over 400-700 nm in log wavelength, shortest blue: false colour
+  that keeps the order of the spectrum, not a claim about what an eye would see.
+- The particle fit of Kitzmann & Heng (2018) is poor below x = 1 for absorbing grains (above); no Mie tables, no
+  size distribution, no condensate species, no cloud microphysics.
+- Escape: no hydrodynamic model, no measured stellar XUV spectrum, no comparison with an observed mass-loss rate
+  (Lyman-alpha or helium 1083 nm transits); the planet's radius and orbit are fixed through the star's history. The
+  temperature profile does not respond to escape, and no haze is produced from escaping or photolysed gas: the
+  page says so beside the numbers.
+- Ionization: hydrogen, sodium and potassium (potassium's recombination and electron-impact rates are estimates;
+  molecules are not photodissociated; the chemistry carries no other free atoms); the star's ultraviolet is a blackbody for sodium and the Sun's history for hydrogen. The
+  day-night option interpolates two given profiles and was compared with no circulation model or phase curve.
+- Emission has no scattering and no reflected light. The day side's reflected colour in the 3D view is a
+  two-stream estimate from the single-scattering albedo above optical depth 1; it was compared with nothing.
+- The star is a blackbody in the eclipse depth and in the colours; its limb colours are those of a grey atmosphere.
+- Mixing ratios are constant with height; there is no chemistry, no condensation, no thermal dissociation.
+- The tables stop at 1e-5 bar and 3400 K (values are held constant beyond) and cover 0.30-49.99 µm.
+- A constant +3 to +5 ppm against petitRADTRANS in the single-gas cases (same tables, same interpolation) is
+  unexplained.
+- Na and K are ExoMolOP's tables of the Kurucz lines with the Allard resonance-wing profiles; they were compared
+  with petitRADTRANS reading the same files, not with its own Na and K opacities. TiO is 48Ti16O only.
+- All twelve gases switched on take about 0.9 s per model; nothing was done about it (fewer g-points, or the
+  GPU, are the options on the roadmap).
+- HITRAN states no redistribution licence for the CIA files; the two derived tables (0.3 MB) are in
+  `public/opacity/` uncommitted, for the owner to decide.
+- The page was checked in the app's browser pane on the dev server (first load, every plot, both 3D modes, the
+  cloud deck, emission, the hand-off to the Spectroscopy simulator) and headlessly on a built copy; the catalogue
+  look-up, the CSV and PNG exports by clicking, touch, and narrow screens were not. With twelve gases the page
+  fetches a gas's table when it is first switched on (6 files, 8.5 MB, at the start; 14 with everything on):
+  checked headlessly on a built copy, where one model took 291 ms with the four default gases and 830-880 ms with
+  all twelve. The offline check was not rerun after that change.
+
 ## Sessions, saved analyses, exports
 
 An analysis is one JSON document (`docs/FORMAT.md`, `src/core/session.js`): system, data, priors, sampler and,
@@ -1355,7 +2199,8 @@ data, WASP-39 b with NIRSpec G395H (ERS 1366): the mirror-tilt step found automa
 and 91 ppm scatter, but lie **202 ppm lower on average, unexplained**. Not included: spectral extraction from
 images, HST/WFC3, measured throughputs (all bands are top-hats, limits from the mission documents), limb
 darkening beyond 5.5 µm (extrapolated and flagged), NIRSpec PRISM comparison. The simulator is a simple
-radiometric estimate (throughput 0.3 and noise floors are editable assumptions), not ArielRad or PandExo. The
+radiometric estimate, not ArielRad or PandExo; since 2026-11-20 its Ariel numbers are ArielRad's published ones
+(see "Ariel's noise in the simulator" under Atmosphere), while JWST keeps one editable throughput and floor. The
 real-data test needs 207 MB of public files in `test/data/jwst/` and is skipped without them.
 
 ### Search and Plan

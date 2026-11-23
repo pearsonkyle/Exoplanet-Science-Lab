@@ -16,11 +16,12 @@ Three ways in::
 
     # 3. call the models
     flux = esl.transit(times, dict(rprs=0.1, ars=8.8, inc=87, per=3.5, tmid=0, ld=[0.4, 0.26]))
+    titan = esl.atmosphere("Titan", wl_min=0.6, wl_max=5.3, R=100)      # spectra of a model atmosphere
 """
 from ._runtime import CoreError, RuntimeUnavailable, available_runtimes, runtime_info, set_runtime
 from ._version import __version__
-from .functions import (CatalogSystem, EphemerisFit, LimbDarkeningCoefficients, Periodogram, TimingPeriodogram, bands, catalog_location, core, derive, events,
-                        fit_ephemeris, limb_darkening, lookup, mass_from_k, periodogram, radial_velocity, read_light_curve, read_rv, search, semi_amplitude, transit)
+from .functions import (CatalogSystem, EphemerisFit, LimbDarkeningCoefficients, Periodogram, TimingPeriodogram, atmosphere, atmosphere_worlds, bands, catalog_location, core, derive, events,
+                        fit_ephemeris, limb_darkening, lookup, mass_from_k, periodogram, radial_velocity, read_light_curve, read_rv, retrieve_atmosphere, search, semi_amplitude, star_bands, star_fit, transit)
 from .models import (FORMAT, FORMAT_VERSION, Chi2Parts, Data, Detrend, FitSettings, FreeParameter, LightCurve, LightCurveEpoch, LightCurveModel, Likelihood, LimbDarkening,
                      ModelEvaluation, ParameterSummary, Planet, PlanetParameters, Prior, Progress, Quantity, RadialVelocity, Result, RVModel, RVZeroPoint, Sampler,
                      Samples, Session, Software, Star, TimingModel, TimingPoint, Use)
@@ -30,7 +31,7 @@ __all__ = [
     "FitSettings", "FreeParameter", "Prior", "Use", "Sampler", "Result", "ParameterSummary", "Quantity", "Chi2Parts", "RVZeroPoint", "Samples", "Software",
     "ModelEvaluation", "LightCurveModel", "RVModel", "TimingModel", "Likelihood", "Progress", "FORMAT", "FORMAT_VERSION",
     "transit", "radial_velocity", "semi_amplitude", "mass_from_k", "limb_darkening", "bands", "fit_ephemeris", "periodogram", "derive", "events",
-    "read_light_curve", "read_rv", "lookup", "search", "catalog_location", "core",
+    "read_light_curve", "read_rv", "lookup", "search", "catalog_location", "core", "atmosphere", "atmosphere_worlds", "retrieve_atmosphere", "star_fit", "star_bands",
     "EphemerisFit", "TimingPeriodogram", "Periodogram", "LimbDarkeningCoefficients", "CatalogSystem",
     "set_runtime", "available_runtimes", "runtime_info", "CoreError", "RuntimeUnavailable",
 ]

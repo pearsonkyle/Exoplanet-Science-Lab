@@ -69,12 +69,13 @@ app.append(
     h('div', { class: 'card' },
       h('h2', {}, 'Simulate an observation'),
       h('div', { class: 'grid2' },
-        select('Telescope', 'simTel', [['Ariel', 'Ariel (0.64 m²)'], ['JWST', 'JWST (25.4 m²)']], 'Ariel'),
+        select('Telescope', 'simTel', [['Ariel', 'Ariel (0.63 m²)'], ['JWST', 'JWST (25.4 m²)']], 'Ariel'),
         select('Mode', 'simMode', [['', 'all six channels']], ''),
-        field('Area (m²)', 'simArea', 0.64, { min: 0.01 }), field('Throughput', 'simThr', 0.3, { min: 0.01, max: 1 }),
+        field('Area (m²)', 'simArea', 0.63, { min: 0.01 }), field('Throughput', 'simThr', 0.3, { min: 0.01, max: 1 }),
         field('Noise floor (ppm)', 'simFloor', 20, { min: 0 }), field('Above photon noise (%)', 'simExcess', 0, { min: 0 }),
         field('Cadence (s)', 'simCad', 60, { min: 1 }), field('Resolving power R', 'simR', '', { min: 2, placeholder: 'default' }),
         field('Feature height (ppm)', 'simAmp', 400, { min: 0 }), field('Seed', 'simSeed', 1, { step: 1 })),
+      h('label', { class: 'chk', id: 'simAtmoL', style: 'margin-top:8px;display:none' }, h('input', { type: 'checkbox', id: 'simAtmo' }), h('span', { id: 'simAtmoT' }, 'Atmosphere model')),
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn', id: 'bSim', onclick: () => api.simulate().catch(() => {}) }, 'Simulate'), h('span', { class: 'dim', id: 'simHint', style: 'font-size:12px' })),
       h('p', { class: 'note2' }, 'A simple radiometric estimate, not ArielRad or PandExo: photon noise of a black-body star through the stated area and throughput, plus a floor (see “How this is computed”). The injected spectrum is a level, and Gaussian features at 1.4, 2.8 and 4.3 µm of the height given: a test pattern, not an atmosphere.'),
       h('div', { class: 'status', id: 'stSim' }))),
@@ -144,7 +145,7 @@ function HOW() {
 <p><b>Light curves.</b> A channel is the sum of its columns, errors added in quadrature, divided by its median. The white light curve is the sum of all columns (detectors are averaged with inverse-variance weights).</p>
 <p><b>Fits.</b> One likelihood for everything on this site (<span class="mono">buildProblem</span>). White light: R<sub>p</sub>/R★, mid-time and inclination free (nested sampling); a/R★ is fixed, or follows from Kepler’s law with R★ free. Channels: geometry fixed at the white-light solution, the depth free, limb darkening fixed at the PHOENIX-table value for the channel’s wavelength range and the star’s T<sub>eff</sub>, log g, [Fe/H] (table to 5.5 µm; beyond it the reddest part of the table is used). With one free parameter the posterior is integrated on a grid. The baseline (level, slope, curvature, a step) enters linearly and is integrated out analytically in every fit. Error bars of the spectrum are the 16th and 84th percentiles; they do not include the uncertainty of the shared geometry, which moves all channels together.</p>
 <p><b>Noise checks.</b> Residual rms against the rms the error bars predict, and β: the largest ratio of the rms of binned residuals to the white-noise expectation σ<sub>1</sub>/√N · √(M/(M−1)).</p>
-<p><b>Simulation.</b> Detected electrons per exposure N = A · τ · t · π(R★/d)² ∫ 2c/λ⁴ / (e<sup>hc/λkT</sup> − 1) dλ over the channel; noise per point σ² = (1 + x)²/N + f² · T<sub>14</sub>/Δt, where x is the stated excess over photon noise and f the noise floor, written so that the floor alone averages to f over one transit duration. No background, read noise, saturation or pointing jitter. Ariel: 0.64 m², bands of Tinetti et al. (2018) and the Ariel Red Book; JWST: 25.4 m². The throughput is one number you choose, not a measured curve.</p>
+<p><b>Simulation.</b> Detected electrons per exposure N = A · τ · t · π(R★/d)² ∫ 2c/λ⁴ / (e<sup>hc/λkT</sup> − 1) dλ over the channel; noise per point σ² = (1 + x)²/N + f² · T<sub>14</sub>/Δt, where x is the stated excess over photon noise and f the noise floor, written so that the floor alone averages to f over one transit duration. No background, read noise, saturation or pointing jitter. Ariel: 0.63 m², bands of Tinetti et al. (2018) and the Ariel Red Book; with the throughput left at its default each Ariel channel has the efficiency ArielRad publishes (0.29 to 0.42; Mugnai et al. 2020), the photon variance carries its 40% margin and 40 ppm √hr of gain noise is added, which reproduces ArielRad's photon noise for HD 209458 to 8%. JWST: 25.4 m² and one throughput you choose, not a measured curve.</p>
 <p><b>Scale heights.</b> H = kT<sub>eq</sub>/(μ m<sub>u</sub> g) with μ = 2.3; one scale height changes the depth by 2 H R<sub>p</sub>/R★². For orientation only.</p>`;
 }
 
@@ -279,6 +280,10 @@ function simModes() {
   $('simArea').value = TELESCOPES[tel].area; $('simThr').value = TELESCOPES[tel].throughput; $('simFloor').value = TELESCOPES[tel].noiseFloorPpm;
 }
 $('simTel').addEventListener('change', simModes);
+/** The model spectrum the Atmosphere page kept in this browser ("Use in the simulator"), or null. */
+function atmoSpectrum() { try { const a = JSON.parse(localStorage.getItem('esl.atmosphere.spectrum') || 'null'); return a && Array.isArray(a.wl) && a.wl.length > 1 ? a : null; } catch { return null; } }
+function atmoOffer() { const a = atmoSpectrum(); $('simAtmoL').style.display = a ? '' : 'none'; if (a) $('simAtmoT').textContent = `Inject the Atmosphere page's model of ${a.name} (kept ${String(a.made).slice(0, 16).replace('T', ' ')} UTC) instead of the test pattern`; else $('simAtmo').checked = false; }
+atmoOffer(); window.addEventListener('storage', (e) => { if (e.key === 'esl.atmosphere.spectrum') atmoOffer(); }); window.addEventListener('focus', atmoOffer);
 async function simulate(o = {}) {
   setStatus('stSim', 'Simulating …');
   try {
@@ -290,9 +295,12 @@ async function simulate(o = {}) {
     const tel = o.telescope || $('simTel').value, mode = o.mode ?? $('simMode').value, R = o.R ?? (Number($('simR').value) || undefined);
     const bands = mode ? [mode] : TELESCOPES[tel].bands, simR = {}; if (R) for (const b of bands) if (MISSION_BANDS[b].kind !== 'photometer') simR[b] = R;
     const amp = (o.featurePpm ?? num('simAmp')) * 1e-6, sys = { ...P.sys }, d0 = P.kind === 'eclipse' ? (sys.fpfs ?? 0.05) * sys.rprs ** 2 : sys.rprs ** 2;
-    const depth = o.depth || { depth0: d0, slope: 0, features: [{ wl: 1.4, sigma: 0.1, amp }, { wl: 2.8, sigma: 0.15, amp }, { wl: 4.3, sigma: 0.2, amp: 1.5 * amp }] };
+    // a spectrum kept by the Atmosphere page replaces the test pattern when its box is ticked
+    const atmo = !o.depth && $('simAtmo').checked ? atmoSpectrum() : null;
+    const depth = o.depth || (atmo ? SP.tabulatedDepth({ wl: atmo.wl, depth: P.kind === 'eclipse' ? atmo.eclipse : atmo.transit }) : { depth0: d0, slope: 0, features: [{ wl: 1.4, sigma: 0.1, amp }, { wl: 2.8, sigma: 0.15, amp }, { wl: 4.3, sigma: 0.2, amp: 1.5 * amp }] });
     if (!(P.star.distance > 0)) throw new Error('The simulator needs the distance of the star (pc): fill it in under “Planet and star”.');
-    const sim = SP.simulateSpectroscopy({ system: sys, star: P.star, telescope: tel, kind: P.kind, bands, simR, area: o.area ?? num('simArea'), throughput: o.throughput ?? num('simThr'), noiseFloorPpm: o.noiseFloorPpm ?? num('simFloor'), excess: o.excess ?? num('simExcess') / 100, cadence: o.cadence ?? num('simCad'), seed: o.seed ?? num('simSeed'), depth, slopePpmPerHr: o.slopePpmPerHr ?? 0, ldFor: (lo, hi) => { const r = ldFor(lo, hi); return { law: r.law, coeffs: r.coeffs }; } });
+    const sim = SP.simulateSpectroscopy({ system: sys, star: P.star, telescope: tel, kind: P.kind, bands, simR, area: o.area ?? num('simArea'), throughput: o.throughput ?? (TELESCOPES[tel].pce && num('simThr') === TELESCOPES[tel].throughput ? undefined : num('simThr')),   // left at its default, Ariel uses each channel's own efficiency
+       noiseFloorPpm: o.noiseFloorPpm ?? num('simFloor'), excess: o.excess ?? num('simExcess') / 100, cadence: o.cadence ?? num('simCad'), seed: o.seed ?? num('simSeed'), depth, slopePpmPerHr: o.slopePpmPerHr ?? 0, ldFor: (lo, hi) => { const r = ldFor(lo, hi); return { law: r.law, coeffs: r.coeffs }; } });
     P.sim = { inputs: sim.inputs, truth: sim.truth.map((t) => ({ wl: t.wl, lo: t.lo, hi: t.hi, depth: t.depth, sigma: t.sigma, electrons: t.electrons })), depth };
     setCube(sim.cube, { kind: 'simulation', files: [], meta: { ...sim.cube.meta, target: P.name, mode: mode || 'all channels' } });
     const sg = sim.truth.map((t) => t.sigma);

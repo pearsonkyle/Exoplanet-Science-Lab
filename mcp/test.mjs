@@ -44,7 +44,7 @@ const call = async (name, args = {}, opts) => { const r = await client.callTool(
 
 // tools that need a call only the web page has (figures of the page, the companion search) are not offered here
 const listed = (await client.listTools()).tools, want = toolsFor('mcp').filter((t) => !t.needs).map((t) => t.name);
-check('the server lists the tools of the shared table', listed.length === want.length && want.every((n) => listed.some((t) => t.name === n)), `${listed.length} tools`);
+check('the server lists the tools of the shared table, and its own atmosphere and star tools', listed.length === want.length + 4 && want.every((n) => listed.some((t) => t.name === n)) && ['atmosphere_spectrum', 'atmosphere_retrieve', 'star_fit', 'star_match_spectrum'].every((n) => listed.some((t) => t.name === n)), `${listed.length} tools`);
 check('every tool has a description, an object schema and hints', listed.every((t) => t.description.length > 30 && t.inputSchema.type === 'object' && t.annotations && typeof t.annotations.readOnlyHint === 'boolean'));
 check('the server sends its instructions', /ESL session/.test(client.getInstructions() || ''));
 
@@ -105,6 +105,36 @@ const over = await call('write_file', { name: 'times.csv', content: 'x' });
 check('a file the server did not write is not overwritten', over.isError && readFileSync(join(ws, 'times.csv'), 'utf8').length > 100, over.text);
 const bad = await call('set_free', { free: ['ars'] }), unknown = await call('no_such_tool', {});
 check('a refused call comes back as an error result the client can read', bad.isError && /never fitted/.test(bad.text) && unknown.isError && /no tool/.test(unknown.text));
+const titan = await call('atmosphere_spectrum', { world: 'Titan', wl_min: 0.6, wl_max: 5.3, R: 100, save_as: 'titan.csv' }), tcsv = existsSync(join(ws, 'titan.csv')) ? readFileSync(join(ws, 'titan.csv'), 'utf8').trim().split('\n') : [];
+check('atmosphere_spectrum: Titan\'s spectrum is written to the workspace and described without arrays', !titan.isError && tcsv.length === titan.data.bins + 1 && titan.data.clouds[0].condensate === 'CH4' && titan.data.mean_molecular_weight > 27 && titan.data.transit_depth_ppm.largest.value > titan.data.transit_depth_ppm.smallest.value && titan.data.collision_induced.includes('N2-N2') && titan.text.length < 1500,
+  `${titan.data ? titan.data.bins : 0} bins, depth ${titan.data ? titan.data.transit_depth_ppm.smallest.value + ' to ' + titan.data.transit_depth_ppm.largest.value : '?'} ppm`);
+const noWorld = await call('atmosphere_spectrum', { world: 'Pluto' }), outside = await call('atmosphere_spectrum', { world: 'Titan', save_as: '../x.csv' });
+check('atmosphere_spectrum refuses an unknown world and a file outside the workspace', noWorld.isError && /no world/.test(noWorld.text) && outside.isError && /outside/.test(outside.text));
+const sed = await call('star_fit', { magnitudes: { 'Gaia BP': [7.793284, 0.002848], 'Gaia G': [7.521246, 0.002776], 'Gaia RP': [7.080288, 0.003844], 'Tycho BT': [8.334, 0.017], 'Tycho VT': [7.699, 0.012], '2MASS J': [6.591, 0.02], '2MASS H': [6.366, 0.038], '2MASS Ks': [6.308, 0.026], 'WISE W3': [6.32, 0.016], 'WISE W4': [6.265, 0.053] }, parallax: [20.7694, 0.0266], logg: [4.28, 0.1], feh: [0, 0.1], av_max: 0 });
+check('star_fit: HD 209458 from its catalogue magnitudes, against interferometry', !sed.isError && sed.data.converged && Math.abs(sed.data.angular_diameter_mas.value / 0.2254 - 1) < 0.04 && Math.abs(sed.data.teff_K.value - 6092) < 100 && sed.data.radius_Rsun.value > 1.1 && sed.data.radius_Rsun.value < 1.25 && sed.data.bands.length === 10,
+  sed.data ? `Teff ${sed.data.teff_K.value} +${sed.data.teff_K.plus} −${sed.data.teff_K.minus} K (6092 ± 103), θ ${sed.data.angular_diameter_mas.value} mas (0.2254 ± 0.0072), R ${sed.data.radius_Rsun.value} R☉` : sed.text);
+{ // a spectrum file: a 5000 K blackbody-like curve would not test the grid, so the fitted model of the star above is not at hand here; write a smooth synthetic file from two magnitudes' worth of points instead
+  const lines = ['# wavelength_micron,flux,error']; for (let i = 0; i < 60; i++) { const w = 0.45 * Math.pow(2.3 / 0.45, i / 59), x = 14387.77 / (w * 5600), f = 1e-12 / (w ** 5 * (Math.exp(x) - 1)); lines.push(`${w.toFixed(5)},${f.toExponential(5)},${(0.02 * f).toExponential(3)}`); }
+  writeFileSync(join(ws, 'spectrum.csv'), lines.join('\n') + '\n');
+  const sm = await call('star_match_spectrum', { file: 'spectrum.csv', degree: 1 }), bad = await call('star_match_spectrum', { file: 'nothing.csv' }), few = await call('star_fit', { magnitudes: { 'Gaia G': [7.5, 0.01] } });
+  check('star_match_spectrum reads a spectrum file from the workspace and returns a temperature; bad input is refused', !sm.isError && sm.data.points_read === 60 && sm.data.teff_K.value > 4800 && sm.data.teff_K.value < 6600 && !sm.data.angular_diameter_mas && bad.isError && few.isError && /three/.test(few.text),
+    sm.data ? `60 points of a 5600 K blackbody matched with a linear factor: ${sm.data.teff_K.value} +${sm.data.teff_K.plus} −${sm.data.teff_K.minus} K, scatter ${sm.data.scatter_fraction.value} (a blackbody is not a star: the tool is exercised here, the method is tested in test/sed.test.mjs)` : sm.text);
+}
+{ // a retrieval: a model spectrum from atmosphere_spectrum, given errors and noise, then fitted
+  const mdl = { planet: { mplanet: 0.69, rplanet: 1.38, pRef: 0.01 }, star: { rstar: 1.19, teff: 6091 }, tp: { kind: 'isothermal', t: 1300 }, vmr: { H2O: 5e-4, CO2: 1e-12, CO: 1e-12, CH4: 1e-12 } };
+  const made = await call('atmosphere_spectrum', { model: mdl, wl_min: 1, wl_max: 5, R: 40, save_as: 'truth.csv' });
+  const rows = existsSync(join(ws, 'truth.csv')) ? readFileSync(join(ws, 'truth.csv'), 'utf8').trim().split('\n').slice(1).map((l) => l.split(',').map(Number)) : [];
+  let seed = 12345; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return (seed + 0.5) / 4294967296; }, gauss = () => Math.sqrt(-2 * Math.log(rnd())) * Math.cos(2 * Math.PI * rnd());
+  writeFileSync(join(ws, 'obs.csv'), '# wavelength_micron, lo, hi, depth_ppm, error_ppm\n' + rows.map((x) => [x[0], x[1], x[2], (1e6 * x[3] + 60 * gauss()).toFixed(2), 60].join(',')).join('\n') + '\n');
+  const fit = await call('atmosphere_retrieve', { model: mdl, gases: ['H2O'], data: [{ file: 'obs.csv', kind: 'transit', unit: 'ppm' }], free: ['t', 'logX_H2O', 'rplanet'], priors: { t: [600, 2200], rplanet: [1.25, 1.5] }, max_models: 15000, save_as: 'fit' }), P = fit.data && fit.data.parameters;
+  const z = (k, v) => Math.abs(P[k].value - v) / (0.5 * (P[k].plus + P[k].minus)), saved = existsSync(join(ws, 'fit.json')) && existsSync(join(ws, 'fit_best.csv')) ? readFileSync(join(ws, 'fit_best.csv'), 'utf8').trim().split('\n').length - 1 : 0;
+  const short = await call('atmosphere_retrieve', { model: mdl, gases: ['H2O'], data: [{ file: 'obs.csv', kind: 'transit', unit: 'ppm' }], free: ['t', 'logX_H2O', 'rplanet'], max_models: 300, live_points: 40, save_as: 'short' });
+  const bad = [await call('atmosphere_retrieve', { model: mdl, data: [{ file: 'nothing.csv', kind: 'transit' }], free: ['t'] }), await call('atmosphere_retrieve', { model: mdl, data: [{ file: 'obs.csv', kind: 'transit', unit: 'ppm' }], free: ['banana'] }), await call('atmosphere_retrieve', { model: mdl, data: [{ file: 'times.csv', kind: 'transit' }], free: ['t'] }), await call('atmosphere_retrieve', { model: mdl, data: [{ file: 'obs.csv', kind: 'transit', unit: 'ppm' }], free: ['t'], save_as: '../out' })];
+  check('atmosphere_retrieve: a noisy model spectrum in a workspace file is fitted and what was put in comes back', !made.isError && rows.length > 30 && !fit.isError && fit.data.converged && z('t', 1300) < 3 && z('logX_H2O', Math.log10(5e-4)) < 3 && z('rplanet', 1.38) < 3 && fit.data.chi2 < 1.6 * fit.data.data_points && saved === rows.length && P.logX_H2O.prior_given === false && P.logX_H2O.prior[0] === -10,
+    P ? `${fit.data.data_points} points at 60 ppm, ${fit.data.models_computed} models in ${fit.data.seconds} s: T ${P.t.value} +${P.t.plus} −${P.t.minus} K (1300), log H2O ${P.logX_H2O.value} +${P.logX_H2O.plus} −${P.logX_H2O.minus} (${Math.log10(5e-4).toFixed(2)}), radius ${P.rplanet.value} +${P.rplanet.plus} −${P.rplanet.minus} (1.38); χ² ${fit.data.chi2}; ln Z ${fit.data.ln_Z.value} ± ${fit.data.ln_Z.error}; each within 3σ` : fit.text);
+  check('atmosphere_retrieve says when it has not converged, and refuses a missing file, an unknown parameter, a file that is not a spectrum and a path outside the workspace', !short.isError && short.data.converged === false && /NOT converged/.test(short.data.warning) && bad.every((r) => r.isError) && /no file/.test(bad[0].text) && /no retrieval parameter/.test(bad[1].text) && /outside/.test(bad[3].text),
+    `${short.data ? short.data.models_computed : '?'} models allowed: converged ${short.data ? short.data.converged : '?'}; ${bad.map((r) => r.text.slice(10, 60)).join(' | ')}`);
+}
 await client.close();
 
 // streamable HTTP
@@ -114,7 +144,7 @@ try {
   const c2 = new Client({ name: 'esl-mcp-test-http', version: '0' });
   await c2.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
   const n = (await c2.listTools()).tools.length, r = await c2.callTool({ name: 'list_examples', arguments: {} });
-  check('the same tools are served over streamable HTTP on 127.0.0.1', n === want.length && /single/.test(r.content[0].text), `${n} tools on port ${port}`);
+  check('the same tools are served over streamable HTTP on 127.0.0.1', n === want.length + 4 && /single/.test(r.content[0].text), `${n} tools on port ${port}`);
   const { request } = await import('node:http');
   const wrongHost = await new Promise((r) => { const q = request({ host: '127.0.0.1', port, path: '/mcp', method: 'POST', headers: { Host: 'evil.example', 'content-type': 'application/json' } }, (x) => { x.resume(); r(x.statusCode); }); q.on('error', () => r(0)); q.end('{}'); });
   check('a request with a foreign Host header is refused', wrongHost === 403, `HTTP ${wrongHost}`);

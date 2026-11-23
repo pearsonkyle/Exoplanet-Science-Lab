@@ -26,6 +26,8 @@ export const PAGES = {
   analyze: { path: 'analyze/', about: 'model and fit transits, velocities and timing', params: ['planet', 'handoff'] },
   search: { path: 'search/', about: 'the catalogue of known planets', params: ['planet', 'q'] },
   spectroscopy: { path: 'analyze/spectroscopy/', about: 'time-series spectra (JWST x1dints, tables, or an Ariel/JWST simulation) to a transmission or emission spectrum', params: [] },
+  atmosphere: { path: 'analyze/atmosphere/', about: 'a model atmosphere: temperature profile, composition and clouds to a transmission and an emission spectrum, with preset worlds (WASP-39 b, WASP-121 b, Jupiter, Titan); it also fits the model to a measured spectrum file (a retrieval)', params: [] },
+  star: { path: 'analyze/star/', about: 'the host star from its magnitudes: effective temperature, angular diameter, radius and luminosity by an SED fit, with catalogue lookup', params: [] },
   validation: { path: 'methods/', about: 'the Methods page: how every technique is done and justified, with references, and its validation against other codes and published results', params: ['topic'] },
 };
 export const PAGE_IDS = Object.keys(PAGES);
@@ -50,7 +52,7 @@ export function pageUrl(root, page, params = {}) {
 
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const NAVIGATE = { name: 'navigate', group: 'site', core: true,
-  description: 'Go to another page of the site and continue this request there with that page\'s tools. Pages: home, plan (observable transits), observe (the sky view), photometry (images to light curves), spectroscopy (time-series spectra to a transmission or emission spectrum), analyze (models and fits), search (the catalogue), validation. "params" are that page\'s address parameters: plan {planet}, observe {planet, t (ISO UTC), lat, lon}, analyze {planet}, search {planet} or {q}, validation {topic}. Finish what this page can do first.',
+  description: 'Go to another page of the site and continue this request there with that page\'s tools. Pages: home, plan (observable transits), observe (the sky view), photometry (images to light curves), spectroscopy (time-series spectra to a transmission or emission spectrum), atmosphere (a model atmosphere and its spectrum), star (the host star from its magnitudes), analyze (models and fits), search (the catalogue), validation. "params" are that page\'s address parameters: plan {planet}, observe {planet, t (ISO UTC), lat, lon}, analyze {planet}, search {planet} or {q}, validation {topic}. Finish what this page can do first.',
   parameters: obj({ page: { type: 'string', enum: PAGE_IDS, description: 'The page to open.' }, params: { type: 'object', description: 'Address parameters of that page, e.g. {"planet": "WASP-43 b"}.', additionalProperties: { type: ['string', 'number'] } } }, ['page']) };
 const FILE_SPECS = [
   { name: 'list_files', group: 'files', readOnly: true, description: 'List the files of this conversation: those the user attached and those you produced (name, size, a one-line guess of what each holds). They travel with the conversation from page to page.', parameters: obj({}) },
@@ -144,7 +146,7 @@ export function createSiteTools({ page, root, analyzer = null, analyzerApi = nul
   async function call(name, rawArgs, opts = {}) {
     const spec = specs.find((t) => t.name === name);
     if (!spec) {
-      const elsewhere = /^(plan|observe|photometry|spectroscopy|search|validation|methods)_/.test(String(name)) ? ` "${name}" looks like a tool of the ${String(name).split('_')[0] === 'methods' ? 'validation (Methods)' : String(name).split('_')[0]} page: call navigate to go there first.` : !analyzer && /^(load_|run_fit|set_free|set_prior|lookup_planet|get_results|run_experiment|export_file|import_session|simulate_)/.test(String(name)) ? ` "${name}" is a tool of the analyze page: call navigate {"page": "analyze"} first.` : '';
+      const elsewhere = /^(plan|observe|photometry|spectroscopy|atmosphere|star|search|validation|methods)_/.test(String(name)) ? ` "${name}" looks like a tool of the ${String(name).split('_')[0] === 'methods' ? 'validation (Methods)' : String(name).split('_')[0]} page: call navigate to go there first.` : !analyzer && /^(load_|run_fit|set_free|set_prior|lookup_planet|get_results|run_experiment|export_file|import_session|simulate_)/.test(String(name)) ? ` "${name}" is a tool of the analyze page: call navigate {"page": "analyze"} first.` : '';
       return { ok: false, text: `ERROR: there is no tool "${name}" on this page (${page}).${elsewhere} The tools here are: ${specs.map((t) => t.name).join(', ')}.` };
     }
     if (analyzer && analyzer.specs.includes(spec)) {

@@ -1,0 +1,586 @@
+{
+ "sources": "Gaia DR3 (I/355), 2MASS (II/246), AllWISE (II/328), Tycho-2 (I/259), APASS DR9 (II/336), read from VizieR's CfA mirror on 2026-11-20; GALEX GR6/7 from MAST. Interferometry: Boyajian et al. 2015 (MNRAS 447, 846), von Braun et al. 2012 (ApJ 753, 171), Ellis et al. 2021 (AJ 162, 118). Others: Cloutier et al. 2021, Mancini et al. 2018. AstroARIADNE values: Vines & Jenkins 2022 (MNRAS 513, 2719), table 5.",
+ "stars": {
+  "HD 209458": {
+   "obs": [
+    {
+     "band": "Gaia BP",
+     "mag": 7.793284,
+     "err": 0.002848
+    },
+    {
+     "band": "Gaia G",
+     "mag": 7.521246,
+     "err": 0.002776
+    },
+    {
+     "band": "Gaia RP",
+     "mag": 7.080288,
+     "err": 0.003844
+    },
+    {
+     "band": "Tycho BT",
+     "mag": 8.334,
+     "err": 0.017
+    },
+    {
+     "band": "Tycho VT",
+     "mag": 7.699,
+     "err": 0.012
+    },
+    {
+     "band": "2MASS J",
+     "mag": 6.591,
+     "err": 0.02
+    },
+    {
+     "band": "2MASS H",
+     "mag": 6.366,
+     "err": 0.038
+    },
+    {
+     "band": "2MASS Ks",
+     "mag": 6.308,
+     "err": 0.026
+    },
+    {
+     "band": "WISE W1",
+     "mag": 6.308,
+     "err": 0.091,
+     "use": false
+    },
+    {
+     "band": "WISE W2",
+     "mag": 6.191,
+     "err": 0.027,
+     "use": false
+    },
+    {
+     "band": "WISE W3",
+     "mag": 6.32,
+     "err": 0.016
+    },
+    {
+     "band": "WISE W4",
+     "mag": 6.265,
+     "err": 0.053
+    },
+    {
+     "band": "GALEX NUV",
+     "mag": 12.977,
+     "err": 0.003,
+     "use": false
+    }
+   ],
+   "plx": [
+    20.7694,
+    0.0266
+   ],
+   "logg": 4.28,
+   "feh": 0.0,
+   "avMax": 0.0,
+   "measured": {
+    "theta_mas": [
+     0.2254,
+     0.0072
+    ],
+    "rstar": [
+     1.203,
+     0.061
+    ],
+    "teff": [
+     6092,
+     103
+    ],
+    "source": "Boyajian et al. 2015"
+   },
+   "ariadne": {
+    "teff": 5993.8,
+    "rstar": 1.2133,
+    "theta_mas": 0.2328
+   }
+  },
+  "HD 189733": {
+   "obs": [
+    {
+     "band": "Gaia BP",
+     "mag": 7.893073,
+     "err": 0.002977
+    },
+    {
+     "band": "Gaia G",
+     "mag": 7.428371,
+     "err": 0.00277
+    },
+    {
+     "band": "Gaia RP",
+     "mag": 6.797157,
+     "err": 0.003901
+    },
+    {
+     "band": "Tycho BT",
+     "mag": 8.847,
+     "err": 0.016
+    },
+    {
+     "band": "Tycho VT",
+     "mag": 7.779,
+     "err": 0.01
+    },
+    {
+     "band": "2MASS J",
+     "mag": 6.073,
+     "err": 0.032
+    },
+    {
+     "band": "2MASS H",
+     "mag": 5.587,
+     "err": 0.031
+    },
+    {
+     "band": "2MASS Ks",
+     "mag": 5.541,
+     "err": 0.021
+    },
+    {
+     "band": "WISE W1",
+     "mag": 5.289,
+     "err": 0.154,
+     "use": false
+    },
+    {
+     "band": "WISE W2",
+     "mag": 5.342,
+     "err": 0.05,
+     "use": false
+    },
+    {
+     "band": "WISE W3",
+     "mag": 5.459,
+     "err": 0.013
+    },
+    {
+     "band": "WISE W4",
+     "mag": 5.427,
+     "err": 0.033
+    }
+   ],
+   "plx": [
+    50.5668,
+    0.0162
+   ],
+   "logg": 4.56,
+   "feh": -0.03,
+   "avMax": 0.0,
+   "measured": {
+    "theta_mas": [
+     0.3848,
+     0.0055
+    ],
+    "rstar": [
+     0.805,
+     0.016
+    ],
+    "teff": [
+     4875,
+     43
+    ],
+    "source": "Boyajian et al. 2015"
+   },
+   "ariadne": {
+    "teff": 5049.2,
+    "rstar": 0.7651,
+    "theta_mas": 0.3593
+   }
+  },
+  "GJ 436": {
+   "obs": [
+    {
+     "band": "Gaia BP",
+     "mag": 10.893038,
+     "err": 0.002906
+    },
+    {
+     "band": "Gaia G",
+     "mag": 9.582008,
+     "err": 0.002796
+    },
+    {
+     "band": "Gaia RP",
+     "mag": 8.443771,
+     "err": 0.003805
+    },
+    {
+     "band": "APASS B",
+     "mag": 12.179,
+     "err": 0.011
+    },
+    {
+     "band": "APASS V",
+     "mag": 10.613,
+     "err": 0.009
+    },
+    {
+     "band": "APASS g",
+     "mag": 11.373,
+     "err": 0.02
+    },
+    {
+     "band": "APASS r",
+     "mag": 10.101,
+     "err": 0.01
+    },
+    {
+     "band": "2MASS J",
+     "mag": 6.9,
+     "err": 0.024
+    },
+    {
+     "band": "2MASS H",
+     "mag": 6.319,
+     "err": 0.023
+    },
+    {
+     "band": "2MASS Ks",
+     "mag": 6.073,
+     "err": 0.016
+    },
+    {
+     "band": "WISE W1",
+     "mag": 6.017,
+     "err": 0.11,
+     "use": false
+    },
+    {
+     "band": "WISE W2",
+     "mag": 5.69,
+     "err": 0.048,
+     "use": false
+    },
+    {
+     "band": "WISE W3",
+     "mag": 5.76,
+     "err": 0.014
+    },
+    {
+     "band": "WISE W4",
+     "mag": 5.58,
+     "err": 0.039
+    },
+    {
+     "band": "Tycho BT",
+     "mag": 12.522,
+     "err": 0.28,
+     "use": false
+    },
+    {
+     "band": "Tycho VT",
+     "mag": 10.759,
+     "err": 0.084,
+     "use": false
+    }
+   ],
+   "plx": [
+    102.3014,
+    0.0302
+   ],
+   "logg": null,
+   "feh": 0.0,
+   "avMax": 0.0,
+   "measured": {
+    "theta_mas": [
+     0.417,
+     0.013
+    ],
+    "rstar": [
+     0.455,
+     0.018
+    ],
+    "teff": [
+     3416,
+     54
+    ],
+    "source": "von Braun et al. 2012"
+   },
+   "ariadne": null
+  },
+  "HD 97658": {
+   "obs": [
+    {
+     "band": "Gaia BP",
+     "mag": 7.950393,
+     "err": 0.003002
+    },
+    {
+     "band": "Gaia G",
+     "mag": 7.526765,
+     "err": 0.002767
+    },
+    {
+     "band": "Gaia RP",
+     "mag": 6.934046,
+     "err": 0.003945
+    },
+    {
+     "band": "Tycho BT",
+     "mag": 8.813,
+     "err": 0.018
+    },
+    {
+     "band": "Tycho VT",
+     "mag": 7.856,
+     "err": 0.012
+    },
+    {
+     "band": "2MASS J",
+     "mag": 6.203,
+     "err": 0.023
+    },
+    {
+     "band": "2MASS H",
+     "mag": 5.821,
+     "err": 0.017
+    },
+    {
+     "band": "2MASS Ks",
+     "mag": 5.734,
+     "err": 0.018
+    },
+    {
+     "band": "WISE W1",
+     "mag": 5.812,
+     "err": 0.122,
+     "use": false
+    },
+    {
+     "band": "WISE W2",
+     "mag": 5.603,
+     "err": 0.049,
+     "use": false
+    },
+    {
+     "band": "WISE W3",
+     "mag": 5.737,
+     "err": 0.015
+    },
+    {
+     "band": "WISE W4",
+     "mag": 5.642,
+     "err": 0.043
+    },
+    {
+     "band": "GALEX NUV",
+     "mag": 14.464,
+     "err": 0.01,
+     "use": false
+    }
+   ],
+   "plx": [
+    46.3763,
+    0.0221
+   ],
+   "logg": null,
+   "feh": -0.23,
+   "avMax": 0.0,
+   "measured": {
+    "theta_mas": [
+     0.314,
+     0.004
+    ],
+    "rstar": [
+     0.728,
+     0.008
+    ],
+    "teff": [
+     5212,
+     43
+    ],
+    "source": "Ellis et al. 2021"
+   },
+   "ariadne": null
+  },
+  "GJ 1214": {
+   "obs": [
+    {
+     "band": "Gaia BP",
+     "mag": 14.91244,
+     "err": 0.003819
+    },
+    {
+     "band": "Gaia G",
+     "mag": 12.996782,
+     "err": 0.002925
+    },
+    {
+     "band": "Gaia RP",
+     "mag": 11.682912,
+     "err": 0.003933
+    },
+    {
+     "band": "APASS g",
+     "mag": 15.498,
+     "err": 0.046
+    },
+    {
+     "band": "APASS r",
+     "mag": 14.05,
+     "err": 0.07
+    },
+    {
+     "band": "APASS i",
+     "mag": 12.14,
+     "err": 0.093
+    },
+    {
+     "band": "2MASS J",
+     "mag": 9.75,
+     "err": 0.024
+    },
+    {
+     "band": "2MASS H",
+     "mag": 9.094,
+     "err": 0.024
+    },
+    {
+     "band": "2MASS Ks",
+     "mag": 8.782,
+     "err": 0.02
+    },
+    {
+     "band": "WISE W1",
+     "mag": 8.598,
+     "err": 0.023
+    },
+    {
+     "band": "WISE W2",
+     "mag": 8.442,
+     "err": 0.021
+    },
+    {
+     "band": "WISE W3",
+     "mag": 8.254,
+     "err": 0.024
+    },
+    {
+     "band": "WISE W4",
+     "mag": 8.084,
+     "err": 0.236
+    }
+   ],
+   "plx": [
+    68.2986,
+    0.0652
+   ],
+   "logg": 5.026,
+   "feh": 0.29,
+   "avMax": 0.0,
+   "measured": {
+    "theta_mas": null,
+    "rstar": [
+     0.215,
+     0.008
+    ],
+    "teff": [
+     3250,
+     100
+    ],
+    "source": "Cloutier et al. 2021 (no interferometry)"
+   },
+   "ariadne": null
+  },
+  "WASP-39": {
+   "obs": [
+    {
+     "band": "Gaia BP",
+     "mag": 12.280017,
+     "err": 0.002984
+    },
+    {
+     "band": "Gaia G",
+     "mag": 11.880778,
+     "err": 0.002765
+    },
+    {
+     "band": "Gaia RP",
+     "mag": 11.315771,
+     "err": 0.003803
+    },
+    {
+     "band": "APASS B",
+     "mag": 12.854,
+     "err": 0.036
+    },
+    {
+     "band": "APASS V",
+     "mag": 12.077,
+     "err": 0.029
+    },
+    {
+     "band": "APASS g",
+     "mag": 12.42,
+     "err": 0.047
+    },
+    {
+     "band": "APASS r",
+     "mag": 11.897,
+     "err": 0.048
+    },
+    {
+     "band": "APASS i",
+     "mag": 11.726,
+     "err": 0.118
+    },
+    {
+     "band": "2MASS J",
+     "mag": 10.663,
+     "err": 0.024
+    },
+    {
+     "band": "2MASS H",
+     "mag": 10.307,
+     "err": 0.023
+    },
+    {
+     "band": "2MASS Ks",
+     "mag": 10.202,
+     "err": 0.023
+    },
+    {
+     "band": "WISE W1",
+     "mag": 10.159,
+     "err": 0.023
+    },
+    {
+     "band": "WISE W2",
+     "mag": 10.224,
+     "err": 0.021
+    },
+    {
+     "band": "WISE W3",
+     "mag": 10.131,
+     "err": 0.057
+    }
+   ],
+   "plx": [
+    4.6435,
+    0.0144
+   ],
+   "logg": 4.453,
+   "feh": 0.01,
+   "avMax": 0.25,
+   "measured": {
+    "theta_mas": null,
+    "rstar": [
+     0.939,
+     0.022
+    ],
+    "teff": [
+     5485,
+     50
+    ],
+    "source": "Mancini et al. 2018 (no interferometry)"
+   },
+   "ariadne": null
+  }
+ }
+}

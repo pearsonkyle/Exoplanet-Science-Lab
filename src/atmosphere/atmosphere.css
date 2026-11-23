@@ -1,0 +1,58 @@
+/* Atmosphere page. Shares the photometry and spectroscopy pages' layout classes and the site tokens. */
+.atmpage .cols { display: grid; grid-template-columns: minmax(270px, 330px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.atmpage .side .card { padding: 12px 14px; margin-bottom: 12px; }
+.atmpage .side h2, .atmpage .main h2 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; font-weight: 600; }
+.atmpage .main h2 { margin: 16px 0 8px; }
+.atmpage .main h2:first-child { margin-top: 0; }
+.atmpage .sl { display: grid; grid-template-columns: minmax(62px, max-content) minmax(0, 1fr) 92px; gap: 8px; align-items: center; font-size: 12px; color: var(--dim); margin: 5px 0; }
+.atmpage .sl input[type=range] { width: 100%; min-width: 0; }
+.atmpage .sl input[type=number] { width: 100%; min-width: 0; }
+.atmpage .sl .sw { display: inline-flex; align-items: center; gap: 5px; color: var(--text); }
+.atmpage .sl .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.atmpage .pad6 { padding: 6px; }
+.atmpage .pad6 canvas { display: block; width: 100%; }
+.atmpage .bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 12px; color: var(--dim); margin-bottom: 6px; }
+.atmpage .bar select, .atmpage .bar input[type=number] { max-width: 150px; }
+.atmpage .bar input[type=range] { width: 180px; }
+.atmpage .seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 6px; overflow: hidden; }
+.atmpage .seg button { background: transparent; border: 0; padding: 4px 10px; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; }
+.atmpage .seg button.on { background: color-mix(in srgb, var(--model) 16%, transparent); color: var(--text); }
+.atmpage .view3d { position: relative; height: 420px; border-radius: 8px; overflow: hidden; background: #03050a; }
+.atmpage .view3d canvas { display: block; width: 100%; height: 100%; }
+.atmpage .view3d .cap { position: absolute; left: 10px; bottom: 8px; right: 10px; font-size: 11.5px; color: #aab4c8; pointer-events: none; text-shadow: 0 1px 2px #000; }
+.atmpage .swatches { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 12px; color: var(--dim); margin-top: 8px; }
+.atmpage .swatches .chip { display: inline-block; width: 26px; height: 14px; border-radius: 3px; border: 1px solid var(--line2); vertical-align: -2px; margin-right: 6px; }
+.atmpage .warn { color: var(--warn); }
+.atmpage .how { margin-top: 22px; padding: 12px 16px; font-size: 12.5px; color: var(--lab); }
+.atmpage .how summary { cursor: pointer; color: var(--text); }
+.atmpage .how p { max-width: 900px; margin: 8px 0; }
+.atmpage table.src { font-size: 12px; border-collapse: collapse; margin-top: 6px; }
+.atmpage table.src td, .atmpage table.src th { padding: 2px 12px 2px 0; text-align: left; color: var(--lab); font-weight: 400; }
+.atmpage table.src th { color: var(--dim); }
+@media (max-width: 980px) {
+  .atmpage .cols { grid-template-columns: 1fr; }
+  .atmpage .plots.two { grid-template-columns: 1fr; }
+  .atmpage .view3d { height: 320px; }
+}
+@media (pointer: coarse), (max-width: 760px) {
+  .atmpage .how summary { padding: 10px 0; margin: -10px 0; }
+  .atmpage .side h2, .atmpage .main h2 { font-size: 12px; }
+  .atmpage .seg button { padding: 8px 12px; }
+}
+
+.atmpage .note { font-size: 12.5px; line-height: 1.5; color: var(--dim); margin: 4px 2px 10px; max-width: 980px; }
+.atmpage .sl input[type=number] { font-variant-numeric: tabular-nums; padding-left: 6px; padding-right: 4px; }
+
+.atmpage .cutlegend { font-size: 12px; color: var(--dim); margin: 8px 2px 0; }
+.atmpage .cutlegend .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.atmpage .cutlegend b { color: var(--text); font-weight: 600; margin-right: 6px; }
+.atmpage .cutlegend .bar { flex: 0 1 260px; height: 12px; border-radius: 3px; border: 1px solid var(--line2); }
+.atmpage .cutlegend .note { margin-top: 4px; }
+
+/* while a model is computing: what is on the page belongs to the previous model */
+.atmpage #app.busy .main canvas, .atmpage #app.busy .main .view3d, .atmpage #app.busy .side .status, .atmpage #app.busy .swatches, .atmpage #app.busy .cutlegend { opacity: .4; transition: opacity .15s ease .25s; }
+.atmpage .busytag { position: sticky; top: 8px; z-index: 30; float: right; margin: 0 4px -32px 0; display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px; font-size: 12px; color: var(--text); background: color-mix(in srgb, var(--model) 22%, var(--bg, #0b0f1a)); border: 1px solid var(--line2); }
+.atmpage .busytag[hidden] { display: none; }
+.atmpage .busytag .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line2); border-top-color: var(--model); animation: atmspin .8s linear infinite; }
+@keyframes atmspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .atmpage .busytag .spin { animation: none; } }

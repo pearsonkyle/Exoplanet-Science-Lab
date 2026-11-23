@@ -109,6 +109,35 @@ instead of a model's retelling of it.
 moderately / strongly disfavoured) with the cautions that apply, by the rules of the analyzer's "Runs & model
 comparison" table. A client model should relay that reading instead of interpreting ln Z itself.
 
+### The star
+
+`star_fit` takes catalogue magnitudes (and a parallax, and priors on log g and [Fe/H] if known) and returns the star's
+temperature, angular diameter, radius and luminosity with their errors and the residual of every band.
+`star_match_spectrum` does the same from a low-resolution spectrum in a CSV file of the workspace. Both use the
+PHOENIX grid in `public/stellar/` and are apart from the session.
+
+### The atmosphere model
+
+One tool is the server's own, apart from the session: `atmosphere_spectrum` computes the transmission and emission
+spectrum of a model atmosphere (a preset world such as Titan or Jupiter, or a model you describe), writes it to a
+CSV file in the workspace and returns a description: range, largest and smallest transit depth, temperatures at a
+few pressures, clouds, and whether a self-consistent profile settled. It reads the opacity tables from this
+checkout's `public/` folder.
+
+`atmosphere_retrieve` fits such a model to measured spectra (an atmospheric retrieval with the site's nested
+sampler). The spectra are CSV files in the workspace, one per data set: rows of `wavelength, value, error` or
+`wavelength, bin_low, bin_high, value, error` (micron), each with a `kind` (`transit`, `eclipse`, `night`) and a
+`unit` (`fraction`, `percent`, `ppm`). `free` lists the parameters (`teq`, `logKappaIR`, `logGamma` or `t`; `mh`,
+`co`; `logX_<gas>`; `rplanet`; `logCloudTop`, `logHaze`, ...; `nightDT`; `offset_<n>`); priors are uniform
+`[low, high]`, with wide defaults that the result states. It returns the median and 16 to 84% range of each
+parameter, ln Z, χ² and the sampler's warnings, and writes the full result (JSON) and the best-fit spectrum (CSV).
+A fit takes from seconds (three parameters, 60 points) to many minutes; it stops at `max_models` or `max_seconds`
+and then says `"converged": false`, in which case the numbers are not a posterior. For speed the model runs on 30
+layers and, for data of low resolving power, on joined opacity bins (`merge`): what that costs (about 10 ppm on a
+hot Jupiter) is measured in `docs/guide/validation.md`, "Retrieval". A file without bin edges is taken to have
+bins that meet halfway between its wavelengths. Two descriptions of the same data are compared by running both and
+subtracting ln Z.
+
 ## What differs from the web app
 
 - Limb darkening that follows the star (mode "star") is not available: the coefficients are used as given.

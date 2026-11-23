@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Star · Exoplanet Science Lab</title>
+<meta name="description" content="A star from its light in the browser: effective temperature, angular diameter, radius and luminosity from catalogue magnitudes fitted with model atmospheres. Nothing is uploaded.">
+<meta name="esl-root" content="../../">
+<!-- the site theme before first paint (src/site/theme.js) -->
+<script>try{var t=localStorage.getItem('esl.theme');if(t&&t!=='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<!-- opened as a file: browsers do not run the site's modules from file://; say how to open it (docs/guide/getting-started.md) -->
+<script>if(location.protocol==='file:')addEventListener('DOMContentLoaded',function(){var d=document.createElement('div');d.setAttribute('role','alert');d.style.cssText='position:fixed;inset:auto 12px 12px 12px;z-index:999;padding:14px 16px;border-radius:8px;background:#1a2133;color:#dfe6f3;border:1px solid #ffb454;font:14px/1.5 system-ui;max-width:640px';d.innerHTML='<b>This page needs a local web server.</b> Browsers do not run the site’s scripts from a file. In the folder that holds it, run <code>npx serve</code> or <code>python3 -m http.server</code> and open the address it prints (for example http://localhost:8000/).';document.body.appendChild(d)})</script>
+<link rel="stylesheet" href="../../src/site/site.css">
+<link rel="stylesheet" href="../../src/photometry/photometry.css">
+<link rel="stylesheet" href="../../src/spectra/spectra.css">
+<link rel="stylesheet" href="../../src/atmosphere/atmosphere.css">
+</head>
+<body class="page photpage specpage atmpage">
+<header id="sitebar" data-active="analyze"></header>
+<nav id="subnav" class="subnav" data-active="star"></nav>
+<main id="star">
+  <div class="phead">
+    <div>
+      <h1>Star</h1>
+      <p class="lead">A star from its light: catalogue magnitudes from the ultraviolet to the mid infrared, fitted with model atmospheres, give its effective temperature and angular diameter, and with a parallax its radius and luminosity. The models are the PHOENIX spectra the site uses for limb darkening. Everything is computed in this tab.</p>
+    </div>
+  </div>
+  <div id="app"></div>
+  <noscript><p class="note">This page needs JavaScript.</p></noscript>
+</main>
+<script type="module" src="../../src/site/nav.js"></script>
+<script type="module" src="../../src/site/subnav.js"></script>
+<script type="module" src="../../src/star/main.js"></script>
+</body>
+</html>

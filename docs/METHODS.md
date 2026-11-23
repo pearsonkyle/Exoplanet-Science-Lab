@@ -29,19 +29,20 @@ Notation: $R_\star$, $M_\star$ stellar radius and mass; $k = R_p/R_\star$; $a/R_
 15. [N-body dynamics](#nbody)
 16. [Photodynamics](#photodynamics)
 17. [Time-series spectroscopy](#spectroscopy)
-18. [Derived quantities and uncertainty propagation](#derived)
-19. [Catalogue sources, merging and provenance](#catalogue)
-20. [Observability and sky positions](#observability)
-21. [Image photometry](#photometry)
-22. [TESS, Kepler and K2 light curves: quality, stitching, transit-aware detrending, K2 systematics](#spacelc)
-23. [Image inspection, focus and comparison stars](#imexam)
-24. [Sky coordinates, the target by name, Gaia comparison stars and optimal apertures](#platesolve)
-25. [Noise diagnostics](#noise)
-26. [The session format and reproducibility](#session)
-27. [Validation](#validation)
-28. [Reproducibility table](#reproducibility)
-29. [How to cite and report](#cite)
-30. [References](#references)
+18. [Atmospheres: structure, chemistry, spectra, escape](#atmosphere)
+19. [Derived quantities and uncertainty propagation](#derived)
+20. [Catalogue sources, merging and provenance](#catalogue)
+21. [Observability and sky positions](#observability)
+22. [Image photometry](#photometry)
+23. [TESS, Kepler and K2 light curves: quality, stitching, transit-aware detrending, K2 systematics](#spacelc)
+24. [Image inspection, focus and comparison stars](#imexam)
+25. [Sky coordinates, the target by name, Gaia comparison stars and optimal apertures](#platesolve)
+26. [Noise diagnostics](#noise)
+27. [The session format and reproducibility](#session)
+28. [Validation](#validation)
+29. [Reproducibility table](#reproducibility)
+30. [How to cite and report](#cite)
+31. [References](#references)
 
 <a id="conventions"></a>
 
@@ -832,7 +833,7 @@ The spectrum with 16th–84th percentile errors; per-channel residual rms agains
 
 ### Simulator
 
-Simulated observations use photon noise from a black-body star seen through a telescope of collecting area $A$ (Ariel 0.64 m² [Tinetti et al. 2018](#ref-tinetti2018), JWST 25.4 m²) and a throughput $\tau$, plus a noise floor $f$:
+Simulated observations use photon noise from a black-body star seen through a telescope of collecting area $A$ (Ariel 0.63 m² [Tinetti et al. 2018](#ref-tinetti2018), JWST 25.4 m²) and a throughput $\tau$, plus a noise floor $f$ (for Ariel the throughput is each channel's published efficiency, the photon variance carries a 40% margin and 40 ppm$\sqrt{\mathrm{hr}}$ of gain noise is added, after ArielRad; see the Atmosphere section, Retrieval):
 
 $$
 N_e = A\,\tau\,\Delta t\,\pi\left(\frac{R_\star}{d}\right)^2 \int \frac{2c}{\lambda^4}\frac{\mathrm{d}\lambda}{e^{hc/\lambda k_B T} - 1}, \qquad \sigma^2 = \frac{(1+x)^2}{N_e} + f^2\,\frac{T_{14}}{\Delta t}
@@ -856,9 +857,157 @@ $\tau$ (0.3) and $f$ (20 ppm Ariel, 10 ppm JWST) are editable inputs and are not
 
 References: [Alderson et al. 2023](#ref-alderson2023); [Tinetti et al. 2018](#ref-tinetti2018); [Husser et al. 2013](#ref-husser2013); [Kreidberg 2015](#ref-kreidberg2015); [Winn et al. 2008](#ref-winn2008); [Mancini et al. 2018](#ref-mancini2018).
 
+<a id="atmosphere"></a>
+
+## 18. Atmospheres: structure, chemistry, spectra, escape
+
+Code: `src/core/atmosphere.js`, `src/core/opacity.js`, `src/core/continuum.js`, `src/core/transmission.js`, `src/core/emission.js`, `src/core/rtmodel.js`, `src/core/chemistry.js`, `src/core/escape.js`, `src/core/ionization.js`, `src/core/colour.js`, `src/viz/atmoview.js`, `src/atmosphere/`
+
+A planet, a temperature profile and a composition are turned into a transmission spectrum, an emission spectrum, and a picture. The model is one-dimensional: one column of gas stands for the whole planet. Everything on the Atmosphere page comes from the single function `forwardModel`.
+
+### Structure
+
+Layers are uniform in $\ln P$ (60 or 80 between the top, $10^{-8}$ bar on the page, and 100 bar), each at one temperature. With gravity $g = GM/r^2$ and an ideal gas, hydrostatic balance integrates exactly over a layer of constant $T$ and mean molecular weight $\mu$:
+
+$$
+\frac{1}{r_{k+1}} - \frac{1}{r_k} = \frac{k_B T}{\mu m_u G M}\,\ln\frac{P_{k+1}}{P_k}
+$$
+
+The radius given for the planet is placed at a reference pressure (10 mbar by default). Temperature profiles: isothermal; the irradiated grey solution of [Guillot 2010](#ref-guillot2010) (its eq. 29, with the planet-wide average $f = 1/4$); the three-layer profile of [Madhusudhan & Seager 2009](#ref-madhusudhan2009).
+
+### A profile that follows from the gas
+
+The fourth choice of profile is worked out from the atmosphere itself (`src/core/climate.js`). It keeps the form of the grey solution, $T^4 = \frac{3}{4}T_\mathrm{int}^4(\frac{2}{3} + \tau) + \frac{3}{4}T_\mathrm{irr}^4 f\,[\frac{2}{3} + \frac{1}{\gamma\sqrt3} + (\frac{\gamma}{\sqrt3} - \frac{1}{\gamma\sqrt3})e^{-\sqrt3\tau_v}]$ with $\gamma = \tau_v/\tau$, but takes its two optical depths from the real, non-grey gas at every level: $\tau_v = -\mu_0 \ln$ of the share of the star's light (a blackbody of its temperature) that reaches the level through the model's absorption, wavelength by wavelength and quadrature point by quadrature point, and $\tau = -\bar\mu \ln$ of the share of the level's own blackbody radiation that escapes to space ($\mu_0 = 0.5$, $\bar\mu = 1/1.66$; scattering holds heat in and absorbs no starlight). Mean opacities do not serve: from these tables a Rosseland mean is set by the floor of the windows between bands and a Planck mean by saturated line cores, each wrong by orders of magnitude.
+
+The atmosphere is rebuilt on each new set of temperatures, so chemistry, condensation, ionization and opacity follow them, and the passes continue until no layer moves by more than 2 K. One number $c$ multiplies $T^4$ and is adjusted until the model's own emission spectrum, integrated over wavelength, equals the flux the planet must lose, $\sigma(4fT_\mathrm{eq}^4 + T_\mathrm{int}^4)$; $c$ near 1 means the closure needed no help ($f = 1/4$ for the whole planet, $1/2$ for a day side that keeps its heat). Layers steeper than an adiabat ($d\ln T/d\ln P > 2/7$) are put on it. Above $10^{-5}$ bar, where the opacity tables end, the profile is held at its value there: in gas that thin the strong lines of sodium and potassium scatter starlight instead of turning it into heat, and counted as absorbers they would heat the top by hundreds of kelvin and dissociate its hydrogen. The model has no thermosphere. Clouds enter: a deck as an opaque floor, particles through their absorption and scattering, partial cover as the mix of two columns. The planet's energy budget is therefore met with the real spectrum, but each layer's is not: this is not radiative-convective equilibrium.
+
+Where the gas absorbs starlight better than it holds heat, $\gamma > 1$, the temperature rises with height. With gas-phase TiO and VO the day side of WASP-121 b comes out inverted by about 250 K between 20 and 2 mbar, as a retrieval of its eclipse spectrum finds [Mikal-Evans et al. 2019](#ref-mikalevans2019); without those two gases, or once they have rained out, it does not.
+
+### Condensation and rain-out
+
+A gas cannot exceed what its condensate allows (`src/core/condensation.js`). For water, ammonia and methane that is the saturation vapour pressure, $x \le h\,p_\mathrm{sat}(T)/P$ with $h$ the saturation allowed (fits of Buck for water, of Ackerman & Marley 2001 for ammonia ice, the NIST Antoine fit and [Fray & Schmitt 2009](#ref-frayschmitt2009) for liquid and solid methane). For solids made from several gases the published condensation curves $10^4/T = a - b\log P - c\,[\mathrm{M/H}]$ [Morley et al. 2012](#ref-morley2012); [Visscher et al. 2010](#ref-visscher2010); [Wakeford et al. 2017](#ref-wakeford2017) are read the other way: at $(T, P)$ the gas holds the fraction $10^{[\mathrm{M/H}]_\mathrm{sat} - [\mathrm{M/H}]}$ of the limiting element, $[\mathrm{M/H}]_\mathrm{sat} = (a - b\log P - 10^4/T)/c$, or all of it. Perovskite removes TiO and VO, Na$_2$S sodium, KCl potassium; iron, the silicates, corundum and the other sulfides mark where a cloud begins.
+
+With rain-out, above the level where a gas first condenses it keeps no more than the least it was allowed on the way up, even where the air is warmer again: the cold trap. That is what leaves Titan's stratosphere with less methane than its surface, Jupiter's upper troposphere without water, and a hot Jupiter cooler than about 2000 K at depth without TiO. The chemistry is not solved again without the condensed elements, and nothing lifts material back up. A particle layer can be placed at a condensate's base; its optical depth and grain size remain inputs.
+
+### Hazes of a real material, and other bulk gases
+
+A particle layer may be given a material in place of the analytic efficiency: Mie theory for homogeneous spheres (`src/core/mie.js`, the algorithm of Bohren & Huffman) with measured optical constants, averaged over a log-normal spread of radii, gives the extinction and the single-scattering albedo at every wavelength. The material shipped is the tholin of [Khare et al. 1984](#ref-khare1984), a laboratory analogue of Titan's haze. The layer's optical depth can be spread as $\tau(<P) \propto P^x$; $x < 1$ puts relatively more haze high up. The gas that fills the atmosphere can be nitrogen or carbon dioxide instead of hydrogen and helium, with collision-induced absorption of N$_2$-N$_2$, N$_2$-CH$_4$ and N$_2$-H$_2$ from HITRAN, each band interpolated within the temperatures it was measured or computed at.
+
+Titan and Jupiter are preset worlds (`src/core/worlds.js`) that test these parts against measurements: the altitudes of Huygens's profile [Fulchignoni et al. 2005](#ref-fulchignoni2005), methane at the surface and above the cold trap [Niemann et al. 2010](#ref-niemann2010), the altitude and colour slope of the haze in Cassini's solar occultations [Robinson et al. 2014](#ref-robinson2014) (to which the haze's three numbers are tuned), and Jupiter's cloud bases against an equilibrium cloud model [Atreya & Wong 2005](#ref-atreya2005); condensation temperatures are checked against [Lodders 2003](#ref-lodders2003).
+
+### The star
+
+Eclipse depths divide the planet's flux by the star's. The star is a model atmosphere where one is available (`src/core/stellarspec.js`): the PHOENIX-ACES specific intensities that the limb darkening table is built from [Husser et al. 2013](#ref-husser2013), integrated over the disc, $F_\lambda = 2\pi\int_0^1 I_\lambda(\mu)\,\mu\,d\mu$, on 420 bins from 0.1 to 5.5 µm for 519 models (2300-8000 K, $\log g$ 4-5.5, [Fe/H] $-0.5$ to $+0.5$), interpolated linearly in the three parameters on $\log F$. Beyond 5.5 µm a blackbody of the star's temperature is joined on, scaled to the model near 4 µm. A K or M dwarf is brighter than its blackbody near 1.6 µm and fainter beyond 4 µm, so eclipse depths over a blackbody star are off by 10 to 20%. Beyond the models the tail falls as $(\lambda/4\,\mu\mathrm{m})^{-0.08}$, as a photosphere's brightness temperature does.
+
+**The star from its magnitudes** (the Star page, `src/core/sed.js`). A star of angular diameter $\theta$ sends the fraction $(\theta/2)^2$ of its surface flux to the observer, dimmed by $10^{-0.4 A_V k(\lambda)}$ with the extinction curve of Fitzpatrick (1999) at $R_V = 3.1$. Each catalogue magnitude is computed through its own passband, counting photons or energy as its detector does, with passbands and zero points from the SVO Filter Profile Service. The nested sampler finds $T_\mathrm{eff}$, $\log g$, [Fe/H], $\theta$, $A_V$ and one scatter term added to every error bar; a parallax then gives $R_\star = \theta d/2$ and $L = 4\pi d^2 F_\mathrm{bol}$. Against interferometric diameters three of four benchmark stars agree within 2% and 40 K (with no extinction, as befits stars within 50 pc); the fourth, HD 189733, comes out 7% smaller and 152 K hotter, as it does in the published fit of AstroARIADNE. The page shows the posterior as a corner plot, the sampler's evidence and diagnostics, a comparison of fits by $\Delta\ln Z$ and LaTeX tables; magnitudes and the parallax can be looked up in Gaia DR3, 2MASS, AllWISE and Tycho-2 through VizieR. A low-resolution spectrum can be matched against the same grid (`src/core/specmatch.js`), with a smooth polynomial factor for an uncalibrated slope; the models' 5 nm sampling rules out line-by-line matching of echelle spectra. Magnitudes hardly constrain gravity or metallicity, and the grid holds main-sequence stars from 2300 to 8000 K only.
+
+### Retrieval
+
+A retrieval (`src/core/retrieval.js`) frees chosen quantities of the model (the profile's numbers, [M/H], C/O or single abundances, the radius at the reference pressure, haze and cloud, the night-side contrast), each with a prior of the same kinds as the light-curve fits, and samples a Gaussian likelihood over any number of spectra with the nested sampler: transit depths against the limb column, eclipse depths against the day side, and the night side's flux ratio where a phase curve gives it. Two descriptions of the same data are compared by $\Delta\ln Z$. Simulated Ariel observations take their noise from the recipe ArielRad publishes (photon noise with a 40% margin on its variance, 40 ppm$\sqrt{\mathrm{hr}}$ of gain noise, a 20 ppm floor) and agree with its photon noise for HD 209458 to 8%. This likelihood is not yet part of the one the light curves use.
+
+### Speed
+
+Three quarters of a run is the mixing of the gases' k-distributions. For many runs on one data set the tables can be cut to its wavelength range and neighbouring bins joined (`prepareTables`), the mixing loop runs in WebAssembly where available (the same arithmetic, 2.6 times faster), and results are kept while their inputs stay the same. A model over 0.6 to 5.3 µm at resolving power 100 with 40 layers takes 26 ms where the full tables take 274 ms, within 3.5 ppm rms.
+
+### Composition and chemical equilibrium
+
+Mixing ratios are either typed, constant with height, with H$_2$ and He filling the rest, or taken from chemical equilibrium. For equilibrium the page interpolates a table computed with FastChem [Stock et al. 2018](#ref-stock2018) on 40 temperatures (300-4000 K), 21 pressures ($10^{-8}$-100 bar), 11 metallicities ([M/H] from $-1$ to $2.5$) and 14 values of C/O (0.1-1.5), on the logarithm of each mixing ratio: linearly in $\ln T$ and $\log P$, and by a monotone cubic through the nodes in [M/H] and C/O, so that a spectrum has no kink in either at the table's nodes. Metallicity scales every element heavier than helium from the solar values of [Asplund et al. 2021](#ref-asplund2021); C/O is then set by changing oxygen. The star's own [Fe/H], when the catalogue has it, is shown beside the metallicity control as the natural starting point.
+
+The table is gas phase only: nothing condenses or rains out in it (condensation is applied afterwards, when switched on; see below). TiO, VO, Na and K are therefore overstated at temperatures where they would be locked in solids (below roughly 1500-2000 K and 1000 K), and water forms no cloud. A quench pressure freezes the carriers of carbon, oxygen and nitrogen (CH$_4$, CO, CO$_2$, H$_2$O, NH$_3$, HCN, N$_2$) at lower pressures to their values there, the usual one-parameter stand-in for vertical mixing; no kinetics is computed.
+
+### Opacity
+
+Line opacity is correlated-k: tables of twelve gases from ExoMolOP [Chubb et al. 2021](#ref-chubb2021) reduced to resolving power 200 and 12 quadrature points, interpolated bilinearly in $\ln P$ and $1/T$ on $\log\sigma$, and combined species by species under random overlap, each combined distribution put back on the quadrature points as the mean of $\ln k$ over each point's interval. Continuum: collision-induced absorption of H$_2$-H$_2$ and H$_2$-He [Karman et al. 2019](#ref-karman2019); Rayleigh scattering of H$_2$, He and seven other gases; H$^-$ when the chemistry supplies it. Aerosols, each with its own parameters: an opaque grey deck; a power law $\sigma \propto \lambda^{s}$; the gas's Rayleigh scattering multiplied by a factor; a layer of grains of one radius $a$ with the extinction efficiency of [Kitzmann & Heng 2018](#ref-kitzmann2018),
+
+The source tables were checked against a conservation rule: a line's cross-section integrated over frequency is $(\pi e^2/m_e c)\,f$ at every pressure. The ten molecules keep their integrated strength to a few per cent between $10^{-5}$ and 10 bar. Sodium and potassium do not: the cores of their D lines are right at 10 bar and too strong as $1/P$ below it ($1.7\times10^5$ times at $10^{-5}$ bar). Those bins are recomputed when the tables are built, as Voigt profiles with the NIST oscillator strengths that meet the source's own far wings; the shipped tables then agree with the recomputed full-resolution ones to 2 ppm rms in transit depth.
+
+$$
+Q_\mathrm{ext} = \frac{5}{Q_0\,x^{-4} + x^{0.2}}, \qquad x = \frac{2\pi a}{\lambda}
+$$
+
+and a covered fraction $f$ of the planet, the spectrum being $f$ times the cloudy column plus $1-f$ times the clear one [Line & Parmentier 2016](#ref-line2016).
+
+### Transmission
+
+One ray per level crosses the spherical shells; inside each shell the pressure along the ray is integrated by four-point Gauss-Legendre quadrature. With $\tau_\lambda(b)$ the optical depth of the ray of impact parameter $b$, the transit depth is
+
+$$
+\delta_\lambda = \frac{1}{R_\star^2}\left[R_\mathrm{base}^2 + 2\int_{R_\mathrm{base}}^{R_\mathrm{top}} \left(1 - \langle e^{-\tau_\lambda(b)}\rangle_g\right) b\,db\right]
+$$
+
+by the trapezoid rule in $b^2$, the transmittance (not the optical depth) averaged over the quadrature points $g$ of each bin. Under an opaque deck every ray below its top is blocked, and a level is moved onto the deck so that it does not snap to the grid. No refraction, no scattering into the beam.
+
+### Emission
+
+The formal solution through isothermal layers at eight Gauss angles, plane-parallel, absorption only: $F_\lambda = 2\pi\int_0^1 I_\lambda(\mu)\,\mu\,d\mu$ with $I_\lambda(\mu) = \sum_k B_\lambda(T_k)\,(e^{-\tau_{k}/\mu} - e^{-\tau_{k+1}/\mu})$. Scattering removes light from the transit beam but is not a thermal source, so it enters the transmission spectrum only. The eclipse depth is $(R_p/R_\star)^2 F_p/F_\star$ over a blackbody star.
+
+### A cooler night side
+
+With a night side cooler by $\Delta T$ the same one-dimensional model is run for three columns (`dayNightModel`): the day side with the profile as given, which supplies the emission spectrum (an eclipse shows the day side); the night side with the profile's irradiation temperature lowered by $\Delta T$; and the limb, each layer at the mean of the two, which supplies the transmission spectrum. Chemistry, ionization and opacity follow each column's own temperatures. The cutaway draws the day column toward the star and the night column away from it, blended by $(1 + \cos\phi)/2$ in between; the 3D view blends the interior's glow the same way. This is an interpolation between two profiles, not a circulation model.
+
+### Ionization by starlight
+
+Chemistry puts atoms in the gas; starlight ionizes them high up. In each layer, in steady state, for hydrogen, sodium and potassium,
+
+$$
+n_0\,(J + q\,n_e) = (\alpha_r + \alpha_3)\,n_e\,n_+, \qquad J = \int F_\lambda\,\sigma_\lambda\,e^{-\sigma_\lambda N/\mu_0}\,d\lambda
+$$
+
+with the photoionization cross-sections of [Verner et al. 1996](#ref-verner1996), radiative recombination of [Verner & Ferland 1996](#ref-vernerferland1996), electron-impact ionization of [Voronov 1997](#ref-voronov1997) and a three-body term, following [Pearson 2019](#ref-pearson2019). $N$ is the column of the neutral atom above, found by solving the layers from the top down; $\mu_0 = 0.5$ is the day-side mean slant. Hydrogen (present as atoms when the composition comes from chemical equilibrium) is ionized by the star's extreme ultraviolet, taken from the Sun's history at the star's age [Ribas et al. 2005](#ref-ribas2005), scaled to the orbit and spread evenly from 10 to 91.2 nm, and is shielded by the H and H$_2$ above. Sodium and potassium are ionized by the near ultraviolet of a blackbody at the star's temperature. Potassium's cross-section is the 4s-shell fit of Verner & Yakovlev (1995, A&AS 109, 125); no fits for its recombination or electron-impact rates are carried, so it recombines at sodium's rate (for both alkalis recombination to the ground state, which detailed balance gives from the cross-section, is under 0.1% of the total) and its electron-impact rate is sodium's fit at potassium's ionization energy. The electrons of all three, and any from the chemistry, enter each other's recombination. The neutral parts replace the mixing ratios, so sodium's opacity falls where it is ionized: at the pressures of its line cores, well above where the continuum forms. The chemistry carries no other free atoms, and molecules are not photodissociated.
+
+### Escape (in the code, not on the page)
+
+`src/core/escape.js` holds estimates of size, not a hydrodynamic calculation; they were taken off the page because the model's spectra hardly respond to them and nothing there can yet be tested against data. The energy-limited mass-loss rate [Watson et al. 1981](#ref-watson1981); [Erkaev et al. 2007](#ref-erkaev2007) is
+
+$$
+\dot M = \frac{\eta\,\pi F_\mathrm{XUV}\,R_p R_\mathrm{XUV}^2}{G M_p K}, \qquad K = 1 - \frac{3}{2\xi} + \frac{1}{2\xi^3}, \quad \xi = \frac{a}{R_p}\left(\frac{M_p}{3M_\star}\right)^{1/3}
+$$
+
+with heating efficiency $\eta$ (0.2), $R_\mathrm{XUV}$ the radius where a column of atomic hydrogen reaches optical depth one for $\sigma = 5\times10^{-18}$ cm$^2$ in an isothermal atmosphere, and $F_\mathrm{XUV}$ from the Sun's history, $29.7\,t_\mathrm{Gyr}^{-1.23}$ erg cm$^{-2}$ s$^{-1}$ at 1 AU [Ribas et al. 2005](#ref-ribas2005), held constant before 0.1 Gyr and scaled to the orbit. A hydrogen wind of flux $F_\mathrm{H}$ carries along species lighter than the crossover mass [Hunten et al. 1987](#ref-hunten1987); [Zahnle & Kasting 1986](#ref-zahnle1986),
+
+$$
+m_c = m_\mathrm{H} + \frac{k_B T\,F_\mathrm{H}}{b\,g\,X_\mathrm{H}}, \qquad x_i = \frac{m_c - m_i}{m_c - m_\mathrm{H}} \;(m_i < m_c),\ \text{else } 0
+$$
+
+where $b$ is the binary diffusion coefficient times number density (measured power laws for H with He, D and O; for C, N, S and Na the H-O value scaled by reduced mass) and $x_i$ the fractionation factor. If a share $f$ of the hydrogen remains, a species' abundance relative to hydrogen has grown by $f^{\,x_i - 1}$ (Rayleigh distillation). `escapeHistory` integrates $\dot M$ and the $x_i$ over the star's age in 200 steps of log time for a gas envelope of a stated share of the planet's mass.
+
+### The picture
+
+The 3D view follows one ray per pixel through the same layers: starlight scattered once toward the viewer, attenuated on the way in and out, absent in the planet's shadow; behind the limb the limb-darkened star seen through the atmosphere; below, the interior's own emission and a reflectance from a two-stream estimate. The extinction of each layer in each colour channel is obtained from the model's limb transmittance by onion peeling, so the ring drawn in transit is the spectrum's. Colour is true colour: the spectrum from 0.38 to 0.75 µm under the star's light through the CIE 1931 colour-matching functions (the analytic fits of Wyman, Sloan & Shirley 2013) to sRGB.
+
+### Accuracy and checks
+
+- Eight molecules mixed, same k-tables and interpolation as petitRADTRANS 3.4.0: transit 3.4 ppm rms, 13.8 ppm at worst; flux 0.36% rms. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/rt_reference.test.mjs`)
+- H2O, CO, Na, K, TiO and VO on an ultra-hot Jupiter, from 0.35 µm: transit 1.2 ppm rms; flux 0.41% rms. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/rt_reference.test.mjs`)
+- Each of the twelve gases alone (the largest: Na): transit 2.7 to 6.0 ppm rms, most of it a constant offset of 3 to 5 ppm. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/rt_reference.test.mjs`)
+- The same, with the tables interpolated our way (log σ in 1/T) and not petitRADTRANS's (σ in T): up to 85 ppm in the far wings of the CO bands, 9.2 ppm rms. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/rt_reference.test.mjs`)
+- The tables the app ships (R = 200, 12 g-points, 2 MB per gas), at R = 100, four molecules: 10.4 ppm rms on the low-gravity planet, 3.6 ppm on the hot Jupiter. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/rt_reference.test.mjs`)
+- The shipped tables, eight molecules: 13.5 ppm rms. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/rt_reference.test.mjs`)
+- Power-law haze against petitRADTRANS: transit 3.0 ppm rms. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/rt_reference.test.mjs`)
+- The 3D view's layers against the limb they come from: recovered to 5.5e-7. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/atmosphere.test.mjs`)
+- Equilibrium chemistry table against FastChem between its nodes: 0.02 dex rms away from C/O = 1 and up to 100 × solar; 0.06 dex over the whole grid. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/chemistry.test.mjs`)
+- FastChem against our own solver for the H-He-C-N-O gas: CO, CO2, H2 identical; H2O and CH4 0.01 dex rms. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/chemistry.test.mjs`)
+- Energy-limited mass loss against the owner's published table (GJ 1214 b, HD 97658 b): within 0.3%. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/escape.test.mjs`)
+- Escape integrated through time, closed form: rate × time and the Rayleigh enrichment recovered. ([Validation: Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere); `test/escape.test.mjs`)
+- `node test/atmosphere.test.mjs` (33 checks), `test/opacity.test.mjs` (21), `test/rt_reference.test.mjs` (63, against petitRADTRANS 3.4.0), `test/chemistry.test.mjs` (4, against FastChem 4.0.4 and our own solver), `test/escape.test.mjs` (11), `test/climate.test.mjs` (8), `test/condensation.test.mjs` (6), `test/haze.test.mjs` (8, with scipy's Bessel functions, the HITRAN files, and Huygens and Cassini measurements of Titan), `test/stellarspec.test.mjs` (6), `test/sed.test.mjs` (11, against the dust_extinction package, interferometric diameters and AstroARIADNE's published fits), `test/bundle.test.mjs` (3), `test/retrieval.test.mjs` (retrievals and Ariel's noise against ArielRad's published values). The notes behind every number, and what the comparison with petitRADTRANS taught about mixing species and interpolating tables, are in docs/guide/validation.md, "Atmosphere".
+
+### Assumptions and limits
+
+- One column at a time: the day-night option interpolates between two given profiles; there are no winds, no hot-spot offset, no difference between the two limbs.
+- Chemistry is gas phase and in equilibrium (with at most a quench level); condensation is applied to its result afterwards. There is no photochemistry, so no hazes are produced by the model; hazes and clouds are put in by hand.
+- The self-consistent profile has a grey solution's shape. It meets the planet's total energy budget but not each layer's; real upper atmospheres are cooler than a grey closure gives. Inversions form where the gas absorbs starlight better than it holds heat, and settle; whether a given planet has one is for its data to say. No radiative-convective profile from another code was compared.
+- Condensation removes gases by published vapour-pressure and condensation curves and rains them out; the chemistry is not solved again without the condensed elements, nothing lifts material back up, and a cloud's thickness and grain size are still set by hand. The Titan haze is spheres of tholin with an effective size tuned to Cassini's occultations, not fractal aggregates.
+- The energy-limited rate can be wrong by a factor of several either way and ignores recombination-limited and core-powered loss; the planet's radius, mass and orbit are held fixed over the star's history; stars other than solar analogues follow a different XUV history. No number here was compared with a measured escape rate.
+- Fractionation assumes an atomic-hydrogen wind, a constant temperature, and diffusion coefficients measured for three pairs only. The crossover masses in the owner's earlier notes are not reproduced: their diffusion coefficient mixed units.
+- Ionization: hydrogen, sodium and potassium only, potassium with estimated rates. The stellar ultraviolet is a blackbody for the alkalis (real stars differ by factors of several on both sides of 150 nm) and a solar-analogue history for hydrogen; no measured stellar spectrum is used; nothing photodissociates.
+- Emission has no scattering and no reflected light; the star is a blackbody; the 3D view is single scattering without refraction.
+- No line-by-line reference was run; the comparison with petitRADTRANS shares its opacity tables.
+
+References: [Guillot 2010](#ref-guillot2010); [Madhusudhan & Seager 2009](#ref-madhusudhan2009); [Chubb et al. 2021](#ref-chubb2021); [Karman et al. 2019](#ref-karman2019); [Mollière et al. 2019](#ref-molliere2019); [Heng & Kitzmann 2017](#ref-heng2017); [Stock et al. 2018](#ref-stock2018); [Khare et al. 1984](#ref-khare1984); [Morley et al. 2012](#ref-morley2012); [Visscher et al. 2010](#ref-visscher2010); [Wakeford et al. 2017](#ref-wakeford2017); [Robinson et al. 2014](#ref-robinson2014); [Mikal-Evans et al. 2019](#ref-mikalevans2019); [Lodders 2003](#ref-lodders2003); [Fray & Schmitt 2009](#ref-frayschmitt2009); [Atreya & Wong 2005](#ref-atreya2005); [Fulchignoni et al. 2005](#ref-fulchignoni2005); [Niemann et al. 2010](#ref-niemann2010); [Asplund et al. 2021](#ref-asplund2021); [Kitzmann & Heng 2018](#ref-kitzmann2018); [Line & Parmentier 2016](#ref-line2016); [Watson et al. 1981](#ref-watson1981); [Erkaev et al. 2007](#ref-erkaev2007); [Hunten et al. 1987](#ref-hunten1987); [Zahnle & Kasting 1986](#ref-zahnle1986); [Ribas et al. 2005](#ref-ribas2005); [Verner et al. 1996](#ref-verner1996); [Verner & Ferland 1996](#ref-vernerferland1996); [Voronov 1997](#ref-voronov1997); [Pearson 2019](#ref-pearson2019).
+
 <a id="derived"></a>
 
-## 18. Derived quantities and uncertainty propagation
+## 19. Derived quantities and uncertainty propagation
 
 Code: `src/core/derive.js`, `src/core/session.js (summarizeFit)`, `src/main.js`, `src/core/stellar.js`, `src/core/hz.js`
 
@@ -905,7 +1054,7 @@ References: [Pearson et al. 2022](#ref-pearson2022); [Torres, Andersen & Giméne
 
 <a id="catalogue"></a>
 
-## 19. Catalogue sources, merging and provenance
+## 20. Catalogue sources, merging and provenance
 
 Code: `src/core/catalog.js`, `src/core/sources/`, `src/core/relations.js`, `tools/build_catalog.py`, `tools/build_catalog_table.py`, `tools/build_catalog_eu.py`, `tools/build_esl_catalog.py`
 
@@ -946,7 +1095,7 @@ References: [Akeson et al. 2013](#ref-akeson2013); [Schneider et al. 2011](#ref-
 
 <a id="observability"></a>
 
-## 20. Observability and sky positions
+## 21. Observability and sky positions
 
 Code: `src/core/observability.js`, `src/core/astro.js`, `src/core/asteroids.js`, `src/core/horizon.js`, `src/core/skyfield.js`, `src/core/healpix.js`
 
@@ -1018,7 +1167,7 @@ References: [Meeus 1998](#ref-meeus1998); [Standish & Williams (JPL)](#ref-stand
 
 <a id="photometry"></a>
 
-## 21. Image photometry
+## 22. Image photometry
 
 Code: `src/core/photometry.js`, `src/core/fits.js`, `src/photometry/pipeline.js`, `src/photometry/transitfit.js`
 
@@ -1071,7 +1220,7 @@ References: [Zellem et al. 2020](#ref-zellem2020); [Bradley et al. (Photutils)](
 
 <a id="spacelc"></a>
 
-## 22. TESS, Kepler and K2 light curves: quality, stitching, transit-aware detrending, K2 systematics
+## 23. TESS, Kepler and K2 light curves: quality, stitching, transit-aware detrending, K2 systematics
 
 Code: `src/core/lcprep.js`, `src/core/k2.js`, `src/core/zip.js`, `src/photometry/prep.js`, `src/photometry/mast.js`
 
@@ -1104,7 +1253,7 @@ References: [Hippke et al. 2019](#ref-hippke2019); [Lightkurve Collaboration 201
 
 <a id="imexam"></a>
 
-## 23. Image inspection, focus and comparison stars
+## 24. Image inspection, focus and comparison stars
 
 Code: `src/core/imexam.js`, `src/photometry/inspect.js`, `src/core/lcfits.js`
 
@@ -1134,7 +1283,7 @@ The photometry page has the inspection tools of IRAF's imexam [Tody 1986](#ref-t
 
 <a id="platesolve"></a>
 
-## 24. Sky coordinates, the target by name, Gaia comparison stars and optimal apertures
+## 25. Sky coordinates, the target by name, Gaia comparison stars and optimal apertures
 
 Code: `src/core/platesolve.js`, `src/core/fieldstars.js`, `src/core/imexam.js`, `src/photometry/wcs.js`
 
@@ -1161,7 +1310,7 @@ The photometry page gives the first frame a world coordinate system (WCS) withou
 
 <a id="noise"></a>
 
-## 25. Noise diagnostics
+## 26. Noise diagnostics
 
 Code: `src/core/psd.js`, `src/core/gp.js`, `src/photometry/diagnostics.js`
 
@@ -1214,7 +1363,7 @@ References: [Welch 1967](#ref-welch1967); [Pont, Zucker & Queloz 2006](#ref-pont
 
 <a id="session"></a>
 
-## 26. The session format and reproducibility
+## 27. The session format and reproducibility
 
 Code: `docs/FORMAT.md`, `src/core/session.js`, `src/core/exportScript.js`, `python/`, `tools/build_example_results.py`
 
@@ -1239,7 +1388,7 @@ The same document runs in the browser, headless in Node (`runSession`), in the P
 
 <a id="validation"></a>
 
-## 27. Validation
+## 28. Validation
 
 How the models compare with other codes, with independent references and with published results. On the site this is the Validation tab of the Methods page (https://exoplanet.science/methods/#validation), which recomputes this code's side of the first table in the browser, draws the comparisons and lists where this code is weaker; below are the numbers as the tests print them.
 
@@ -1272,10 +1421,11 @@ Each line is printed by the test named and stored in `public/validation/project.
 | [Phase curves and eclipse mapping](https://exoplanet.science/methods/#val-phasecurve) | Against batman, EXOTIC, scipy. Analytic or computed in the test. | Map basis curves to degree 3, through ingress and egress: max 4.6e-13 over 2256 values in 5 systems<br>Uniform-disc eclipse against batman 2.5.1: 4.9e-13 for circular orbits, 2.5e-7 at e = 0.93<br>Map curves against starry 1.2.0: max 5.6e-7 of the planet’s flux over 48 curves<br>Harmonic phase curve against EXOTIC: 5.0e-13 outside transit and eclipse<br>Brightness temperature against scipy quadrature and root finding: relative 1.6e-9 over 48 cases<br>The same model inside the fitting likelihood: χ² identical to the model used directly<br>*EXOTIC’s eclipse ingress is that of a smaller body and starts late (up to 29% of the depth during ingress); here the planet’s own disc is occulted. A map of degree 3 is invisible in the phase curve and constrained only by ingress and egress. The examples are fits to already-detrended Spitzer data; instrument systematics are not modelled.* | `node test/phasecurve.test.mjs && node test/phasemodel.test.mjs`<br>`node tools/validation/project_reference.mjs phasecurve` |
 | [Exomoons](https://exoplanet.science/methods/#val-exomoon) | Against scipy. Analytic or computed in the test. | Two overlapping discs on the star: max 6.5e-14 over 205 cases and 5 limb-darkening profiles<br>exomoon2.py, step by step with this kernel: planet + moon within 1.3e-8<br>Pandora, whole light curves: max difference 5.2e-6<br>Timing and duration variations against Kipping’s formulas: within 2.4% and 0.5% of the amplitude<br>Search for an injected moon: found at S/N 26; 100 noise-only searches reach 5.0<br>Moonless light curves: 1 of 40 above the 95% level of noise (2 expected)<br>*The moon’s orbit is circular and the planet-moon pair is treated as two bodies about a Keplerian barycentre; the star’s tide on the moon is ignored. The exomoon2.py configuration itself is unbound (2.4 Hill radii), which the page flags. No real detection has been reproduced: there is none.* | `node test/exomoon.test.mjs`<br>`node tools/validation/project_reference.mjs exomoon` |
 | [N-body dynamics](https://exoplanet.science/methods/#val-nbody) | Against EXOTIC, scipy. Stored references: `test/nbody_reference.json`; generated by `test/make_nbody_reference.py`. | Transit times against REBOUND 5.2.2 (IAS15), EXOTIC’s example system: 1.3e-6 s over 610 transits<br>Same map as REBOUND’s WHFast: positions within 2.0e-12 AU after 8000 steps<br>One planet: identical to the Keplerian model: timing 3.4e-6 s over 400 orbits, velocity 1.6e-9 m/s<br>Critical angular-momentum deficit against a brute-force minimum: relative 3.8e-12 over 25 cases<br>Unseen companion recovered from 72 transit times: 0.1040 M Jup (injected 0.1), mean period 5.3336 d (5.3322)<br>The same dynamics inside the fitting likelihood: χ² 82.9 against 82.9 from the other integrator directly<br>*Light curves stay Keplerian (no photodynamics), light-travel time is not applied, and there is no MEGNO: stability is judged by the Hill and AMD criteria and a short integration. The chi-square surface of a perturber has period aliases every few thousandths of a day; the search returns one solution that fits, not the only one. TTVFast, given the same Jacobi elements, differs by hundreds of seconds because it defines them differently.* | `node test/nbody.test.mjs && node test/nbodymodel.test.mjs`<br>`node tools/validation/project_reference.mjs nbody` |
+| [Atmosphere: transmission and emission spectra](https://exoplanet.science/methods/#val-atmosphere) | Against petitRADTRANS, FastChem, scipy. Stored references: `test/atmosphere_reference.json`, `test/rt_reference.json`, `test/chem_reference.json`, `test/haze_reference.json`, `test/sed_reference.json`, `test/sed_benchmarks.json`; generated by `test/make_atmosphere_reference.py`, `test/make_rt_reference.py`, `test/make_chem_reference.py`, `test/make_haze_reference.py`, `test/make_sed_reference.py`. | Transit radius of an isothermal atmosphere against adaptive quadrature: 0.004 scale heights at 10 layers per decade of pressure, 0.0002 at 40<br>Emergent flux of a grey atmosphere against quadrature: 0.17% at 10 layers per decade, 0.011% at 40<br>Eight molecules mixed, same k-tables and interpolation as petitRADTRANS 3.4.0: transit 3.4 ppm rms, 13.8 ppm at worst; flux 0.36% rms<br>H2O, CO, Na, K, TiO and VO on an ultra-hot Jupiter, from 0.35 µm: transit 1.2 ppm rms; flux 0.41% rms<br>Each of the twelve gases alone (the largest: Na): transit 2.7 to 6.0 ppm rms, most of it a constant offset of 3 to 5 ppm<br>The same, with the tables interpolated our way (log σ in 1/T) and not petitRADTRANS's (σ in T): up to 85 ppm in the far wings of the CO bands, 9.2 ppm rms<br>Which interpolation the tables themselves favour: temperature nodes the shipped tables drop: no bias in 1/T, 2.3% low when linear in T<br>The tables the app ships (R = 200, 12 g-points, 2 MB per gas), at R = 100, four molecules: 10.4 ppm rms on the low-gravity planet, 3.6 ppm on the hot Jupiter<br>The shipped tables, eight molecules: 13.5 ppm rms<br>Power-law haze against petitRADTRANS: transit 3.0 ppm rms<br>Opaque cloud deck at 1 mbar, 480 layers: transit 5.4 ppm rms (22 ppm at 120 layers: petitRADTRANS counts the ring under the deck's top as half blocked)<br>Cloud deck swept in pressure: the depth changes by 22 to 23 ppm per step, never below the opaque disc<br>Particle extinction (Kitzmann & Heng 2018) against Mie theory: within 0.66 to 1.48 for grains larger than the wavelength over 2π; far too low below<br>The 3D view's layers against the limb they come from: recovered to 5.5e-7<br>Equilibrium chemistry table against FastChem between its nodes: 0.02 dex rms away from C/O = 1 and up to 100 × solar; 0.06 dex over the whole grid<br>FastChem against our own solver for the H-He-C-N-O gas: CO, CO2, H2 identical; H2O and CH4 0.01 dex rms<br>Energy-limited mass loss against the owner's published table (GJ 1214 b, HD 97658 b): within 0.3%<br>Escape integrated through time, closed form: rate × time and the Rayleigh enrichment recovered<br>Ionization fits on hydrogen, whose values are known: 6.33e-18 cm² at threshold, 4.19e-13 cm³/s at 10⁴ K<br>The sodium D lines in the model spectrum: the added depth peaks at 0.588 µm with wings on both sides<br>A night side 500 K cooler: day, limb and night columns: limb at the mean of day and night; identical to one column with no contrast<br>Self-consistent temperature profile: its closure against petitRADTRANS's Guillot function: identical (2e-13 K)<br>The same profile for HD 209458 b against Guillot's calibrated opacities: energy balanced to 0.5%; γ = 0.31 (0.4), thermal opacity 2.0e-3 cm²/g (1e-2): the right order, not the same<br>A temperature inversion: WASP-121 b's day side with TiO and VO, against a retrieved profile: settles in 9 passes, balanced to 0.2%; 2729 K rising to 2984 K (retrieved: about 2500 to 2800 K)<br>The top of the self-consistent profile with line strength conserved, held and not held: 1008 K and 1022 K, atomic hydrogen under 4e-5 (the source tables gave 1884 K and 89%)<br>Clouds in the self-consistent profile: the solver's energy balance against the forward model's: equal to 0.002 for a deck, partial cover and a particle layer<br>Vapour pressures of water, ammonia and methane against published points: within 0.1% (water), 0.6% (ammonia), 1.3% (methane)<br>Condensation temperatures of five solids against Lodders (2003): within 0.8% at 1e-4 bar<br>Jupiter's ammonia and water cloud bases against an equilibrium cloud model: 0.58 and 5.1 bar (0.72 and 5.7 bar)<br>Mie scattering against scipy's Bessel functions: within 4e-8, 30 cases<br>Nitrogen collision-induced absorption against the HITRAN files: within 0.02%<br>Titan: altitudes and the methane cold trap against Huygens: 115 mbar at 46 km (44); methane 2.5% above the trap (1.48% measured)<br>Titan in transit against Cassini's solar occultations (the haze is tuned to these two numbers): 302 km at 0.88 µm (about 300); slope −2.16 (−1.9 to −2.2)<br>The Sun from the stellar grid: total irradiance at 1 au: 1346 W/m² (measured 1361)<br>Stellar grid: energy of every model, and interpolation between models: σT⁴ within 5%; a left-out model within 4.1%<br>Extinction law against the dust_extinction package: within 1.07% below 2.5 µm<br>SED fit against interferometric angular diameters (HD 209458, GJ 436, HD 97658): within 2% and 40 K; HD 189733 off by 7% and 152 K<br>SED fit against AstroARIADNE's published fits of two stars: HD 189733: 22 K and 0.1% apart; HD 209458: 93 K and 4%<br>SED chain against magnitudes from the raw PHOENIX files and full passbands: within 0.6 mmag<br>Spectrum matching on a synthetic low-resolution spectrum (method only): 5227 ± 2 K for 5230 K put in<br>Ariel noise against ArielRad (Mugnai et al. 2020), HD 209458, six channels: photon noise within 8%, totals within 5%<br>A retrieval on one simulated Ariel transit: T 1257 +39 −37 K for 1300 K; water detected at Δ ln Z = 404<br>Transit, three eclipses and night side of a simulated hazy hot Jupiter retrieved together: night-side contrast 501 +32 −24 K for 500 K; nine parameters within 0.8σ; converged<br>Joint retrieval repeated on forty draws of the noise: are the error bars the right size: [M/H] scatters 1.05 ± 0.12 and C/O 1.13 ± 0.13 times the quoted error; 68% ranges hold the truth 27 of 40 times; medians up to 0.5σ to one side<br>Star lookup from stored VizieR answers, then fitted: 6087 K and 0.2245 mas for HD 209458 (6092 K, 0.2254 mas)<br>The download: opacity by absorber at one level per decade, equal to the model: 8 levels × 1023 wavelengths; equal to 1e-4<br>Sodium and potassium D lines against the oscillator-strength sum rule, every table node: at most 1.20 times the rule (the source tables: up to 1.7e5)<br>The WebAssembly mixing kernel against the JavaScript loop: identical to 1e-14; 2.6 times faster<br>Tables cut to the data's range and joined to R = 100, against the shipped tables: 2.1 ppm rms, 20.5 ppm at most<br>Mixing two absorbers by random overlap, exact answer known: 0.008 in transmittance with 16 g-points each; 0.002 for the exact joint distribution<br>Collision-induced absorption against the HITRAN files: within 1.2%<br>Colour of a blackbody against the tabulated CIE 1931 observer: 0.002 in chromaticity from 2500 to 20000 K<br>Limb colours of a grey star against quadrature: 0.005 in a linear sRGB channel<br>*The comparison with petitRADTRANS uses the same ExoMolOP k-tables in both codes, so it tests the radiative transfer and the mixing of gases, not the line lists. No line-by-line reference was run. Collision-induced absorption is switched off in that comparison; emission has no scattering; the reflected-light colour in the 3D view is an estimate that was compared with nothing. Where the two codes differ by tens of ppm they interpolate the tables differently in temperature; which is closer to the line lists was judged from the tables' own nodes, not from a line-by-line run. Chemistry is gas phase only (nothing condenses). The escape rates are energy-limited estimates, good to a factor of several, and the sodium ionization takes the star's ultraviolet from a blackbody: neither was compared with an observation.* | `node test/atmosphere.test.mjs && node test/rt_reference.test.mjs && node test/opacity.test.mjs && node test/chemistry.test.mjs && node test/escape.test.mjs && node test/climate.test.mjs && node test/condensation.test.mjs && node test/haze.test.mjs && node test/stellarspec.test.mjs && node test/sed.test.mjs && node test/retrieval.test.mjs && node test/bundle.test.mjs`<br>`node tools/validation/project_reference.mjs atmosphere` |
 
 <a id="reproducibility"></a>
 
-## 28. Reproducibility table
+## 29. Reproducibility table
 
 For each bundled example: where the data come from and under what terms, what was reproduced, and the command that regenerates it. Values of this code are read from the stored result of each example (`public/examples/results/`, extracted from files dated up to 2026-11-16). **Rows marked "NOT REPRODUCED" are results this code does not match.** Published values are quoted as this repository records them; where it holds no uncertainty for a published value, none is shown. The validation topics, with the command that reruns each, are in the [Validation](#validation) section.
 
@@ -1562,7 +1712,7 @@ As far as the files in this repository state them. The project itself has no lic
 
 <a id="cite"></a>
 
-## 29. How to cite and report
+## 30. How to cite and report
 
 A result from this software can be reported like any other fit, provided the paper states: the software and its version; the model components and the limb-darkening law with the source of its coefficients; every free parameter with its prior, and what was held fixed (in particular $a/R_\star$ and the stellar mass and radius); the sampler settings and the outcome (convergence, likelihood calls, effective samples, $\ln Z$ with its uncertainty, any sampler warning); the time standard of the data; and where the session file with the posterior draws is archived.
 
@@ -1677,9 +1827,9 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 
 <a id="references"></a>
 
-## 30. References
+## 31. References
 
-120 entries: every work cited by the methods and by the validation (`src/validation/refs.js`). Each was checked against the Crossref record of its DOI, arXiv, or the Astrophysics Source Code Library on 15 November 2026; entries that could not be checked in full say so. The key in brackets is the BibTeX key in `docs/references.bib`.
+149 entries: every work cited by the methods and by the validation (`src/validation/refs.js`). Each was checked against the Crossref record of its DOI, arXiv, or the Astrophysics Source Code Library on 15 November 2026; entries that could not be checked in full say so. The key in brackets is the BibTeX key in `docs/references.bib`.
 
 - <a id="ref-abraham1996"></a>Abraham, R. G., Tanvir, N. R., Santiago, B. X., Ellis, R. S., et al. 1996. [Galaxy morphology to I=25 mag in the Hubble Deep Field](https://doi.org/10.1093/mnras/279.3.L47). MNRAS, 279, L47. doi:10.1093/mnras/279.3.L47 [`abraham1996`]
 - <a id="ref-agol2020"></a>Agol, E., Luger, R. & Foreman-Mackey, D. 2020. [Analytic Planetary Transit Light Curves and Derivatives for Stars with Polynomial Limb Darkening](https://doi.org/10.3847/1538-3881/ab4fee). AJ, 159, 123. doi:10.3847/1538-3881/ab4fee arXiv:1908.03222 [`agol2020`]
@@ -1687,7 +1837,9 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-akeson2013"></a>Akeson, R. L., Chen, X., Ciardi, D., Crane, M., et al. 2013. [The NASA Exoplanet Archive: Data and Tools for Exoplanet Research](https://doi.org/10.1086/672273). PASP, 125, 989. doi:10.1086/672273 [`akeson2013`]
 - <a id="ref-alderson2023"></a>Alderson, L., Wakeford, H. R., Alam, M. K., Batalha, N. E., et al. 2023. [Early Release Science of the exoplanet WASP-39b with JWST NIRSpec G395H](https://doi.org/10.1038/s41586-022-05591-3). Nature, 614, 664. doi:10.1038/s41586-022-05591-3 [`alderson2023`]
 - <a id="ref-anderson2012"></a>Anderson, E. & Francis, Ch. 2012. [XHIP: An extended Hipparcos compilation](https://doi.org/10.1134/S1063773712050015). Astronomy Letters, 38, 331. doi:10.1134/S1063773712050015 [`anderson2012`]
+- <a id="ref-asplund2021"></a>Asplund, M., Amarsi, A. M., Grevesse, N. 2021. [The chemical make-up of the Sun: A 2020 vision](https://doi.org/10.1051/0004-6361/202140445). A&A, 653, A141. doi:10.1051/0004-6361/202140445 [`asplund2021`]
 - <a id="ref-astropy2022"></a>Astropy Collaboration, Price-Whelan, A. M., Lim, P. L., Earl, N., et al. 2022. [The Astropy Project: Sustaining and Growing a Community-oriented Open-source Project and the Latest Major Release (v5.0) of the Core Package](https://doi.org/10.3847/1538-4357/ac7c74). ApJ, 935, 167. doi:10.3847/1538-4357/ac7c74 [`astropy2022`]
+- <a id="ref-atreya2005"></a>Atreya, S. K., Wong, A.-S. 2005. [Coupled clouds and chemistry of the giant planets: a case for multiprobes](https://doi.org/10.1007/s11214-005-1951-5). Space Sci. Rev., 116, 121. doi:10.1007/s11214-005-1951-5 [`atreya2005`]
 - <a id="ref-baluev2008"></a>Baluev, R. V. 2008. [Assessing the statistical significance of periodogram peaks](https://doi.org/10.1111/j.1365-2966.2008.12689.x). MNRAS, 385, 1279. doi:10.1111/j.1365-2966.2008.12689.x arXiv:0711.0330 [`baluev2008`]
 - <a id="ref-barragan2022"></a>Barragán, O., Aigrain, S., Rajpaul, V. M. & Zicher, N. 2022. [pyaneti – II. A multidimensional Gaussian process approach to analysing spectroscopic time-series](https://doi.org/10.1093/mnras/stab2889). MNRAS, 509, 866. doi:10.1093/mnras/stab2889 arXiv:2109.14086 [`barragan2022`]
 - <a id="ref-barragan2019"></a>Barragán, O., Gandolfi, D. & Antoniciello, G. 2019. [pyaneti: a fast and powerful software suite for multiplanet radial velocity and transit fitting](https://doi.org/10.1093/mnras/sty2472). MNRAS, 482, 1017. doi:10.1093/mnras/sty2472 arXiv:1809.04609 [`barragan2019`]
@@ -1703,6 +1855,7 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-calabretta2002"></a>Calabretta, M. R. & Greisen, E. W. 2002. [Representations of celestial coordinates in FITS](https://doi.org/10.1051/0004-6361:20021327). A&A, 395, 1077. doi:10.1051/0004-6361:20021327 [`calabretta2002`]
 - <a id="ref-chambers1996"></a>Chambers, J. E., Wetherill, G. W. & Boss, A. P. 1996. [The Stability of Multi-Planet Systems](https://doi.org/10.1006/icar.1996.0019). Icarus, 119, 261. doi:10.1006/icar.1996.0019 [`chambers1996`]
 - <a id="ref-chen2017"></a>Chen, J. & Kipping, D. 2017. [Probabilistic Forecasting of the Masses and Radii of Other Worlds](https://doi.org/10.3847/1538-4357/834/1/17). ApJ, 834, 17. doi:10.3847/1538-4357/834/1/17 [`chen2017`]
+- <a id="ref-chubb2021"></a>Chubb, K. L., Rocchetto, M., Yurchenko, S. N., Min, M., et al. 2021. [The ExoMolOP database: Cross sections and k-tables for molecules of interest in high-temperature exoplanet atmospheres](https://doi.org/10.1051/0004-6361/202038350). A&A, 646, A21. doi:10.1051/0004-6361/202038350 arXiv:2009.00687 [`chubb2021`]
 - <a id="ref-cincotta2000"></a>Cincotta, P. M. & Simó, C. 2000. [Simple tools to study global dynamics in non-axisymmetric galactic potentials – I](https://doi.org/10.1051/aas:2000108). A&AS, 147, 205. doi:10.1051/aas:2000108 [`cincotta2000`]
 - <a id="ref-claret2000"></a>Claret, A. 2000. A&A, 363, 1081 (the four-coefficient limb-darkening law). https://ui.adsabs.harvard.edu/abs/2000A%26A...363.1081C *No DOI exists. Journal, volume, page and year were confirmed from the reference lists of Kreidberg 2015 and Morello et al. 2020 in Crossref; the title is not printed because it could not be checked online (CDS was unavailable).* [`claret2000`]
 - <a id="ref-conselice2000"></a>Conselice, C. J., Bershady, M. A. & Jangren, A. 2000. [The Asymmetry of Galaxies: Physical Morphology for Nearby and High-Redshift Galaxies](https://doi.org/10.1086/308300). ApJ, 529, 886. doi:10.1086/308300 [`conselice2000`]
@@ -1716,31 +1869,40 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-domingos2006"></a>Domingos, R. C., Winter, O. C. & Yokoyama, T. 2006. [Stable satellites around extrasolar giant planets](https://doi.org/10.1111/j.1365-2966.2006.11104.x). MNRAS, 373, 1227. doi:10.1111/j.1365-2966.2006.11104.x [`domingos2006`]
 - <a id="ref-dravins1998"></a>Dravins, D., Lindegren, L., Mezey, E. & Young, A. T. 1998. [Atmospheric Intensity Scintillation of Stars. III. Effects for Different Telescope Apertures](https://doi.org/10.1086/316161). PASP, 110, 610. doi:10.1086/316161 [`dravins1998`]
 - <a id="ref-eastman2010"></a>Eastman, J., Siverd, R. & Gaudi, B. S. 2010. [Achieving Better Than 1 Minute Accuracy in the Heliocentric and Barycentric Julian Dates](https://doi.org/10.1086/655938). PASP, 122, 935. doi:10.1086/655938 [`eastman2010`]
+- <a id="ref-erkaev2007"></a>Erkaev, N. V., Kulikov, Yu. N., Lammer, H., Selsis, F., Langmayr, D., Jaritz, G. F., Biernat, H. K. 2007. [Roche lobe effects on the atmospheric loss from "Hot Jupiters"](https://doi.org/10.1051/0004-6361:20066929). A&A, 472, 329. doi:10.1051/0004-6361:20066929 [`erkaev2007`]
 - <a id="ref-everhart1985"></a>Everhart, E. 1985. [An Efficient Integrator that Uses Gauss-Radau Spacings](https://doi.org/10.1007/978-94-009-5400-7_17). in Dynamics of Comets: Their Origin and Evolution, Astrophysics and Space Science Library (Dordrecht: Springer), 185. doi:10.1007/978-94-009-5400-7_17 *A book chapter: title, book, series and pages as in the Crossref record; the editors and the place of publication were not checked.* [`everhart1985`]
 - <a id="ref-foremanmackey2013"></a>Foreman-Mackey, D., Hogg, D. W., Lang, D. & Goodman, J. 2013. [emcee: The MCMC Hammer](https://doi.org/10.1086/670067). PASP, 125, 306. doi:10.1086/670067 arXiv:1202.3665 [`foremanmackey2013`]
 - <a id="ref-foremanmackey2021"></a>Foreman-Mackey, D., Luger, R., Agol, E., Barclay, T., et al. 2021. [exoplanet: Gradient-based probabilistic inference for exoplanet data & other astronomical time series](https://doi.org/10.21105/joss.03285). JOSS, 6, 3285. doi:10.21105/joss.03285 [`foremanmackey2021`]
 - <a id="ref-fowlie2021"></a>Fowlie, A., Handley, W. & Su, L. 2021. [Nested sampling with plateaus](https://doi.org/10.1093/mnras/stab590). MNRAS, 503, 1199. doi:10.1093/mnras/stab590 [`fowlie2021`]
+- <a id="ref-frayschmitt2009"></a>Fray, N., Schmitt, B. 2009. [Sublimation of ices of astrophysical interest: a bibliographic review](https://doi.org/10.1016/j.pss.2009.09.011). Planet. Space Sci., 57, 2053. doi:10.1016/j.pss.2009.09.011 [`frayschmitt2009`]
+- <a id="ref-fulchignoni2005"></a>Fulchignoni, M., Ferri, F., Angrilli, F., Ball, A. J., et al. 2005. [In situ measurements of the physical characteristics of Titan's environment](https://doi.org/10.1038/nature04314). Nature, 438, 785. doi:10.1038/nature04314 [`fulchignoni2005`]
 - <a id="ref-fulton2018"></a>Fulton, B. J., Petigura, E. A., Blunt, S. & Sinukoff, E. 2018. [RadVel: The Radial Velocity Modeling Toolkit](https://doi.org/10.1088/1538-3873/aaaaa8). PASP, 130, 044504. doi:10.1088/1538-3873/aaaaa8 arXiv:1801.01947 [`fulton2018`]
 - <a id="ref-gaia2016"></a>Gaia Collaboration, Prusti, T., de Bruijne, J. H. J., Brown, A. G. A., et al. 2016. [The Gaia mission](https://doi.org/10.1051/0004-6361/201629272). A&A, 595, A1. doi:10.1051/0004-6361/201629272 [`gaia2016`]
 - <a id="ref-gaia2023"></a>Gaia Collaboration, Vallenari, A., Brown, A. G. A., Prusti, T., et al. 2023. [Gaia Data Release 3: Summary of the content and survey properties](https://doi.org/10.1051/0004-6361/202243940). A&A, 674, A1. doi:10.1051/0004-6361/202243940 *Crossref lists the title as "Gaia Data Release 3"; the subtitle is the article's.* [`gaia2023`]
 - <a id="ref-gladman1993"></a>Gladman, B. 1993. [Dynamics of Systems of Two Close Planets](https://doi.org/10.1006/icar.1993.1169). Icarus, 106, 247. doi:10.1006/icar.1993.1169 [`gladman1993`]
 - <a id="ref-groth1986"></a>Groth, E. J. 1986. [A pattern-matching algorithm for two-dimensional coordinate lists](https://doi.org/10.1086/114099). AJ, 91, 1244. doi:10.1086/114099 [`groth1986`]
 - <a id="ref-guerrero2021"></a>Guerrero, N. M., Seager, S., Huang, C. X., Vanderburg, A., et al. 2021. [The TESS Objects of Interest Catalog from the TESS Prime Mission](https://doi.org/10.3847/1538-4365/abefe1). ApJS, 254, 39. doi:10.3847/1538-4365/abefe1 [`guerrero2021`]
+- <a id="ref-guillot2010"></a>Guillot, T. 2010. [On the radiative equilibrium of irradiated planetary atmospheres](https://doi.org/10.1051/0004-6361/200913396). A&A, 520, A27. doi:10.1051/0004-6361/200913396 arXiv:1006.4702 [`guillot2010`]
 - <a id="ref-heller2014"></a>Heller, R. 2014. [Detecting Extrasolar Moons Akin to Solar System Satellites with an Orbital Sampling Effect](https://doi.org/10.1088/0004-637X/787/1/14). ApJ, 787, 14. doi:10.1088/0004-637X/787/1/14 [`heller2014`]
 - <a id="ref-hellier2011"></a>Hellier, C., Anderson, D. R., Collier Cameron, A., Gillon, M., et al. 2011. [WASP-43b: the closest-orbiting hot Jupiter](https://doi.org/10.1051/0004-6361/201117081). A&A, 535, L7. doi:10.1051/0004-6361/201117081 [`hellier2011`]
+- <a id="ref-heng2017"></a>Heng, K. & Kitzmann, D. 2017. [The theory of transmission spectra revisited: a semi-analytical method for interpreting WFC3 data and an unresolved challenge](https://doi.org/10.1093/mnras/stx1453). MNRAS, 470, 2972. doi:10.1093/mnras/stx1453 [`heng2017`]
 - <a id="ref-hippke2022"></a>Hippke, M. & Heller, R. 2022. [Pandora: A fast open-source exomoon transit detection algorithm](https://doi.org/10.1051/0004-6361/202243129). A&A, 662, A37. doi:10.1051/0004-6361/202243129 [`hippke2022`]
 - <a id="ref-hippke2019"></a>Hippke, M., David, T. J., Mulders, G. D. & Heller, R. 2019. [Wōtan: Comprehensive Time-series Detrending in Python](https://doi.org/10.3847/1538-3881/ab3984). AJ, 158, 143. doi:10.3847/1538-3881/ab3984 arXiv:1906.00966 *Added 2026-11-16; not re-checked against Crossref.* [`hippke2019`]
 - <a id="ref-hirano2010"></a>Hirano, T., Suto, Y., Taruya, A., Narita, N., Sato, B., Johnson, J. A., et al. 2010. [Analytic Description of the Rossiter-McLaughlin Effect for Transiting Exoplanets: Cross-Correlation Method and Comparison with Simulated Data](https://doi.org/10.1088/0004-637X/709/1/458). ApJ, 709, 458. doi:10.1088/0004-637X/709/1/458 [`hirano2010`]
 - <a id="ref-holman2005"></a>Holman, M. J. & Murray, N. W. 2005. [The Use of Transit Timing to Detect Terrestrial-Mass Extrasolar Planets](https://doi.org/10.1126/science.1107822). Science, 307, 1288. doi:10.1126/science.1107822 [`holman2005`]
 - <a id="ref-howell1989"></a>Howell, S. B. 1989. [Two-dimensional aperture photometry: signal-to-noise ratio of point-source observations and optimal data-extraction techniques](https://doi.org/10.1086/132477). PASP, 101, 616. doi:10.1086/132477 [`howell1989`]
+- <a id="ref-hunten1987"></a>Hunten, D. M., Pepin, R. O., Walker, J. C. G. 1987. [Mass fractionation in hydrodynamic escape](https://doi.org/10.1016/0019-1035(87)90022-4). Icarus, 69, 532. doi:10.1016/0019-1035(87)90022-4 [`hunten1987`]
 - <a id="ref-husser2013"></a>Husser, T.-O., Wende-von Berg, S., Dreizler, S., Homeier, D., et al. 2013. [A new extensive library of PHOENIX stellar atmospheres and synthetic spectra](https://doi.org/10.1051/0004-6361/201219058). A&A, 553, A6. doi:10.1051/0004-6361/201219058 [`husser2013`]
 - <a id="ref-jensen2013"></a>Jensen, E. 2013. [Tapir: A web interface for transit/eclipse observability](https://ascl.net/1306.007). Astrophysics Source Code Library, ascl:1306.007. https://ascl.net/1306.007 [`jensen2013`]
 - <a id="ref-joye2003"></a>Joye, W. A. & Mandel, E. 2003. [New Features of SAOImage DS9](https://ui.adsabs.harvard.edu/abs/2003ASPC..295..489J). ASP Conference Series, 295, 489. https://ui.adsabs.harvard.edu/abs/2003ASPC..295..489J [`joye2003`]
+- <a id="ref-karman2019"></a>Karman, T., Gordon, I. E., van der Avoird, A., Baranov, Y. I., et al. 2019. [Update of the HITRAN collision-induced absorption section](https://doi.org/10.1016/j.icarus.2019.02.034). Icarus, 328, 160. doi:10.1016/j.icarus.2019.02.034 [`karman2019`]
 - <a id="ref-kass1995"></a>Kass, R. E. & Raftery, A. E. 1995. [Bayes Factors](https://doi.org/10.1080/01621459.1995.10476572). Journal of the American Statistical Association, 90, 773. doi:10.1080/01621459.1995.10476572 [`kass1995`]
 - <a id="ref-kasten1989"></a>Kasten, F. & Young, A. T. 1989. [Revised optical air mass tables and approximation formula](https://doi.org/10.1364/AO.28.004735). Applied Optics, 28, 4735. doi:10.1364/AO.28.004735 [`kasten1989`]
 - <a id="ref-keys1981"></a>Keys, R. 1981. [Cubic convolution interpolation for digital image processing](https://doi.org/10.1109/TASSP.1981.1163711). IEEE Transactions on Acoustics, Speech, and Signal Processing, 29, 1153. doi:10.1109/TASSP.1981.1163711 [`keys1981`]
+- <a id="ref-khare1984"></a>Khare, B. N., Sagan, C., Arakawa, E. T., Suits, F., Callcott, T. A., Williams, M. W. 1984. [Optical constants of organic tholins produced in a simulated Titanian atmosphere: from soft X-ray to microwave frequencies](https://doi.org/10.1016/0019-1035(84)90142-8). Icarus, 60, 127. doi:10.1016/0019-1035(84)90142-8 [`khare1984`]
 - <a id="ref-kipping2009"></a>Kipping, D. M. 2009. [Transit timing effects due to an exomoon](https://doi.org/10.1111/j.1365-2966.2008.13999.x). MNRAS, 392, 181. doi:10.1111/j.1365-2966.2008.13999.x [`kipping2009`]
 - <a id="ref-kipping2013"></a>Kipping, D. M. 2013. [Efficient, uninformative sampling of limb darkening coefficients for two-parameter laws](https://doi.org/10.1093/mnras/stt1435). MNRAS, 435, 2152. doi:10.1093/mnras/stt1435 arXiv:1308.0009 [`kipping2013`]
+- <a id="ref-kitzmann2018"></a>Kitzmann, D., Heng, K. 2018. [Optical properties of potential condensates in exoplanetary atmospheres](https://doi.org/10.1093/mnras/stx3141). MNRAS, 475, 94. doi:10.1093/mnras/stx3141 [`kitzmann2018`]
 - <a id="ref-kopparapu2014"></a>Kopparapu, R. K., Ramirez, R. M., SchottelKotte, J., Kasting, J. F., et al. 2014. [Habitable Zones around Main-sequence Stars: Dependence on Planetary Mass](https://doi.org/10.1088/2041-8205/787/2/L29). ApJ, 787, L29. doi:10.1088/2041-8205/787/2/L29 [`kopparapu2014`]
 - <a id="ref-kopparapu2013"></a>Kopparapu, R. K., Ramirez, R., Kasting, J. F., Eymet, V., et al. 2013. [Habitable Zones around Main-sequence Stars: New Estimates](https://doi.org/10.1088/0004-637X/765/2/131). ApJ, 765, 131. doi:10.1088/0004-637X/765/2/131 [`kopparapu2013`]
 - <a id="ref-kreidberg2015"></a>Kreidberg, L. 2015. [batman: BAsic Transit Model cAlculatioN in Python](https://doi.org/10.1086/683602). PASP, 127, 1161. doi:10.1086/683602 arXiv:1507.08285 [`kreidberg2015`]
@@ -1748,19 +1910,26 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-laskar2017"></a>Laskar, J. & Petit, A. C. 2017. [AMD-stability and the classification of planetary systems](https://doi.org/10.1051/0004-6361/201630022). A&A, 605, A72. doi:10.1051/0004-6361/201630022 [`laskar2017`]
 - <a id="ref-leonardi2024"></a>Leonardi, P., Nascimbeni, V., et al. 2024. [TASTE V. A new ground-based investigation of orbital decay in the ultra-hot Jupiter WASP-12b](https://arxiv.org/abs/2402.12120). arXiv:2402.12120. arXiv:2402.12120 *Checked against arXiv only; the journal reference was not looked up.* [`leonardi2024`]
 - <a id="ref-lightkurve2018"></a>Lightkurve Collaboration, Cardoso, J. V. de M., Hedges, C., Gully-Santiago, M., et al. 2018. [Lightkurve: Kepler and TESS time series analysis in Python](https://ascl.net/1812.013). Astrophysics Source Code Library, ascl:1812.013. https://ascl.net/1812.013 *Added 2026-11-16.* [`lightkurve2018`]
+- <a id="ref-line2016"></a>Line, M. R., Parmentier, V. 2016. [The influence of nonuniform cloud cover on transit transmission spectra](https://doi.org/10.3847/0004-637X/820/1/78). ApJ, 820, 78. doi:10.3847/0004-637X/820/1/78 [`line2016`]
 - <a id="ref-lithwick2012"></a>Lithwick, Y., Xie, J. & Wu, Y. 2012. [Extracting Planet Mass and Eccentricity from TTV Data](https://doi.org/10.1088/0004-637X/761/2/122). ApJ, 761, 122. doi:10.1088/0004-637X/761/2/122 [`lithwick2012`]
+- <a id="ref-lodders2003"></a>Lodders, K. 2003. [Solar System abundances and condensation temperatures of the elements](https://doi.org/10.1086/375492). ApJ, 591, 1220. doi:10.1086/375492 [`lodders2003`]
 - <a id="ref-luger2019"></a>Luger, R., Agol, E., Foreman-Mackey, D., Fleming, D. P., et al. 2019. [starry: Analytic Occultation Light Curves](https://doi.org/10.3847/1538-3881/aae8e5). AJ, 157, 64. doi:10.3847/1538-3881/aae8e5 [`luger2019`]
 - <a id="ref-luger2016"></a>Luger, R., Agol, E., Kruse, E., Barnes, R., et al. 2016. [EVEREST: Pixel Level Decorrelation of K2 Light Curves](https://doi.org/10.3847/0004-6256/152/4/100). AJ, 152, 100. doi:10.3847/0004-6256/152/4/100 arXiv:1607.00524 *Added 2026-11-16; not re-checked against Crossref.* [`luger2016`]
 - <a id="ref-luger2018"></a>Luger, R., Kruse, E., Foreman-Mackey, D., Agol, E. & Saunders, N. 2018. [An Update to the EVEREST K2 Pipeline: Short Cadence, Saturated Stars, and Kepler-like Photometry Down to Kp = 15](https://doi.org/10.3847/1538-3881/aad230). AJ, 156, 99. doi:10.3847/1538-3881/aad230 arXiv:1702.05488 *Added 2026-11-16; not re-checked against Crossref.* [`luger2018`]
+- <a id="ref-madhusudhan2009"></a>Madhusudhan, N. & Seager, S. 2009. [A Temperature and Abundance Retrieval Method for Exoplanet Atmospheres](https://doi.org/10.1088/0004-637X/707/1/24). ApJ, 707, 24. doi:10.1088/0004-637X/707/1/24 arXiv:0910.1347 [`madhusudhan2009`]
 - <a id="ref-mancini2018"></a>Mancini, L., Esposito, M., Covino, E., Southworth, J., et al. 2018. [The GAPS programme with HARPS-N at TNG. XVI. Measurement of the Rossiter-McLaughlin effect of transiting planetary systems HAT-P-3, HAT-P-12, HAT-P-22, WASP-39, and WASP-60](https://doi.org/10.1051/0004-6361/201732234). A&A, 613, A41. doi:10.1051/0004-6361/201732234 [`mancini2018`]
 - <a id="ref-mandel2002"></a>Mandel, K. & Agol, E. 2002. [Analytic Light Curves for Planetary Transit Searches](https://doi.org/10.1086/345520). ApJ, 580, L171. doi:10.1086/345520 arXiv:astro-ph/0210099 [`mandel2002`]
 - <a id="ref-maxted2016"></a>Maxted, P. F. L. 2016. [ellc: A fast, flexible light curve model for detached eclipsing binary stars and transiting exoplanets](https://doi.org/10.1051/0004-6361/201628579). A&A, 591, A111. doi:10.1051/0004-6361/201628579 arXiv:1603.08484 [`maxted2016`]
 - <a id="ref-meeus1998"></a>Meeus, J. 1998. [Astronomical Algorithms](https://openlibrary.org/search?q=meeus+astronomical+algorithms). book (Richmond: Willmann-Bell). https://openlibrary.org/search?q=meeus+astronomical+algorithms *A book without a DOI. Author, title, publisher and the editions of 1991 and 1998 were confirmed in the Open Library catalogue; chapter numbers are those the source code cites.* [`meeus1998`]
 - <a id="ref-merline1995"></a>Merline, W. J. & Howell, S. B. 1995. [A realistic model for point-sources imaged on array detectors: The model and initial results](https://doi.org/10.1007/BF00421131). Experimental Astronomy, 6, 163. doi:10.1007/BF00421131 [`merline1995`]
+- <a id="ref-mikalevans2019"></a>Mikal-Evans, T., Sing, D. K., Goyal, J. M., Drummond, B., et al. 2019. [An emission spectrum for WASP-121b measured across the 0.8-1.1 micron wavelength range using the Hubble Space Telescope](https://doi.org/10.1093/mnras/stz1753). MNRAS, 488, 2222. doi:10.1093/mnras/stz1753 [`mikalevans2019`]
 - <a id="ref-moffat1969"></a>Moffat, A. F. J. 1969. [A Theoretical Investigation of Focal Stellar Images in the Photographic Emulsion and Application to Photographic Photometry](https://ui.adsabs.harvard.edu/abs/1969A%26A.....3..455M). A&A, 3, 455. https://ui.adsabs.harvard.edu/abs/1969A%26A.....3..455M [`moffat1969`]
+- <a id="ref-molliere2019"></a>Mollière, P., Wardenier, J. P., van Boekel, R., Henning, Th., et al. 2019. [petitRADTRANS: A Python radiative transfer package for exoplanet characterization and retrieval](https://doi.org/10.1051/0004-6361/201935470). A&A, 627, A67. doi:10.1051/0004-6361/201935470 arXiv:1904.11504 [`molliere2019`]
 - <a id="ref-morello2020"></a>Morello, G., Claret, A., Martin-Lagarde, M., Cossou, C., et al. 2020. [The ExoTETHyS Package: Tools for Exoplanetary Transits around Host Stars](https://doi.org/10.3847/1538-3881/ab63dc). AJ, 159, 75. doi:10.3847/1538-3881/ab63dc [`morello2020`]
+- <a id="ref-morley2012"></a>Morley, C. V., Fortney, J. J., Marley, M. S., Visscher, C., Saumon, D., Leggett, S. K. 2012. [Neglected clouds in T and Y dwarf atmospheres](https://doi.org/10.1088/0004-637X/756/2/172). ApJ, 756, 172. doi:10.1088/0004-637X/756/2/172 [`morley2012`]
 - <a id="ref-naylor1998"></a>Naylor, T. 1998. [An optimal extraction algorithm for imaging photometry](https://doi.org/10.1046/j.1365-8711.1998.01314.x). MNRAS, 296, 339. doi:10.1046/j.1365-8711.1998.01314.x [`naylor1998`]
 - <a id="ref-neal2003"></a>Neal, R. M. 2003. [Slice sampling](https://doi.org/10.1214/aos/1056562461). The Annals of Statistics, 31, 705. doi:10.1214/aos/1056562461 [`neal2003`]
+- <a id="ref-niemann2010"></a>Niemann, H. B., Atreya, S. K., Demick, J. E., Gautier, D., et al. 2010. [Composition of Titan's lower atmosphere and simple surface volatiles as measured by the Cassini-Huygens probe gas chromatograph mass spectrometer experiment](https://doi.org/10.1029/2010JE003659). J. Geophys. Res. Planets, 115, E12006. doi:10.1029/2010JE003659 [`niemann2010`]
 - <a id="ref-ochsenbein2000"></a>Ochsenbein, F., Bauer, P. & Marcout, J. 2000. [The VizieR database of astronomical catalogues](https://doi.org/10.1051/aas:2000169). A&AS, 143, 23. doi:10.1051/aas:2000169 [`ochsenbein2000`]
 - <a id="ref-ohta2005"></a>Ohta, Y., Taruya, A. & Suto, Y. 2005. [The Rossiter-McLaughlin Effect and Analytic Radial Velocity Curves for Transiting Extrasolar Planetary Systems](https://doi.org/10.1086/428344). ApJ, 622, 1118. doi:10.1086/428344 [`ohta2005`]
 - <a id="ref-otegi2020"></a>Otegi, J. F., Bouchy, F. & Helled, R. 2020. [Revisited mass-radius relations for exoplanets below 120 Earth masses](https://doi.org/10.1051/0004-6361/201936482). A&A, 634, A43. doi:10.1051/0004-6361/201936482 [`otegi2020`]
@@ -1773,7 +1942,9 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-rein2012"></a>Rein, H. & Liu, S.-F. 2012. [REBOUND: an open-source multi-purpose N-body code for collisional dynamics](https://doi.org/10.1051/0004-6361/201118085). A&A, 537, A128. doi:10.1051/0004-6361/201118085 [`rein2012`]
 - <a id="ref-rein2015ias15"></a>Rein, H. & Spiegel, D. S. 2015. [IAS15: a fast, adaptive, high-order integrator for gravitational dynamics, accurate to machine precision over a billion orbits](https://doi.org/10.1093/mnras/stu2164). MNRAS, 446, 1424. doi:10.1093/mnras/stu2164 [`rein2015ias15`]
 - <a id="ref-rein2015whfast"></a>Rein, H. & Tamayo, D. 2015. [WHFast: a fast and unbiased implementation of a symplectic Wisdom-Holman integrator for long-term gravitational simulations](https://doi.org/10.1093/mnras/stv1257). MNRAS, 452, 376. doi:10.1093/mnras/stv1257 [`rein2015whfast`]
+- <a id="ref-ribas2005"></a>Ribas, I., Guinan, E. F., Güdel, M., Audard, M. 2005. [Evolution of the solar activity over time and effects on planetary atmospheres. I. High-energy irradiances (1-1700 Å)](https://doi.org/10.1086/427977). ApJ, 622, 680. doi:10.1086/427977 [`ribas2005`]
 - <a id="ref-ricker2015"></a>Ricker, G. R., Winn, J. N., Vanderspek, R., Latham, D. W., et al. 2014. [Transiting Exoplanet Survey Satellite](https://doi.org/10.1117/1.JATIS.1.1.014003). Journal of Astronomical Telescopes, Instruments, and Systems, 1, 014003. doi:10.1117/1.JATIS.1.1.014003 *Year as Crossref dates the article (2014-10-24, volume 1, issue 1); it is often cited as 2015. The article number is the one in the DOI.* [`ricker2015`]
+- <a id="ref-robinson2014"></a>Robinson, T. D., Maltagliati, L., Marley, M. S., Fortney, J. J. 2014. [Titan solar occultation observations reveal transit spectra of a hazy world](https://doi.org/10.1073/pnas.1403473111). PNAS, 111, 9042. doi:10.1073/pnas.1403473111 [`robinson2014`]
 - <a id="ref-schneider2011"></a>Schneider, J., Dedieu, C., Le Sidaner, P., Savalle, R. & Zolotukhin, I. 2011. [Defining and cataloging exoplanets: the exoplanet.eu database](https://doi.org/10.1051/0004-6361/201116713). A&A, 532, A79. doi:10.1051/0004-6361/201116713 [`schneider2011`]
 - <a id="ref-schwarz1978"></a>Schwarz, G. 1978. [Estimating the Dimension of a Model](https://doi.org/10.1214/aos/1176344136). The Annals of Statistics, 6, 461. doi:10.1214/aos/1176344136 [`schwarz1978`]
 - <a id="ref-seager2003"></a>Seager, S. & Mallén-Ornelas, G. 2003. [A Unique Solution of Planet and Star Parameters from an Extrasolar Planet Transit Light Curve](https://doi.org/10.1086/346105). ApJ, 585, 1038. doi:10.1086/346105 [`seager2003`]
@@ -1782,6 +1953,7 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-speagle2020"></a>Speagle, J. S. 2020. [dynesty: a dynamic nested sampling package for estimating Bayesian posteriors and evidences](https://doi.org/10.1093/mnras/staa278). MNRAS, 493, 3132. doi:10.1093/mnras/staa278 arXiv:1904.02180 [`speagle2020`]
 - <a id="ref-standish"></a>Standish, E. M. & Williams, J. G.. [Approximate Positions of the Planets (Keplerian elements)](https://ssd.jpl.nasa.gov/planets/approx_pos.html). Jet Propulsion Laboratory, Solar System Dynamics. https://ssd.jpl.nasa.gov/planets/approx_pos.html *A web document: the page was fetched on 2026-11-15 and names E. M. Standish and J. G. Williams; no year is printed because the page gives none for the document itself.* [`standish`]
 - <a id="ref-stevenson2017"></a>Stevenson, K. B., Line, M. R., Bean, J. L., Désert, J.-M., et al. 2017. [Spitzer Phase Curve Constraints for WASP-43b at 3.6 and 4.5 μm](https://doi.org/10.3847/1538-3881/153/2/68). AJ, 153, 68. doi:10.3847/1538-3881/153/2/68 [`stevenson2017`]
+- <a id="ref-stock2018"></a>Stock, J. W., Kitzmann, D., Patzer, A. B. C., Sedlmayr, E. 2018. [FastChem: A computer program for efficient complex chemical equilibrium calculations in the neutral/ionized gas phase with applications to stellar and planetary atmospheres](https://doi.org/10.1093/mnras/sty1531). MNRAS, 479, 865. doi:10.1093/mnras/sty1531 [`stock2018`]
 - <a id="ref-mpmath"></a>The mpmath development team. [mpmath: a Python library for arbitrary-precision floating-point arithmetic](https://mpmath.org/). software. https://mpmath.org/ *Software citation as the project words it; no year is printed because none was checked.* [`mpmath`]
 - <a id="ref-tinetti2018"></a>Tinetti, G., Drossart, P., Eccleston, P., Hartogh, P., et al. 2018. [A chemical survey of exoplanets with ARIEL](https://doi.org/10.1007/s10686-018-9598-x). Experimental Astronomy, 46, 135. doi:10.1007/s10686-018-9598-x [`tinetti2018`]
 - <a id="ref-tody1986"></a>Tody, D. 1986. [The IRAF Data Reduction and Analysis System](https://doi.org/10.1117/12.968154). Proc. SPIE, 627, 733. doi:10.1117/12.968154 [`tody1986`]
@@ -1791,7 +1963,13 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-valdes1995"></a>Valdes, F. G., Campusano, L. E., Velasquez, J. D. & Stetson, P. B. 1995. [FOCAS Automatic Catalog Matching Algorithms](https://doi.org/10.1086/133667). PASP, 107, 1119. doi:10.1086/133667 [`valdes1995`]
 - <a id="ref-vanderburg2014"></a>Vanderburg, A. & Johnson, J. A. 2014. [A Technique for Extracting Highly Precise Photometry for the Two-Wheeled Kepler Mission](https://doi.org/10.1086/678764). PASP, 126, 948. doi:10.1086/678764 [`vanderburg2014`]
 - <a id="ref-vanderplas2018"></a>VanderPlas, J. T. 2018. [Understanding the Lomb–Scargle Periodogram](https://doi.org/10.3847/1538-4365/aab766). ApJS, 236, 16. doi:10.3847/1538-4365/aab766 [`vanderplas2018`]
+- <a id="ref-vernerferland1996"></a>Verner, D. A., Ferland, G. J. 1996. [Atomic data for astrophysics. I. Radiative recombination rates for H-like, He-like, Li-like, and Na-like ions over a broad range of temperature](https://doi.org/10.1086/192284). ApJS, 103, 467. doi:10.1086/192284 [`vernerferland1996`]
+- <a id="ref-verner1996"></a>Verner, D. A., Ferland, G. J., Korista, K. T., Yakovlev, D. G. 1996. [Atomic data for astrophysics. II. New analytic fits for photoionization cross sections of atoms and ions](https://doi.org/10.1086/177435). ApJ, 465, 487. doi:10.1086/177435 [`verner1996`]
 - <a id="ref-virtanen2020"></a>Virtanen, P., Gommers, R., Oliphant, T. E., Haberland, M., et al. 2020. [SciPy 1.0: fundamental algorithms for scientific computing in Python](https://doi.org/10.1038/s41592-019-0686-2). Nature Methods, 17, 261. doi:10.1038/s41592-019-0686-2 [`virtanen2020`]
+- <a id="ref-visscher2010"></a>Visscher, C., Lodders, K., Fegley, B. 2010. [Atmospheric chemistry in giant planets, brown dwarfs, and low-mass dwarf stars. III. Iron, magnesium, and silicon](https://doi.org/10.1088/0004-637X/716/2/1060). ApJ, 716, 1060. doi:10.1088/0004-637X/716/2/1060 [`visscher2010`]
+- <a id="ref-voronov1997"></a>Voronov, G. S. 1997. [A practical fit formula for ionization rate coefficients of atoms and ions by electron impact: Z = 1-28](https://doi.org/10.1006/adnd.1997.0732). At. Data Nucl. Data Tables, 65, 1. doi:10.1006/adnd.1997.0732 [`voronov1997`]
+- <a id="ref-wakeford2017"></a>Wakeford, H. R., Visscher, C., Lewis, N. K., Kataria, T., Marley, M. S., Fortney, J. J., Mandell, A. M. 2017. [High-temperature condensate clouds in super-hot Jupiter atmospheres](https://doi.org/10.1093/mnras/stw2639). MNRAS, 464, 4247. doi:10.1093/mnras/stw2639 [`wakeford2017`]
+- <a id="ref-watson1981"></a>Watson, A. J., Donahue, T. M., Walker, J. C. G. 1981. [The dynamics of a rapidly escaping atmosphere: Applications to the evolution of Earth and Venus](https://doi.org/10.1016/0019-1035(81)90101-9). Icarus, 48, 150. doi:10.1016/0019-1035(81)90101-9 [`watson1981`]
 - <a id="ref-watson2006"></a>Watson, C. L., Henden, A. A. & Price, A. 2006. [The International Variable Star Index (VSX)](https://ui.adsabs.harvard.edu/abs/2006SASS...25...47W). Society for Astronomical Sciences Annual Symposium, 25, 47. https://ui.adsabs.harvard.edu/abs/2006SASS...25...47W *No DOI exists; not checked against Crossref.* [`watson2006`]
 - <a id="ref-welch1967"></a>Welch, P. 1967. [The use of fast Fourier transform for the estimation of power spectra: A method based on time averaging over short, modified periodograms](https://doi.org/10.1109/TAU.1967.1161901). IEEE Transactions on Audio and Electroacoustics, 15, 70. doi:10.1109/TAU.1967.1161901 [`welch1967`]
 - <a id="ref-winn2010"></a>Winn, J. N. 2010. [Transits and Occultations](https://arxiv.org/abs/1001.2010). chapter of Exoplanets, ed. S. Seager (Tucson: University of Arizona Press); arXiv:1001.2010. arXiv:1001.2010 *Title and book as given on arXiv; page numbers not checked.* [`winn2010`]
@@ -1799,5 +1977,6 @@ Cite the software with its version (`CITATION.cff` at the repository root; BibTe
 - <a id="ref-wisdom2006"></a>Wisdom, J. 2006. [Symplectic Correctors for Canonical Heliocentric n-Body Maps](https://doi.org/10.1086/500829). AJ, 131, 2294. doi:10.1086/500829 [`wisdom2006`]
 - <a id="ref-wisdom1991"></a>Wisdom, J. & Holman, M. 1991. [Symplectic maps for the n-body problem](https://doi.org/10.1086/115978). AJ, 102, 1528. doi:10.1086/115978 [`wisdom1991`]
 - <a id="ref-young1967"></a>Young, A. T. 1967. [Photometric error analysis. VI. Confirmation of Reiger's theory of scintillation](https://doi.org/10.1086/110303). AJ, 72, 747. doi:10.1086/110303 [`young1967`]
+- <a id="ref-zahnle1986"></a>Zahnle, K. J., Kasting, J. F. 1986. [Mass fractionation during transonic escape and implications for loss of water from Mars and Venus](https://doi.org/10.1016/0019-1035(86)90051-5). Icarus, 68, 462. doi:10.1016/0019-1035(86)90051-5 [`zahnle1986`]
 - <a id="ref-zechmeister2009"></a>Zechmeister, M. & Kürster, M. 2009. [The generalised Lomb-Scargle periodogram](https://doi.org/10.1051/0004-6361:200811296). A&A, 496, 577. doi:10.1051/0004-6361:200811296 [`zechmeister2009`]
 - <a id="ref-zellem2020"></a>Zellem, R. T., Pearson, K. A., Blaser, E., Fowler, M., et al. 2020. [Utilizing Small Telescopes Operated by Citizen Scientists for Transiting Exoplanet Follow-up](https://doi.org/10.1088/1538-3873/ab7ee7). PASP, 132, 054401. doi:10.1088/1538-3873/ab7ee7 arXiv:2003.09046 [`zellem2020`]

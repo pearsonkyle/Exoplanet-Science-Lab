@@ -33,7 +33,7 @@ An API key, if your server needs one, is kept for the browser tab only unless yo
 
 ## What it can do on each page
 
-The full tool list, generated from the code, is in the [tool reference](../reference/mcp-tools). In short: Plan (site, dates, events, limits, list and open transits), Observe (site, time, target, filters, visible list), Photometry (frames, examine a star, focus map, stars, apertures and options, archive sectors, preparation, run, AAVSO report, hand-off), Spectroscopy (load, simulate, bins, fits, spectrum, export), Search (query, planet, open), Methods (find a method with its checks, BibTeX), and the analyzer (about 57 tools, ending with `write_report`, the standard project report with its BibTeX, session and figures).
+The full tool list, generated from the code, is in the [tool reference](../reference/mcp-tools). In short: Plan (site, dates, events, limits, list and open transits), Observe (site, time, target, filters, visible list), Photometry (frames, examine a star, focus map, stars, apertures and options, archive sectors, preparation, run, AAVSO report, hand-off), Spectroscopy (load, simulate, bins, fits, spectrum, export), Atmosphere (get, load a world, look up a planet, set, spectrum, fit a spectrum file: a retrieval), Star (get, look up, set, export), Search (query, planet, open), Methods (find a method with its checks, BibTeX), and the analyzer (about 57 tools, ending with `write_report`, the standard project report with its BibTeX, session and figures).
 
 ## Equations, the Methods and the code
 

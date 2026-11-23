@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const SKIP = [/^sw\.js$/, /^\.nojekyll$/, /\.map$/, /(^|\/)\.DS_Store$/];
 // large or rarely opened at start: saved in the background. Everything else is the shell.
-const DATA = [/^docs\//, /^catalog\/shard-/, /^catalog-table\//, /^catalog-eu\//, /^esl-catalog\/catalog\.json$/, /^examples\//, /^photometry\//];
+const DATA = [/^docs\//, /^catalog\/shard-/, /^catalog-table\//, /^catalog-eu\//, /^esl-catalog\/catalog\.json$/, /^examples\//, /^photometry\//, /^opacity\//, /^chem\//, /^stellar\//];
 
 function walk(dir, root, out = []) {
   for (const name of readdirSync(dir)) {

@@ -166,6 +166,16 @@ export function createApi({ modules, tables = {}, stamp = {} }) {
     if (free) spec.free = free;
     return { s, spec, tRef };
   }
+  const atmo = { tables: { lines: [], cia: [] }, cache: {} };
+  const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  /** base64 -> ArrayBuffer (no atob in every engine this runs in). */
+  const fromBase64 = (str) => {
+    const look = fromBase64.look || (fromBase64.look = (() => { const t = new Int16Array(128).fill(-1); for (let i = 0; i < 64; i++) t[B64.charCodeAt(i)] = i; return t; })());
+    let len = str.length; while (len > 0 && str[len - 1] === '=') len--;
+    const out = new Uint8Array(Math.floor((len * 3) / 4)); let acc = 0, bits = 0, o = 0;
+    for (let i = 0; i < len; i++) { const v = look[str.charCodeAt(i)]; if (v < 0) continue; acc = (acc << 6) | v; bits += 6; if (bits >= 8) { bits -= 8; out[o++] = (acc >> bits) & 255; } }
+    return out.buffer.slice(0, o);
+  };
   const resolvePath = (path) => {
     const [mod, ...rest] = String(path).split('.'); let f = modules[mod];
     if (!f) throw new Error(`no core module "${mod}" (modules: ${Object.keys(modules).join(', ')})`);
@@ -326,6 +336,31 @@ export function createApi({ modules, tables = {}, stamp = {} }) {
     pythonScript: (session, opts) => pythonScriptFor(session, opts),
     markdownReport: (session, opts) => markdownReportFor(session, opts),
     latexTables: (session, opts) => latexTablesFor(session, opts),
+
+    /**
+     * The atmosphere forward model (src/core/atmoapi.js). The host reads the opacity files and hands them over as
+     * base64 (this bridge carries JSON only): atmosphereLoad({ name: base64 of name.eslo }, base64 of the chemistry
+     * table or null) keeps them; atmosphereNeeds(request) says which a request needs; atmosphereRun(request) runs it.
+     */
+    atmosphereWorlds: () => modules.atmoapi.worlds(),
+    atmosphereNeeds: (request) => modules.atmoapi.tablesNeeded(request || {}),
+    atmosphereLoaded: () => [...atmo.tables.lines, ...atmo.tables.cia].map((t) => t.species).concat(atmo.tables.chem ? ['chem'] : []),
+    atmosphereLoad(files, chem = null) {
+      const t = modules.atmoapi.tablesFrom(Object.fromEntries(Object.entries(files || {}).map(([k, v]) => [k, fromBase64(v)])), chem ? fromBase64(chem) : null);
+      for (const x of [...t.lines, ...t.cia]) { const list = x.kind === 'cia' ? atmo.tables.cia : atmo.tables.lines, at = list.findIndex((y) => y.species === x.species); if (at >= 0) list[at] = x; else list.push(x); }
+      if (t.chem) atmo.tables.chem = t.chem; atmo.cache = {};
+      return api.atmosphereLoaded();
+    },
+    atmosphereRun: (request) => plain(modules.atmoapi.runAtmosphere(request || {}, atmo.tables, { cache: atmo.cache })),
+    /** A retrieval (retrieveAtmosphere of atmoapi.js): atmosphereRetrieveNeeds(request) says which tables it needs, atmosphereRetrieve(request) runs it. */
+    atmosphereRetrieveNeeds: (request) => modules.atmoapi.retrievalNeeds(request || {}),
+    atmosphereRetrieve: (request) => plain(modules.atmoapi.retrieveAtmosphere(request || {}, atmo.tables)),
+
+    /** A star from its magnitudes (src/core/sed.js). starLoad(base64 of stellar/phoenix.esls) once; starFit(obs, opts) -> fitSed's result without its samples. */
+    starLoaded: () => !!atmo.star,
+    starLoad(b64) { atmo.star = modules.stellarspec.parseStellar(fromBase64(b64)); return true; },
+    starBands: () => Object.entries(modules.passbands.PASSBANDS).map(([name, b]) => ({ name, survey: b.survey, system: b.system, zp: b.zp })),
+    starFit(obs, opts = {}) { if (!atmo.star) throw new Error('the stellar spectra are not loaded'); const { samples, ...r } = modules.sed.fitSed(atmo.star, obs, opts); return plain(r); },
 
     /** Call any export of any core module: invoke('kepler.eventTimes', [params]). Typed arrays come back as lists. */
     invoke(path, args = []) { const f = resolvePath(path); return typeof f === 'function' ? f(...args) : f; },

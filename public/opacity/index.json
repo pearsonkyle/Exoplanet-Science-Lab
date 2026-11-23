@@ -1,0 +1,161 @@
+{
+ "R": 200,
+ "ng": 12,
+ "encoding": "u8",
+ "tables": [
+  {
+   "file": "H2O.eslo",
+   "species": "H2O",
+   "kind": "ktable",
+   "bytes": 2063560,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list POKAZATEL (Polyansky et al. 2018)",
+   "doi": "10.1093/mnras/sty1877",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "CO2.eslo",
+   "species": "CO2",
+   "kind": "ktable",
+   "bytes": 2063560,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list UCL-4000 (Yurchenko et al. 2020)",
+   "doi": "10.1093/mnras/staa1874",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "CO.eslo",
+   "species": "CO",
+   "kind": "ktable",
+   "bytes": 2063552,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list Li2015 (Li et al. 2015)",
+   "doi": "10.1088/0067-0049/216/1/15",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "CH4.eslo",
+   "species": "CH4",
+   "kind": "ktable",
+   "bytes": 2063568,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list YT34to10 (Yurchenko et al. 2017)",
+   "doi": "10.1051/0004-6361/201731026",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "NH3.eslo",
+   "species": "NH3",
+   "kind": "ktable",
+   "bytes": 2063552,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list CoYuTe (Coles et al. 2019)",
+   "doi": "10.1093/mnras/stz2778",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "HCN.eslo",
+   "species": "HCN",
+   "kind": "ktable",
+   "bytes": 2063576,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list Harris (Harris et al. 2006; Barber et al. 2014)",
+   "doi": "10.1093/mnras/stt2011",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "SO2.eslo",
+   "species": "SO2",
+   "kind": "ktable",
+   "bytes": 2063560,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list ExoAmes (Underwood et al. 2016)",
+   "doi": "10.1093/mnras/stw849",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "H2S.eslo",
+   "species": "H2S",
+   "kind": "ktable",
+   "bytes": 2063552,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list AYT2 (Azzam et al. 2016)",
+   "doi": "10.1093/mnras/stw1133",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "Na.eslo",
+   "species": "Na",
+   "kind": "ktable",
+   "bytes": 2063696,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list Kurucz lines with the resonance-doublet broadening of Allard et al. (2019)",
+   "doi": "10.18434/T4W30F",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "K.eslo",
+   "species": "K",
+   "kind": "ktable",
+   "bytes": 2063688,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list Kurucz lines with the resonance-doublet broadening of Allard et al. (2016)",
+   "doi": "10.18434/T4W30F",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "TiO.eslo",
+   "species": "TiO",
+   "kind": "ktable",
+   "bytes": 2063568,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list Toto (McKemmish et al. 2019), 48Ti16O only",
+   "doi": "10.1093/mnras/stz1818",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "VO.eslo",
+   "species": "VO",
+   "kind": "ktable",
+   "bytes": 2063552,
+   "source": "ExoMolOP (Chubb et al. 2021, A&A 646, A21), line list VOMYT (McKemmish et al. 2016)",
+   "doi": "10.1093/mnras/stw1969",
+   "licence": "CC BY-SA 4.0"
+  },
+  {
+   "file": "H2-H2.eslo",
+   "species": "H2-H2",
+   "kind": "cia",
+   "bytes": 117550,
+   "source": "HITRAN collision-induced absorption, H2-H2_2011.cia (Karman et al. 2019, Icarus 328, 160)",
+   "doi": "10.1016/j.icarus.2019.02.034",
+   "licence": "HITRAN"
+  },
+  {
+   "file": "H2-He.eslo",
+   "species": "H2-He",
+   "kind": "cia",
+   "bytes": 158630,
+   "source": "HITRAN collision-induced absorption, H2-He_2011.cia (Karman et al. 2019, Icarus 328, 160)",
+   "doi": "10.1016/j.icarus.2019.02.034",
+   "licence": "HITRAN"
+  },
+  {
+   "file": "N2-N2.eslo",
+   "species": "N2-N2",
+   "kind": "cia",
+   "bytes": 70588,
+   "source": "HITRAN collision-induced absorption, N2-N2_2021.cia (Chistikov et al. 2019, J. Chem. Phys. 151, 194106 (far infrared); Baranov, Lafferty & Fraser 2005 and Lafferty et al. 1996 (fundamental); HITRAN: Karman et al. 2019)",
+   "doi": "10.1063/1.5125756",
+   "licence": "HITRAN"
+  },
+  {
+   "file": "N2-CH4.eslo",
+   "species": "N2-CH4",
+   "kind": "cia",
+   "bytes": 70420,
+   "source": "HITRAN collision-induced absorption, N2-CH4_2024.cia (Finenko et al. 2022, ApJS 258, 33; HITRAN2024: Terragni et al. 2025, JQSRT 347, 109631)",
+   "doi": "10.3847/1538-4365/ac36d3",
+   "licence": "HITRAN"
+  },
+  {
+   "file": "N2-H2.eslo",
+   "species": "N2-H2",
+   "kind": "cia",
+   "bytes": 21164,
+   "source": "HITRAN collision-induced absorption, N2-H2_2024.cia (HITRAN2024 CIA: Terragni et al. 2025, JQSRT 347, 109631)",
+   "doi": "10.1016/j.jqsrt.2025.109631",
+   "licence": "HITRAN"
+  }
+ ],
+ "total": 25201336
+}

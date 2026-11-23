@@ -1,0 +1,30 @@
+import { readFileSync } from 'node:fs';
+// How fast a model runs, and what cutting the tables to the data's range, joining bins and the WebAssembly kernel cost in
+// accuracy:  node tools/opacity/speed_study.mjs   (numbers quoted in docs/guide/validation.md, "Speed").
+const R = new URL('../../', import.meta.url).pathname;
+const { parseTable, prepareTables, loadMixKernel, binSpectrum } = await import(R + 'src/core/opacity.js'); const { DEFAULT_MODEL, forwardModel } = await import(R + 'src/core/rtmodel.js');
+const load = (f) => { const b = readFileSync(R + f); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
+const sp = ['H2O', 'CO2', 'CO', 'CH4', 'NH3', 'SO2'];
+const full = { lines: sp.map((s) => parseTable(load(`public/opacity/${s}.eslo`))), cia: ['H2-H2', 'H2-He'].map((s) => parseTable(load(`public/opacity/${s}.eslo`))) };
+const kernel = await loadMixKernel(readFileSync(R + 'public/wasm/mix.wasm'));
+const m = { ...DEFAULT_MODEL, vmr: { H2O: 1e-3, CO2: 1e-5, CO: 3e-4, CH4: 1e-6, NH3: 1e-6, SO2: 1e-6 } };
+const time = (f, k = 5) => { f(); let best = 1e9; for (let i = 0; i < k; i++) { const t = performance.now(); f(); best = Math.min(best, performance.now() - t); } return best; };
+const win = [0.6, 5.3], want = { emission: false }, edges = [0.6]; while (edges[edges.length - 1] < 5.3) edges.push(edges[edges.length - 1] * Math.exp(1 / 100));
+const ref = forwardModel(m, full, { want }), refB = binSpectrum(ref.wl, ref.depth, { edges });
+const rows = [];
+const row = (name, tables, model, opts) => { let r; const ms = time(() => { r = forwardModel(model, tables, { want, ...opts }); }); const b = binSpectrum(r.wl, r.depth, { edges }); let s = 0, mx = 0, c = 0; for (let i = 0; i < b.value.length; i++) if (b.count[i] && refB.count[i]) { const d = (b.value[i] - refB.value[i]) * 1e6; s += d * d; mx = Math.max(mx, Math.abs(d)); c++; } rows.push([name, r.wl.length, model.nLayers, ms.toFixed(0), Math.sqrt(s / c).toFixed(1), mx.toFixed(1)]); };
+row('as shipped, JS', full, m, {});
+row('as shipped, WASM kernel', full, m, { kernel });
+const cut = prepareTables(full, { wlMin: win[0], wlMax: win[1] });
+row('0.6-5.3 um, JS', cut, m, {});
+row('0.6-5.3 um, WASM', cut, m, { kernel });
+const half = prepareTables(full, { wlMin: win[0], wlMax: win[1], merge: 2 });
+row('0.6-5.3 um, R = 100, WASM', half, m, { kernel });
+row('0.6-5.3 um, R = 100, 40 layers, WASM', half, { ...m, nLayers: 40 }, { kernel });
+row('0.6-5.3 um, R = 100, 40 layers, JS', half, { ...m, nLayers: 40 }, {});
+row('0.6-5.3 um, R = 200, 40 layers, WASM', cut, { ...m, nLayers: 40 }, { kernel });
+const c = {}; forwardModel({ ...m, nLayers: 40 }, half, { want, kernel, cache: c });
+rows.push(['... same T-P, abundances changed (cache)', '', '', time(() => forwardModel({ ...m, nLayers: 40, vmr: { ...m.vmr, H2O: 1e-3 * (1 + Math.random()) } }, half, { want, kernel, cache: c })).toFixed(0), '', '']);
+rows.push(['... only a cloud changed (cache)', '', '', time(() => forwardModel({ ...m, nLayers: 40, cloudTop: 1e-3 * (1 + Math.random()) }, half, { want, kernel, cache: c })).toFixed(0), '', '']);
+console.log('six gases, transmission only; difference from the shipped tables, both binned to R = 100 over 0.6-5.3 um');
+console.log('case | bins | layers | ms | rms ppm | max ppm'); for (const r of rows) console.log(r.join(' | '));

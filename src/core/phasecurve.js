@@ -689,6 +689,8 @@ export const BANDS = {
 const C2 = 14387.768775;   // hc/k in micron K
 /** Planck function B_lambda (arbitrary constant factor) at wavelength in micron. */
 export const planck = (lam, T) => 1 / (lam ** 5 * Math.expm1(C2 / (lam * T)));
+/** The same with its constant: B_lambda = 2 h c^2 / lambda^5 / (exp(hc / lambda k T) - 1) in W m^-2 sr^-1 per micron, wavelength in micron. */
+export const planckSI = (lam, T) => 1.1910429723971884e8 * planck(lam, T);   // 2 h c^2 = 1.191042972e-16 W m^2 sr^-1, x 1e30 (micron^-5 to m^-5) x 1e-6 (per m to per micron)
 /** Band-integrated Planck function (energy), by Simpson's rule. band: micron, [lo, hi], a name in BANDS, or { wl: [], resp: [] }. */
 export function bandPlanck(T, band) {
   if (typeof band === 'string') band = BANDS[band];

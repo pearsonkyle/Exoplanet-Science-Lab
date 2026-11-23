@@ -61,6 +61,7 @@ PAGES = [
     ('photometry', 'analyze/photometry/', "!!document.getElementById('inTarget')", None),
     ('photometry-sample', 'analyze/photometry/?demo=1&inspect', 'window.__phot && window.__phot.ready === true', None),
     ('spectroscopy', 'analyze/spectroscopy/', "document.readyState === 'complete' && !!document.getElementById('sitebar').children.length", None),
+    ('atmosphere', 'analyze/atmosphere/', "!!(window.__esl && window.__esl.atmosphere && window.__esl.atmosphere.ready())", None),
     ('search', 'search/', 'window.__search && window.__search.S.rows.length > 0', None),
     ('methods', 'methods/', "document.documentElement.dataset.methods === 'ready'", None),
     ('methods-validation', 'methods/#validation', "document.documentElement.dataset.validation === 'ready'", None),

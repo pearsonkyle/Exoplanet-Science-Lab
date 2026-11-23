@@ -13,7 +13,7 @@ refers to. State as of 2026-11-16, end of the seventh working round.
 > `docs/ARCHITECTURE.md` and `docs/ROADMAP.md` before changing anything; `README.md` and `docs/METHODS.md` have
 > every number with its check.
 >
-> 1. `npm install`, `npm test` (69 Node suites, about 12 minutes), `npm run build`.
+> 1. `npm install`, `npm test` (98 Node suites, about 27 minutes), `npm run build`.
 > 2. The site has been verified with headless Chromium only (`tools/shot.py`, `test/layout_check.py`,
 >    `test/xr_check.py` with an emulated headset). The list under "Not verified" is what a person with a real
 >    browser, phone and headset should try first.
@@ -43,11 +43,23 @@ refers to. State as of 2026-11-16, end of the seventh working round.
   pixel table, saturation level, focus map across the field, comparison-star ranking); `lcfits.js`: TESS / Kepler /
   K2 FITS light-curve tables to the analyzer.
 - `spectroscopy.js`, `missionbands.js`: JWST/Ariel time-series spectroscopy and a simple simulator.
+- `atmosphere.js`, `continuum.js`, `opacity.js`, `transmission.js`, `emission.js`, `rtmodel.js`, `colour.js`: the
+  atmosphere forward model (layers, T-P profiles, k-tables of twelve gases interpolated in (log P, 1/T) and mixed
+  by random overlap, CIA, Rayleigh, cloud deck, hazes, a particle layer, patchy cover; transmission and emission
+  spectra; spectrum to sRGB, in true colour or with any wavelength range laid over the visible). `chemistry.js` reads a FastChem equilibrium grid
+  (`public/chem/`, built by `tools/chem/`); `climate.js` solves a temperature profile from the gas (a grey closure on the model's own opacities, energy-balanced; not radiative-convective equilibrium); `escape.js` and `ionization.js` are estimates of mass loss, fractionation
+  and sodium ionization (walk-through: `docs/guide/atmosphere.md`). The page's 3D
+  "Planet" view is a ray-marched single-scattering render (`atmoPlanetFrag`, inputs from `src/viz/atmoview.js`). Tables in
+  `public/opacity/` (25 MB, ESLO format, each gas fetched when first switched on, built by
+  `tools/opacity/`); `climate.js` (profile from the gases, inversions), `condensation.js` (rain-out, cloud bases),
+  `mie.js` + `optical.js` (tholin haze), `worlds.js` (WASP-39 b, WASP-121 b's day side, Jupiter, Titan), `atmoapi.js`
+  (one JSON call: `esl.atmosphere()` in Python, `atmosphere_spectrum` in the MCP server), the WebAssembly mixing
+  kernel (`tools/wasm/`, `public/wasm/mix.wasm`); page `/analyze/atmosphere/` (`src/atmosphere/`, 3D helpers in `src/viz/atmoview.js`).
 - `rvsources.js`: radial velocities from VizieR (HIRES, HARPS RVBank, Lick).
 - `ephemeris.js`, `periodogram.js`, `ldest.js`, `ldspec.js`, `derive.js`, `catalog.js`, `sources/`, `relations.js`,
   `astro.js`, `observability.js`, `horizon.js`, `data.js` (with time-standard conversion), `pyentry.js`, `pyshim.js`.
 
-**Pages**: `/plan/`, `/observe/` (with WebXR), `/analyze/`, `/analyze/photometry/`, `/analyze/spectroscopy/`,
+**Pages**: `/plan/`, `/observe/` (with WebXR), `/analyze/`, `/analyze/photometry/`, `/analyze/spectroscopy/`, `/analyze/atmosphere/`,
 `/search/`, `/methods/` (methods, validation, reproducibility, references, how to cite), and the landing page.
 Old `/observe/photometry/`, `/observe/spectroscopy/`, `/validation/` redirect. README "The site" describes each.
 
@@ -163,7 +175,8 @@ follows the phone; Android Chrome Passthrough chip.
 `.venv-validation` (batman, pyaneti, …), `.venv-nest` (UltraNest with numpy 1.26), `.venv-moon` (Pandora),
 `.venv-phase` (starry, jaxoplanet, batman), `.venv-nbody` (REBOUND 5.2.2, TTVFast), `.venv-lk` (lightkurve 2.6, wotan 2.1, patsy, fbpca: TPF and
 light-curve references; downloads cached in ~/.cache/esl-lk), `.venv-terrain` (numpy,
-pyproj, Pillow), `.venv-py` (the Python package and pytest), and the owner's conda environment
+pyproj, Pillow), `.venv-py` (the Python package and pytest), `.venv-rt` (petitRADTRANS 3.4.0, exo_k, pyfastchem, colour-science, h5py: the atmosphere references and
+the opacity build; set-up in `tools/opacity/README.md`; source files, about 10 GB with the study's, in `data-src/`, ignored), and the owner's conda environment
 `/Users/kpearson/miniconda3/envs/exotic` (EXOTIC 4.3.1; read only, nothing installed). The JWST test files
 (207 MB) go in `test/data/jwst/` (ignored; URLs in `test/make_spectroscopy_reference.py`). Long headless runs
 should use a built copy (`npx vite build --outDir /tmp/esl-dist`, `python3 -m http.server 8899 -d /tmp/esl-dist`,

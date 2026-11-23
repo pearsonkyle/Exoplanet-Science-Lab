@@ -13,7 +13,9 @@ from esl.cameras import SimCamera
 
 
 def _seq(now_ms, **kw):
-    return eo.make(target={"name": "Sim", "ra": 31.04, "dec": 46.69}, site={"name": "Kitt Peak", "lat": 31.9583, "lon": -111.5967, "elev": 2096},
+    # a circumpolar target (never under 22 deg at this site): the header leaves AIRMASS out below the horizon, and the
+    # test runs at whatever hour it is
+    return eo.make(target={"name": "Sim", "ra": 31.04, "dec": 80.0}, site={"name": "Kitt Peak", "lat": 31.9583, "lon": -111.5967, "elev": 2096},
                    window={"start": now_ms + 300, "end": now_ms + 4000}, exposure={"duration": 0.2, "filter": "r"},
                    calibration={"bias": 2, "darks": 2, "flats": 1, "flatDuration": 0.1}, limits={"minAlt": -90, "sunMax": 90, "meridian": "none"},
                    cooler={"on": False, "setTemp": -10, "waitMax": 1}, **kw)   # cooling has its own tests; here it would only eat the window

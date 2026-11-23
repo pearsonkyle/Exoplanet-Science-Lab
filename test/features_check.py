@@ -54,7 +54,7 @@ with sync_playwright() as p:
         return { txt: txt.slice(0, 260), rprsPrior: back.params.rprs.prior, perPrior: back.params.per.prior, fit: Object.entries(back.params).filter(([k, v]) => v.fit).map(([k]) => k) }; }""")
     print(y['txt']); print('parsed back:', y['rprsPrior'], y['perPrior'], y['fit'])
     # --- movie
-    mv = pg.evaluate("""async () => { const m = await import('./src/ui/movie.js'), lc = await import('./src/ui/lightcurve.js'); const T = window.__esl, sup = m.movieSupport(); if (!sup) return { sup: null };
+    mv = pg.evaluate("""async () => { const m = await import('/src/ui/movie.js'), lc = await import('/src/ui/lightcurve.js'); const T = window.__esl, sup = m.movieSupport(); if (!sup) return { sup: null };
         const v = T.lcPlot.view; const r = await m.recordMovie({ stage: () => document.querySelector('#viz canvas'), t0: v.x0, t1: v.x1, seconds: 3, title: T.S.name, subtitle: (t) => 't=' + t.toFixed(3),
           drawLC: (ctx, w, h, t) => lc.renderLightCurve(ctx, w, h, { ...T.lcPlot.d, cursor: t }, T.lcPlot.view, lc.LC_THEMES.dark, { fontScale: 1.3 }), setTime: (t) => { T.S.t = t; } });
         const u8 = new Uint8Array(await r.blob.arrayBuffer()); let s = ''; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode(...u8.subarray(i, i + 8192)); return { sup, size: r.blob.size, ext: r.ext, b64: btoa(s) }; }""")

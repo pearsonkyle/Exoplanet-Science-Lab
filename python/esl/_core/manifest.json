@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "1cb35cf9662661b4",
+ "sourceHash": "4693d97000fdaa84",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1402955,
-   "sha256": "64edd2d42a83e881777e0dfcb481c5d114249964029d39b1e53470e52b61c0c1"
+   "bytes": 1618170,
+   "sha256": "47932ade4595015ede0e9627d84817052318be60be793dbcc1171ff176d4b11b"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -23,15 +23,25 @@
   "src/core/alpacabytes.js",
   "src/core/asteroids.js",
   "src/core/astro.js",
+  "src/core/atmoapi.js",
+  "src/core/atmosphere.js",
   "src/core/catalog.js",
+  "src/core/chemistry.js",
+  "src/core/climate.js",
   "src/core/clocksync.js",
+  "src/core/colour.js",
+  "src/core/condensation.js",
   "src/core/config.js",
+  "src/core/continuum.js",
   "src/core/data.js",
   "src/core/derive.js",
   "src/core/detrend.js",
+  "src/core/emission.js",
   "src/core/ephemeris.js",
+  "src/core/escape.js",
   "src/core/exomoon.js",
   "src/core/exportScript.js",
+  "src/core/extinction.js",
   "src/core/fieldstars.js",
   "src/core/fitRunner.js",
   "src/core/fits.js",
@@ -41,6 +51,7 @@
   "src/core/horizon.js",
   "src/core/hz.js",
   "src/core/imexam.js",
+  "src/core/ionization.js",
   "src/core/k2.js",
   "src/core/kepler.js",
   "src/core/lcfits.js",
@@ -49,6 +60,7 @@
   "src/core/ldspec.js",
   "src/core/limbdark.js",
   "src/core/methodsText.js",
+  "src/core/mie.js",
   "src/core/missionbands.js",
   "src/core/model.js",
   "src/core/nbody.js",
@@ -56,6 +68,9 @@
   "src/core/nightdates.js",
   "src/core/nmea.js",
   "src/core/observability.js",
+  "src/core/opacity.js",
+  "src/core/optical.js",
+  "src/core/passbands.js",
   "src/core/periodogram.js",
   "src/core/phasecurve.js",
   "src/core/photometry.js",
@@ -69,9 +84,12 @@
   "src/core/rehearsal.js",
   "src/core/relations.js",
   "src/core/report.js",
+  "src/core/retrieval.js",
   "src/core/rm.js",
+  "src/core/rtmodel.js",
   "src/core/rv.js",
   "src/core/rvsources.js",
+  "src/core/sed.js",
   "src/core/sequence.js",
   "src/core/session.js",
   "src/core/simsky.js",
@@ -84,17 +102,29 @@
   "src/core/sources/nea.js",
   "src/core/sources/snapshot.js",
   "src/core/sources/toi.js",
+  "src/core/specmatch.js",
   "src/core/spectroscopy.js",
+  "src/core/starcat.js",
   "src/core/stats.js",
   "src/core/stellar.js",
+  "src/core/stellarspec.js",
   "src/core/timeformat.js",
   "src/core/timescale.js",
   "src/core/transit.js",
+  "src/core/transmission.js",
+  "src/core/worlds.js",
   "src/core/zip.js",
   "src/data/ld_table.js",
   "src/validation/refs.js"
  ],
  "api": [
+  "atmosphereLoad",
+  "atmosphereLoaded",
+  "atmosphereNeeds",
+  "atmosphereRetrieve",
+  "atmosphereRetrieveNeeds",
+  "atmosphereRun",
+  "atmosphereWorlds",
   "derive",
   "evaluate",
   "events",
@@ -116,6 +146,10 @@
   "pythonScript",
   "radialVelocity",
   "semiAmplitude",
+  "starBands",
+  "starFit",
+  "starLoad",
+  "starLoaded",
   "transit",
   "unregisteredFree",
   "validate"
@@ -217,6 +251,32 @@
    "wrap2pi",
    "wrapPi"
   ],
+  "atmoapi": [
+   "modelOf",
+   "retrievalData",
+   "retrievalNeeds",
+   "retrievalResult",
+   "retrievalSetup",
+   "retrieveAtmosphere",
+   "runAtmosphere",
+   "tablesFrom",
+   "tablesNeeded",
+   "worlds"
+  ],
+  "atmosphere": [
+   "BAR",
+   "K_B",
+   "MASS",
+   "M_U",
+   "buildAtmosphere",
+   "columns",
+   "composition",
+   "guillot",
+   "isothermal",
+   "madhusudhanSeager",
+   "pressureLevels",
+   "profileFrom"
+  ],
   "catalog": [
    "arsKepler",
    "chooseParameters",
@@ -235,6 +295,22 @@
    "systemFromRows",
    "transitDuration"
   ],
+  "chemistry": [
+   "QUENCHED",
+   "enriched",
+   "equilibrium",
+   "equilibriumProfile",
+   "parseChem"
+  ],
+  "climate": [
+   "consistentProfile",
+   "convectiveAdjustment",
+   "effectiveDepths",
+   "energyBalance",
+   "guillotFromDepths",
+   "meanExtinctions",
+   "withConsistentProfile"
+  ],
   "clocksync": [
    "SOURCE_RANK",
    "agedUncertainty",
@@ -244,11 +320,43 @@
    "nextProbeAt",
    "sampleBounds"
   ],
+  "colour": [
+   "blackbodyColour",
+   "chromaticity",
+   "cmfX",
+   "cmfY",
+   "cmfZ",
+   "spectrumColour",
+   "spectrumToXYZ",
+   "srgbEncode",
+   "stellarLimbColours",
+   "toGamut",
+   "xyzToLinearSRGB"
+  ],
+  "condensation": [
+   "CONDENSATES",
+   "condensationTemperature",
+   "gasFraction",
+   "rainOut",
+   "vapourPressure"
+  ],
   "config": [
    "configToObject",
    "parseConfig",
    "parseYAML",
    "toYAML"
+  ],
+  "continuum": [
+   "POLARISABILITY",
+   "addContinuum",
+   "addParticleLayer",
+   "hMinusBoundFree",
+   "hMinusFreeFree",
+   "haze",
+   "particleQ",
+   "rayleighGas",
+   "rayleighH2",
+   "rayleighHe"
   ],
   "data": [
    "FLUX_UNITS",
@@ -292,11 +400,31 @@
    "symEig",
    "timePolynomial"
   ],
+  "emission": [
+   "brightnessOf",
+   "emergentFlux",
+   "emissionSpectrum",
+   "fluxRatio",
+   "gaussLegendre01"
+  ],
   "ephemeris": [
    "MS_PER_YEAR",
    "assignEpochs",
    "fitEphemeris",
    "parseTimings"
+  ],
+  "escape": [
+   "ATOM",
+   "crossoverMass",
+   "diffusionB",
+   "diffusionScaled",
+   "energyLimited",
+   "enrichment",
+   "escapeHistory",
+   "fractionation",
+   "rocheFactor",
+   "solarXuv",
+   "xuvRadius"
   ],
   "exomoon": [
    "MOON_FIELDS",
@@ -328,6 +456,9 @@
    "markdownReportFor",
    "pyLiteral",
    "pythonScriptFor"
+  ],
+  "extinction": [
+   "extinctionF99"
   ],
   "fieldstars": [
    "contamination",
@@ -445,6 +576,17 @@
    "regionStats",
    "saturationLevel"
   ],
+  "ionization": [
+   "blackbodyPhotons",
+   "collisionalIonization",
+   "ionizationProfile",
+   "ionizeAtmosphere",
+   "milneRecombination",
+   "photoCrossSection",
+   "radiativeRecombination",
+   "threeBodyRecombination",
+   "xuvPhotons"
+  ],
   "k2": [
    "arclength",
    "pcaColumns",
@@ -537,6 +679,11 @@
    "bibtexEntry",
    "bibtexFor",
    "methodsParagraph"
+  ],
+  "mie": [
+   "mie",
+   "particleOptics",
+   "refractiveIndex"
   ],
   "missionbands": [
    "LD_TABLE_MAX_NM",
@@ -670,6 +817,27 @@
    "upIntervals",
    "upIntervalsHorizon"
   ],
+  "opacity": [
+   "_fastLn",
+   "addPerWavelength",
+   "binSpectrum",
+   "coarsenTable",
+   "commonGrid",
+   "crossSection",
+   "gasExtinction",
+   "loadMixKernel",
+   "makeTable",
+   "parseTable",
+   "prepareTables",
+   "sliceTable",
+   "writeTable"
+  ],
+  "optical": [
+   "OPTICAL"
+  ],
+  "passbands": [
+   "PASSBANDS"
+  ],
   "periodogram": [
    "bicScaled",
    "bootstrapFalseAlarm",
@@ -710,6 +878,7 @@
    "phaseCurveModel",
    "phaseSummary",
    "planck",
+   "planckSI",
    "solveMap",
    "temperatureMap",
    "toPhaseParams",
@@ -870,6 +1039,13 @@
    "REPORT_SECTIONS",
    "projectReport"
   ],
+  "retrieval": [
+   "ATM_PARAMS",
+   "buildRetrieval",
+   "compareRetrievals",
+   "defaultPrior",
+   "runRetrieval"
+  ],
   "rm": [
    "ccfFit",
    "ccfWidth",
@@ -881,6 +1057,16 @@
    "rmSmallPlanet",
    "trueObliquity",
    "vsiniPrior"
+  ],
+  "rtmodel": [
+   "DEFAULT_MODEL",
+   "atmosphereOf",
+   "dayNightModel",
+   "forwardModel",
+   "geometricAlbedo",
+   "nightProfile",
+   "opacityByAbsorber",
+   "placedCloud"
   ],
   "rv": [
    "arsFromKepler",
@@ -902,6 +1088,13 @@
    "provenanceOf",
    "sourceById",
    "summarizeSet"
+  ],
+  "sed": [
+   "fitSed",
+   "magnitudeToFlux",
+   "prepareSed",
+   "sedLatex",
+   "sedMagnitudes"
   ],
   "sequence": [
    "DEFAULTS",
@@ -955,6 +1148,9 @@
    "scaleBar",
    "separation"
   ],
+  "specmatch": [
+   "matchSpectrum"
+  ],
   "spectroscopy": [
    "applyCommonMode",
    "baselineRegressors",
@@ -963,12 +1159,14 @@
    "columnEdges",
    "cubeToCSV",
    "defaultWhiteFree",
+   "depthNoise",
    "eclipseOffset",
    "errorScaleFor",
    "findStep",
    "fitChannel",
    "fitChannels",
    "fitWhiteLight",
+   "hourlyNoise",
    "lightCurveSpec",
    "makeBins",
    "mergeCubes",
@@ -986,9 +1184,19 @@
    "spectrumTable",
    "spectrumToCSV",
    "spectrumToECSV",
+   "tabulatedDepth",
    "toScaleHeights",
    "toySpectrum",
    "whiteLight"
+  ],
+  "starcat": [
+   "VIZIER",
+   "catalogueUrl",
+   "parseTsv",
+   "photometryFrom",
+   "pickGaia",
+   "positionAt",
+   "suggestAv"
   ],
   "stats": [
    "erfc",
@@ -1005,6 +1213,15 @@
    "TORRES_SCATTER",
    "estimateMassRadius",
    "torres"
+  ],
+  "stellarspec": [
+   "bandFlux",
+   "bolometric",
+   "dilution",
+   "parseStellar",
+   "resampleFlux",
+   "stellarFlux",
+   "tailShape"
   ],
   "timeformat": [
    "DISPLAY_SCALES",
@@ -1044,6 +1261,16 @@
    "hOf",
    "makeTransit",
    "transitModel"
+  ],
+  "transmission": [
+   "absorbingArea",
+   "chordGeometry",
+   "expint1",
+   "isothermalRadius",
+   "transmissionSpectrum"
+  ],
+  "worlds": [
+   "WORLDS"
   ],
   "zip": [
    "ZIP_NAME",

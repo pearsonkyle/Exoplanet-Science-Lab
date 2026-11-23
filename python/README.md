@@ -162,6 +162,25 @@ One class per block of `docs/FORMAT.md`: `Session`, `Software`, `Star`, `LimbDar
 - A free parameter that the session likelihood of the bundled core has no registry entry for is still sampled,
   and the result's first warning says so.
 
+### Atmospheres
+
+```python
+r = esl.atmosphere("Titan", wl_min=0.6, wl_max=5.3, R=100)      # a preset world; esl.atmosphere_worlds() lists them
+r = esl.atmosphere(model=dict(planet=dict(mplanet=0.69, rplanet=1.38, pRef=0.01), star=dict(rstar=1.19, teff=6065, ars=8.8),
+                              tp=dict(kind="consistent", teq=1450), chemistry=dict(mh=0), condensation=dict(rainout=True)))
+r["wl"], r["depth"], r["fpfs"], r["profile"]["t"], r["clouds"], r["climate"]
+# a retrieval: fit the model to a spectrum (nested sampling); check fit["converged"]
+obs = dict(kind="transit", wl=wl, lo=lo, hi=hi, y=depth, err=depth_err)             # micron; depth as a fraction
+fit = esl.retrieve_atmosphere([obs], ["teq", "mh", "co", "rplanet"], model=dict(planet=dict(mplanet=0.28, rplanet=1.27, pRef=0.01),
+                              star=dict(rstar=0.94, teff=5485), tp=dict(kind="guillot", teq=1100)), max_models=60000)
+fit["summary"]["mh"], fit["logZ"], fit["chi2"], fit["best"]["spectra"][0]
+```
+
+The forward model of the Atmosphere page (`src/core/atmoapi.js`): transmission and emission spectra, the profile,
+the clouds that form. The opacity tables (25 MB) are not in the pip package: they are read from the `public/` folder
+of a checkout, from `public=...`, or from the folder named by `ESL_PUBLIC`. `wl_min`, `wl_max` and `merge` cut and
+coarsen the tables first, which is what makes many runs fast. The WebAssembly kernel is not used from Python.
+
 ## Why the numbers are the browser's
 
 `tools/build_core_bundle.mjs` bundles every `src/core/*.js` file with esbuild (the copy Vite brings: nothing is

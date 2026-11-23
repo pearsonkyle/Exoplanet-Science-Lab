@@ -52,3 +52,17 @@ Run it where the data are and let the client start it over SSH:
 
 Ask your client something like: *"Look up WASP-12 b, load night1.csv from the workspace, fit Rp/R★, the inclination
 and the mid-transit time, and write the report."*
+
+## Stars and atmospheres
+
+Four tools are the server's own, apart from the session (they read the tables in the checkout's `public/` folder and
+are not in the shared tool reference; `mcp/README.md` describes them):
+
+- `star_fit`: a star's temperature, angular diameter, radius and luminosity from catalogue magnitudes.
+- `star_match_spectrum`: the same from a low-resolution spectrum file in the workspace.
+- `atmosphere_spectrum`: the transmission and emission spectrum of a model atmosphere (a preset world or your own),
+  written to a CSV file.
+- `atmosphere_retrieve`: that model fitted to measured spectra in workspace files (a retrieval with nested sampling):
+  posteriors, ln Z, and the best-fit spectrum. Try: *"Fit transit.csv (ppm) with an isothermal atmosphere: the
+  temperature, the water abundance and the radius. Then fit it again without water and tell me whether water is
+  needed."* It can take minutes; the answer says whether the fit converged.

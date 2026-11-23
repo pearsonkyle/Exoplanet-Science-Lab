@@ -351,3 +351,130 @@ class _Core:
 
 
 core = _Core()
+
+
+# ---- atmospheres ----------------------------------------------------------------------------------------------------
+
+def _opacity_dir(opacity_dir: Optional[Union[str, Path]] = None) -> Path:
+    """The folder with the site's public data (``opacity/*.eslo``, ``chem/equilibrium.eslc``): the argument, the
+    environment variable ``ESL_PUBLIC``, or ``public/`` of a checkout this package was installed from."""
+    for cand in (opacity_dir, os.environ.get("ESL_PUBLIC"), Path(__file__).resolve().parents[2] / "public"):
+        if cand and (Path(cand) / "opacity" / "index.json").exists():
+            return Path(cand)
+    raise FileNotFoundError(
+        "the opacity tables were not found. They are not part of the pip package (25 MB): pass public= the folder that "
+        "holds opacity/ and chem/ (the public/ folder of a checkout of exoplanet-science-lab), or set ESL_PUBLIC.")
+
+
+def atmosphere_worlds() -> List[Dict[str, Any]]:
+    """The preset worlds (``name``, ``about``, ``tables``): WASP-39 b, WASP-121 b's day side, Jupiter, Titan."""
+    return _runtime.call("atmosphereWorlds")
+
+
+def atmosphere(world: Optional[str] = None, model: Optional[Mapping[str, Any]] = None, *, wl_min: Optional[float] = None,
+               wl_max: Optional[float] = None, merge: int = 1, R: Optional[float] = None, species: Optional[Sequence[str]] = None,
+               emission: bool = True, transmission: bool = True, public: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """Transmission and emission spectrum of a model atmosphere (the forward model of the Atmosphere page).
+
+    ``world``: one of :func:`atmosphere_worlds`; ``model``: a model description, or changes to the world's (planet,
+    star, tp, vmr, chemistry, condensation, cloud, haze, cloudTop, bulk, ...: see ``src/core/rtmodel.js``).
+    ``tp={"kind": "consistent", "teq": ..., "f": 0.25}`` works the temperatures out from the gases; ``chemistry=
+    {"mh": 0, "co": 0.59}`` takes the gases from chemical equilibrium; ``condensation={"rainout": True}`` rains them out.
+    ``wl_min``/``wl_max`` (micron) cut the opacity tables to that range first and ``merge`` joins that many bins: both
+    make a run faster. ``R`` bins the answer. Returns ``wl, lo, hi, depth, fpfs, flux, brightness`` as arrays, the
+    ``profile`` (``p`` in bar, ``t``, ``mu``, ``z`` in km, ``gases``), ``clouds``, ``climate`` and the ``model`` as run.
+    """
+    import base64
+    request: Dict[str, Any] = {k: v for k, v in dict(world=world, model=dict(model) if model else None, wlMin=wl_min, wlMax=wl_max, merge=merge, R=R,
+                                                     species=list(species) if species else None, emission=emission, transmission=transmission).items() if v is not None}
+    need = _runtime.call("atmosphereNeeds", request)
+    have = set(_runtime.call("atmosphereLoaded"))
+    want = [s for s in list(need["lines"]) + list(need["cia"]) if s not in have]
+    chem = need.get("chem") and "chem" not in have
+    if want or chem:
+        root = _opacity_dir(public)
+        b64 = lambda p: base64.b64encode(Path(p).read_bytes()).decode("ascii")
+        _runtime.call("atmosphereLoad", {s: b64(root / "opacity" / f"{s}.eslo") for s in want}, b64(root / "chem" / "equilibrium.eslc") if chem else None)
+    out = _runtime.call("atmosphereRun", request)
+    for k in ("wl", "lo", "hi", "depth", "fpfs", "flux", "brightness"):
+        if out.get(k) is not None:
+            out[k] = np.asarray(out[k], dtype=float)
+    prof = out["profile"]
+    for k in ("p", "t", "mu", "z"):
+        prof[k] = np.asarray(prof[k], dtype=float)
+    prof["gases"] = {k: np.asarray(v, dtype=float) for k, v in prof["gases"].items()}
+    return out
+
+
+def retrieve_atmosphere(data: Sequence[Mapping[str, Any]], free: Sequence[str], world: Optional[str] = None, model: Optional[Mapping[str, Any]] = None, *,
+                        priors: Optional[Mapping[str, Any]] = None, species: Optional[Sequence[str]] = None, merge: Optional[int] = None, layers: int = 30,
+                        nlive: int = 100, max_models: int = 20000, max_seconds: Optional[float] = None, seed: int = 42,
+                        public: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """Fit a model atmosphere to spectra with nested sampling (an atmospheric retrieval).
+
+    ``data``: one mapping per spectrum, ``{"kind": "transit" | "eclipse" | "night", "wl": micron, "y": depth (or
+    Fp/Fs), "err": ..., "lo": ..., "hi": ...}`` (bin edges optional). ``free``: the parameters fitted: ``teq, tint,
+    logKappaIR, logGamma`` (Guillot profile), ``t`` (isothermal), ``mh, co`` (chemical equilibrium), ``logX_<gas>``,
+    ``rplanet, logCloudTop, cloudFraction, logHaze, hazeSlope, nightDT, offset_<n>``. ``world`` / ``model`` as in
+    :func:`atmosphere`: what is not free stays as given; the profile must be ``"guillot"`` or ``"isothermal"``.
+    ``priors``: ``{key: (low, high)}`` (uniform); wide defaults otherwise, returned as ``priors``.
+
+    Returns ``summary`` (``median, lo, hi, best`` per key: the 16, 50 and 84% points), ``logZ``, ``logZerr``,
+    ``converged``, ``chi2``, ``ndata``, ``ncalls``, ``seconds``, ``warnings`` and ``best`` (``values`` and the model
+    ``spectra`` on each data set's bins). ``converged`` False means the budget (``max_models``, ``max_seconds``) ran
+    out first: the summary is then not a posterior. A fit takes from seconds to many minutes (2000 to 30000 models
+    per free parameter). ``layers`` sets the number of layers (30) and ``merge`` joins opacity bins (default: as many
+    as leave three model bins in one of the data's), both for speed: together about 10 ppm on a hot Jupiter. Without
+    ``lo`` and ``hi`` the bins are taken to meet halfway between neighbouring wavelengths.
+    """
+    import base64
+    sets = []
+    for d in data:
+        sets.append({k: (np.asarray(v, dtype=float).tolist() if k in ("wl", "y", "err", "lo", "hi") else v) for k, v in dict(d).items() if v is not None})
+    request: Dict[str, Any] = {k: v for k, v in dict(world=world, model=dict(model) if model else None, data=sets, free=list(free),
+                                                     priors={k: (list(v) if isinstance(v, (list, tuple)) else v) for k, v in priors.items()} if priors else None,
+                                                     species=list(species) if species else None, merge=merge, layers=layers,
+                                                     sampler={k: v for k, v in dict(nlive=nlive, maxCalls=max_models, maxSeconds=max_seconds, seed=seed).items() if v is not None}).items() if v is not None}
+    need = _runtime.call("atmosphereRetrieveNeeds", request)
+    have = set(_runtime.call("atmosphereLoaded"))
+    want = [s for s in list(need["lines"]) + list(need["cia"]) if s not in have]
+    chem = (need.get("chem") or any(k in ("mh", "co", "logQuench") for k in free)) and "chem" not in have
+    if want or chem:
+        root = _opacity_dir(public)
+        b64 = lambda p: base64.b64encode(Path(p).read_bytes()).decode("ascii")
+        _runtime.call("atmosphereLoad", {s: b64(root / "opacity" / f"{s}.eslo") for s in want}, b64(root / "chem" / "equilibrium.eslc") if chem else None)
+    out = _runtime.call("atmosphereRetrieve", request)
+    out["best"]["spectra"] = [np.asarray(a, dtype=float) for a in out["best"]["spectra"]]
+    return out
+
+
+# ---- stars ----------------------------------------------------------------------------------------------------------
+
+def star_bands() -> List[Dict[str, Any]]:
+    """The passbands :func:`star_fit` knows (``name``, ``survey``, ``system`` Vega or AB, zero point ``zp`` in Jy)."""
+    return _runtime.call("starBands")
+
+
+def star_fit(magnitudes: Mapping[str, Sequence[float]], *, parallax: Optional[Sequence[float]] = None, logg: Optional[Sequence[float]] = None,
+             feh: Optional[Sequence[float]] = None, av_max: float = 0.1, teff: Optional[Sequence[float]] = None, floor: float = 0.02,
+             nlive: int = 300, seed: int = 42, public: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """A star's effective temperature, angular diameter, radius and luminosity from catalogue magnitudes (an SED fit).
+
+    ``magnitudes``: ``{"Gaia G": (7.521, 0.003), "2MASS J": (6.591, 0.020), ...}`` with band names of :func:`star_bands`
+    (Vega magnitudes for Gaia, Tycho, Johnson, 2MASS, WISE; AB for SDSS, Pan-STARRS, GALEX, as the catalogues give them).
+    ``parallax`` (mas, error) gives the radius and luminosity; ``logg`` and ``feh`` (value, sigma) are priors, worth giving
+    because magnitudes hardly constrain them; ``av_max`` bounds the extinction searched. Returns ``parameters`` (each with
+    ``median, lo, hi, best``), ``bands`` (model magnitude and residual of each), ``spectrum``, ``chi2``, ``converged`` and
+    ``warnings``. Models: PHOENIX-ACES, 2300 to 8000 K, main-sequence gravities (the grid of the Star page).
+    """
+    import base64
+    if not _runtime.call("starLoaded"):
+        _runtime.call("starLoad", base64.b64encode((_opacity_dir(public) / "stellar" / "phoenix.esls").read_bytes()).decode("ascii"))
+    obs = [dict(band=k, mag=float(v[0]), err=float(v[1])) for k, v in magnitudes.items()]
+    priors: Dict[str, Any] = dict(avMax=float(av_max))
+    for key, val in (("plx", parallax), ("logg", logg), ("feh", feh), ("teff", teff)):
+        if val is not None:
+            priors[key] = [float(val[0]), float(val[1])]
+    out = _runtime.call("starFit", obs, dict(priors=priors, floor=floor, nlive=nlive, seed=seed))
+    out["spectrum"] = {k: np.asarray(v, dtype=float) for k, v in out["spectrum"].items()}
+    return out

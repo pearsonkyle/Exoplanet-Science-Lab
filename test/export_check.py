@@ -26,10 +26,10 @@ with sync_playwright() as p:
     for theme in ('light', 'dark'):
         url = pg.evaluate("(t) => window.__esl.lcPlot.exportCanvas(t, 'HD 80606 b — TESS', 2458887).toDataURL('image/png')", theme)
         open(f'{out}_lc_{theme}.png', 'wb').write(base64.b64decode(url.split(',')[1]))
-    pdf = pg.evaluate("""async () => { const ex = await import('./src/ui/export.js'); const c = window.__esl.lcPlot.exportCanvas('light', 'HD 80606 b', 2458887);
+    pdf = pg.evaluate("""async () => { const ex = await import('/src/ui/export.js'); const c = window.__esl.lcPlot.exportCanvas('light', 'HD 80606 b', 2458887);
         const blob = await ex.canvasToPDF(c); const u8 = new Uint8Array(await blob.arrayBuffer()); let s = ''; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode(...u8.subarray(i, i + 8192)); return btoa(s); }""")
     open(out + '_lc.pdf', 'wb').write(base64.b64decode(pdf))
-    corner = pg.evaluate("""async () => { const m = await import('./src/ui/corner.js'); const F = window.__esl.S.fit; const c = document.createElement('canvas');
+    corner = pg.evaluate("""async () => { const m = await import('/src/ui/corner.js'); const F = window.__esl.S.fit; const c = document.createElement('canvas');
         m.drawCorner(c, F.res, F.free.map(f => f.label), null, { theme: 'light', width: 560, scale: 2, title: 'HD 80606 b — posterior' }); return c.toDataURL('image/png'); }""")
     open(out + '_corner_light.png', 'wb').write(base64.b64decode(corner.split(',')[1]))
     tex = pg.evaluate("async () => { const b = [...document.querySelectorAll('#tab-results .btn')].find(x => x.textContent === 'Copy LaTeX'); return 1; }")

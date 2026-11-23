@@ -25,3 +25,5 @@ docs/.vitepress/cache/
 docs/reference/
 docs/guide/examples.md
 /.vitepress/
+# ExoMolOP and other opacity source files for tools/opacity/ (several GB; URLs in tools/opacity/README.md)
+data-src/
