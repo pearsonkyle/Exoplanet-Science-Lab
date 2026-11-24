@@ -72,8 +72,11 @@ Assistant and MCP on the new pages (2026-11-20): the Atmosphere and Star pages d
 world, look up, spectrum; get, look up, set, export). Next: scripted dialogues for them in `test/assistant.test.mjs`
 and the fine-tuning set. Done 2026-11-23: retrieval as one call (`retrieveAtmosphere` in `src/core/atmoapi.js`)
 behind the MCP tool `atmosphere_retrieve`, Python's `esl.retrieve_atmosphere` and the assistant's
-`atmosphere_fit_spectrum` on the Atmosphere page (data drawn on the spectrum, model set to the fit). Still to
-come: a Retrieval page with the corner plot, and a scripted dialogue for the new tool.
+`atmosphere_fit_spectrum` on the Atmosphere page (data drawn on the spectrum, model set to the fit). Also done
+2026-11-23: the Retrieval page (`analyze/retrieval/`: parameter table, spectra from files or simulated, a fit that
+can be stopped, result table, corner plot, the posterior's band on the spectrum, fits compared by ln Z, exports,
+seven assistant tools) and scripted dialogues for both pages (`test/retrieval_check.py`). Still to come: a
+conversation with a real model on these tools, and a scripted dialogue for the Star page.
 
 Retrieval and simulated observations (started 2026-11-20):
 
@@ -89,15 +92,16 @@ Retrieval and simulated observations (started 2026-11-20):
   jump at every node; [M/H] and C/O are now interpolated by a monotone cubic (nearer FastChem: 0.018 against 0.028
   dex rms off the nodes). The twelve draws repeated with it (2026-11-22) are unchanged; 28 more draws then showed
   the excess to be chance: over forty, [M/H] scatters 1.05 ± 0.12 and C/O 1.13 ± 0.13 times the quoted error and
-  both ranges hold the truth 27 times (27.2 expected). **Closed.** Seen instead with forty: medians of Teq, κ_IR,
+  both ranges hold the truth 27 times (27.2 expected). **Closed.** The forty were fitted again on 2026-11-23 with
+  the overlap binning: the same (1.03 ± 0.12, 1.11 ± 0.13, 27 and 27; medians moved 0.1σ rms). Seen instead with forty: medians of Teq, κ_IR,
   γ, [M/H], C/O sit 0.3 to 0.5σ to one side (log γ 3.1σ of the mean); tested 2026-11-23 with the best-fit points and a noise-free fit: the fit itself
   has no offset (noise-free medians within 0.1σ, log γ −0.23 from its skew); Teq, κ_IR, γ are partly the median's
   shape; [M/H] and C/O's −0.4σ is not shape or prior, so chance (2.5σ) or second order in the noise. Telling those
   apart needs a hundred or more further draws: only worth it if fits are to be stacked;
   models in parallel workers, since an hour a fit is too slow for a page.
 - **Next, in order**: (1) the retrieval as a block of `buildProblem`, so that spectra are fitted with the light
-  curves they came from, on the one orbit and star (the HD 80606 pattern); (2) a Retrieval page, with the corner
-  plot and tables the Star page now has; (3) the example carried through the light-curve stage: simulate the Ariel
+  curves they came from, on the one orbit and star (the HD 80606 pattern); (2) done 2026-11-23: the Retrieval page;
+  on it still: models in parallel workers, priors other than uniform, a published spectrum as an example; (3) the example carried through the light-curve stage: simulate the Ariel
   cube with `simulateSpectroscopy`, reduce it on the Spectroscopy page's code, retrieve from that spectrum, and
   simulate a full phase curve fitted with the phase-curve model for the night side; (4) models in parallel workers.
 - **Simulator fidelity**: detector read noise, dark current, jitter and the efficiency's fall at band edges for

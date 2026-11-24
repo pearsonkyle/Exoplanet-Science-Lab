@@ -18,6 +18,7 @@
 // not yet fitted jointly with the light curves it came from; the spectra and their errors are taken as given.
 import { MiniNest } from './nested.js';
 import { makeTransform } from './priors.js';
+import { makeRng, resampleIndices } from './stats.js';
 import { DEFAULT_MODEL, forwardModel, dayNightModel } from './rtmodel.js';
 
 const setIn = (obj, key, sub, v) => { obj[key] = { ...(obj[key] || {}), [sub]: v }; };
@@ -134,6 +135,45 @@ export function runRetrieval(spec, { kernel = null, cache = {}, onProgress = nul
   prob.keys.forEach((k, c) => { const idx = Array.from({ length: n }, (_, i) => i).sort((a, b) => res.samples[a * d + c] - res.samples[b * d + c]), q = []; let cum = 0, j = 0; for (const i of idx) { cum += res.weights[i]; while (j < 3 && cum >= [0.16, 0.5, 0.84][j]) { q.push(res.samples[i * d + c]); j++; } } while (q.length < 3) q.push(res.samples[idx[n - 1] * d + c]); summary[k] = { lo: q[0], median: q[1], hi: q[2], best: res.maxPoint[c] }; });
   const spectra = prob.predict(res.maxPoint).map((a) => Float64Array.from(a)), chi2 = spec.data.reduce((s, dset, j) => s + dset.y.reduce((a, y, i) => a + ((y - spectra[j][i]) / dset.err[i]) ** 2, 0), 0), elapsed = (Date.now() - t0) / 1000;
   return { ...res, keys: prob.keys, labels: prob.labels, summary, best: { theta: res.maxPoint, chi2, spectra }, ndata: prob.n, elapsed, msPerModel: (1000 * elapsed) / Math.max(1, res.ncalls) };
+}
+
+/**
+ * What the posterior says the spectrum is, on each data set's bins: for `draws` equal-weight draws of the posterior the
+ * model is computed, and at every bin the 16, 50 and 84% points of those models are kept.
+ *   prob: buildRetrieval's problem; res: { ndim, n, samples, weights }
+ * Returns [{ lo, median, hi } per data set] (Float64Arrays). With n draws the band's edges are known to about
+ * 1/sqrt(n) of its width: 60 draws, 13%.
+ */
+export function posteriorBand(prob, res, { draws = 60, seed = 7 } = {}) {
+  const d = res.ndim, idx = resampleIndices(res.weights, draws, makeRng(seed)), runs = [];
+  for (const i of idx) { let p; try { p = prob.predict(Array.from(res.samples.subarray(i * d, i * d + d))); } catch { continue; } runs.push(p.map((a) => Float64Array.from(a))); }
+  if (!runs.length) throw new Error('no model of the posterior could be computed');
+  const at = (v, q) => { const x = q * (v.length - 1), k = Math.floor(x), f = x - k; return k + 1 < v.length ? v[k] + f * (v[k + 1] - v[k]) : v[k]; };
+  return runs[0].map((first, j) => {
+    const n = first.length, lo = new Float64Array(n), median = new Float64Array(n), hi = new Float64Array(n), col = new Float64Array(runs.length);
+    for (let i = 0; i < n; i++) { for (let r = 0; r < runs.length; r++) col[r] = runs[r][j][i]; const v = Float64Array.from(col).sort(); lo[i] = at(v, 0.16); median[i] = at(v, 0.5); hi[i] = at(v, 0.84); }
+    return { lo, median, hi };
+  });
+}
+
+/**
+ * A spectrum as an instrument of resolving power R would give it, from a model: the model on the tables as given,
+ * averaged over bins of equal width in log wavelength, with Gaussian noise of `noise` (in the spectrum's own units;
+ * a number, or one per bin) added from the seed. For trying a retrieval where the answer is known: not a simulation
+ * of an instrument (no systematics, no wavelength-dependent noise unless given).
+ *   spec: { model, tables, kind: 'transit' | 'eclipse' | 'night', wlMin, wlMax, R, noise, seed }
+ * Returns { kind, wl, lo, hi, y, err, truth (the spectrum before the noise) } as arrays.
+ */
+export function simulateSpectrum({ model, tables, kind = 'transit', wlMin, wlMax, R = 50, noise = 50e-6, seed = 1 }, { kernel = null, cache = {} } = {}) {
+  if (!(wlMin > 0) || !(wlMax > wlMin)) throw new Error('a simulated spectrum needs wlMin < wlMax (micron)');
+  if (!(R >= 3)) throw new Error('the resolving power must be at least 3');
+  const n = Math.max(3, Math.round(Math.log(wlMax / wlMin) * R)), lo = [], hi = [], wl = [];
+  for (let i = 0; i < n; i++) { lo.push(wlMin * (wlMax / wlMin) ** (i / n)); hi.push(wlMin * (wlMax / wlMin) ** ((i + 1) / n)); wl.push(Math.sqrt(lo[i] * hi[i])); }
+  const err = wl.map((_, i) => (Array.isArray(noise) ? noise[i] : noise)); if (err.some((e) => !(e > 0))) throw new Error('the noise must be positive');
+  const prob = buildRetrieval({ model, tables, free: [], priors: {}, data: [{ kind, wl, lo, hi, y: wl.map(() => 0), err }] }, { kernel, cache });
+  const truth = Array.from(prob.predict([])[0]); if (truth.some((v) => !Number.isFinite(v))) throw new Error('the model gave no spectrum over this range');
+  const rng = makeRng(seed), y = truth.map((v, i) => v + err[i] * rng.normal());
+  return { kind, wl, lo, hi, y, err, truth };
 }
 
 /**

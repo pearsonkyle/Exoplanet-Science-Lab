@@ -3,14 +3,14 @@
  "version": "0.2.0",
  "commit": null,
  "built": null,
- "sourceHash": "4693d97000fdaa84",
+ "sourceHash": "fc4fa503e71164d5",
  "esbuild": "0.25.12",
  "format": "esl-session",
  "formatVersion": 1,
  "files": {
   "esl_core.js": {
-   "bytes": 1618170,
-   "sha256": "47932ade4595015ede0e9627d84817052318be60be793dbcc1171ff176d4b11b"
+   "bytes": 1622044,
+   "sha256": "c9b3908f85eb951c0e4039c7df93559865f197ad3316a82d4366658e48bf240b"
   },
   "esl_ld_spectral.js": {
    "bytes": 266560,
@@ -253,8 +253,10 @@
   ],
   "atmoapi": [
    "modelOf",
+   "parseSpectrumText",
    "retrievalData",
    "retrievalNeeds",
+   "retrievalPosterior",
    "retrievalResult",
    "retrievalSetup",
    "retrieveAtmosphere",
@@ -1044,7 +1046,9 @@
    "buildRetrieval",
    "compareRetrievals",
    "defaultPrior",
-   "runRetrieval"
+   "posteriorBand",
+   "runRetrieval",
+   "simulateSpectrum"
   ],
   "rm": [
    "ccfFit",

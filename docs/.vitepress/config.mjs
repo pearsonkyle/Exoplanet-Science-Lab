@@ -57,6 +57,7 @@ export default defineConfig({
         ] },
         { text: 'Run it yourself', items: [
           { text: 'Atmospheres: a walk-through', link: '/guide/atmosphere' },
+          { text: 'Retrieval: an atmosphere from its spectrum', link: '/guide/retrieval' },
           { text: 'A star from its light', link: '/guide/star' },
           { text: 'Observing: time, cameras, live reduction', link: '/guide/observing' },
           { text: 'Python package', link: '/guide/python' },

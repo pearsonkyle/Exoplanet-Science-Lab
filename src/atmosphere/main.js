@@ -12,6 +12,8 @@ import { CONDENSATES } from '../core/condensation.js';
 import { blackbodyColour, stellarLimbColours, spectrumToXYZ, xyzToLinearSRGB, srgbEncode, cmfX, cmfY, cmfZ, spectrumColour } from '../core/colour.js';
 import { makeZip } from '../core/zip.js';
 import { bundleFiles } from './bundle.js';
+import { parseSpectrumText } from '../core/atmoapi.js';
+import { createRetrievalClient } from '../retrieval/client.js';
 import { planckSI } from '../core/phasecurve.js';
 import { K_B, M_U } from '../core/atmosphere.js';
 import { solarXuv } from '../core/escape.js';
@@ -76,7 +78,6 @@ worker.onmessage = (ev) => {
   if (m.type === 'error' && m.tables) { M.loading.clear(); M.error = m.message; setStatus('stRun', 'An opacity table could not be read: ' + m.message, 'err'); return; }
   if (m.type === 'chemReady') { M.chem.loaded = true; M.chem.loading = false; M.chem.source = m.source; run(); return; }
   if (m.type === 'ready') { const first = !M.ready; M.tables = m; M.ready = true; for (const t of [...m.species, ...m.cia]) { M.loaded.add(t.name); M.loading.delete(t.name); } if (first) { describeTables(); buildVmr(); } run(); return; }
-  if (m.type === 'retrieveProgress' || m.type === 'retrieved' || m.type === 'retrieveError') { const f = M.fitJob; if (!f || f.id !== m.id) return; if (m.type === 'retrieveProgress') f.progress(m); else { M.fitJob = null; if (m.type === 'retrieved') f.done(m.result); else f.fail(new Error(m.message)); } return; }
   if (m.id !== M.seq) return;   // an older run
   if (m.type === 'result') { M.result = m; M.parts = {}; M.error = null; M.partsPhase = true; setBusy(false); afterResult(); }
   if ((m.type === 'result' && !M.queued) || m.type === 'error' || (m.type === 'done' && !M.queued)) { const w = idleWaiters; idleWaiters = []; for (const f of w) f(); }
@@ -661,19 +662,25 @@ async function fitSpectra(spec, onProgress = () => {}) {
   for (let i = 0; i < 600 && (M.loading.size || (M.chem.on && !M.chem.loaded)); i++) await new Promise((res) => setTimeout(res, 200));
   const lost = gases.filter((g) => !M.loaded.has(g)); if (lost.length) throw new Error(`the opacity table of ${lost.join(', ')} could not be loaded`);
   await new Promise((res) => setTimeout(res, 30)); await whenIdle(); if (M.error) throw new Error(M.error);
-  const model = modelForRun(), id = ++M.fitSeq;
-  setStatus('stRun', 'Fitting the model to the spectrum …');
-  const result = await new Promise((done, fail) => {
-    M.fitJob = { id, done, fail, progress: (q) => { const t = `Fitting: ${q.ncalls} models, ${q.elapsed.toFixed(0)} s, ln Z ${q.logZ.toFixed(1)}`; setStatus('stRun', t + ' …'); onProgress(t); } };
-    worker.postMessage({ type: 'retrieve', id, model, data: spec.data, free: spec.free, priors: spec.priors || null, sampler: spec.sampler });
-  });
+  const model = modelForRun();
+  // the fit runs in a worker of its own (src/retrieval/client.js): the page stays usable, and Stop ends it at once
+  fitClient ??= createRetrievalClient({ onStatus: (t) => setStatus('stRun', t) });
+  M.fitJob = true; setStatus('stRun', 'Fitting the model to the spectrum …');
+  const stopBtn = document.createElement('button'); stopBtn.className = 'btn sm'; stopBtn.id = 'bStopFit'; stopBtn.textContent = 'Stop the fit'; stopBtn.style.marginTop = '6px'; stopBtn.onclick = () => fitClient.stop(); $('stRun').after(stopBtn);
+  let result;
+  try {
+    const out = await fitClient.run({ model, data: spec.data, free: spec.free, priors: spec.priors || null, sampler: spec.sampler, band: 0, species: SPECIES.filter((g) => M.loaded.has(g) && !M.off[g]) },
+      (q) => { const t = `Fitting: ${q.ncalls} models, ${q.elapsed.toFixed(0)} s, ln Z ${q.logZ.toFixed(1)}`; setStatus('stRun', t + ' …'); onProgress(t); });
+    result = out.result;
+  } catch (err) { setStatus('stRun', err.stopped ? 'The fit was stopped; the model is as it was.' : String((err && err.message) || err), err.stopped ? 'warn' : 'err'); throw err; }
+  finally { M.fitJob = null; stopBtn.remove(); }
   M.fit = { data: spec.data, label: spec.label || 'data', result };
   // a run that stopped short has no posterior: the data are shown, the model is left as it was
   if (result.converged) for (const k of result.keys) { const v = +result.summary[k].median.toPrecision(5); if (FIT_APPLY[k]) FIT_APPLY[k](v); else M.model.vmr[k.slice(5)] = 10 ** v; }
   refreshControls(); run(); await new Promise((res) => setTimeout(res, 30)); await whenIdle();
   return result;
 }
-M.fitSeq = 0;
+let fitClient = null;
 let refreshControls = () => {};
 
 // ------------------------------------------------------------------------------------------- window.__esl.atmosphere
@@ -734,24 +741,20 @@ let refreshControls = () => {};
         let saved; if (save_as && files) saved = await files.write(save_as, 'wavelength_micron,transit_depth,eclipse_depth,brightness_temperature_K\n' + Array.from(r.wl, (w, i) => [w.toPrecision(7), r.depth[i].toExponential(6), r.fpfs ? r.fpfs[i].toExponential(6) : '', r.brightness ? r.brightness[i].toFixed(1) : ''].join(',')).join('\n') + '\n');
         return { columns: ['wavelength_um', 'transit_depth_ppm', 'eclipse_depth_ppm', 'brightness_temperature_K'], rows, ...(saved ? { written: saved } : {}) };
       } },
-    { name: 'atmosphere_fit_spectrum', core: true, description: 'Fit the model on the page to a measured spectrum (an atmospheric retrieval with nested sampling), then show the data on the spectrum and set the model to the best fit. The spectrum is a text file among the files (list_files): rows of "wavelength, value, error" or "wavelength, bin_low, bin_high, value, error", wavelengths in micron, header lines allowed. kind: "transit" (transit depth) or "eclipse" (eclipse depth). free: what is fitted, from teq, tint, logKappaIR, logGamma (Guillot profile), t (isothermal), mh and co ([M/H] and C/O in chemical equilibrium), logX_<gas> (log10 mixing ratio, when the gases are set by hand), rplanet, logCloudTop, cloudFraction, logHaze, hazeSlope, logRayleigh, nightDT. Everything else stays as the page has it: set the profile to "guillot" or "isothermal" first (atmosphere_set), not "consistent". Priors are uniform [low, high]; wide defaults are used and returned for those not given. Takes from ten seconds to ten minutes (a profile and chemistry, four parameters: about four), during which the page computes nothing else. If "converged" is false the budget ran out and the values are NOT a posterior: say so, and offer to run longer or free fewer parameters. To ask whether a gas or a cloud is needed, fit with and without it and compare ln Z (above 5: strong; within 1: no difference).',
+    { name: 'atmosphere_fit_spectrum', core: true, description: 'Fit the model on the page to a measured spectrum (a retrieval by nested sampling), draw the data on the spectrum and set the model to the fit. file: text rows of "wavelength, value, error" or "wavelength, bin_low, bin_high, value, error", micron. free: from teq, tint, logKappaIR, logGamma (Guillot), t (isothermal), mh, co (equilibrium), logX_<gas> (gases by hand), rplanet, logCloudTop, cloudFraction, logHaze, hazeSlope, logRayleigh, nightDT. Set the profile to "guillot" or "isothermal" first. Priors are uniform [low, high], wide by default. Takes minutes; the user can stop it. If "converged" is false the values are NOT a posterior: say so. The Retrieval page has the corner plot.',
       parameters: obj({ file: T('File name from list_files.'), kind: T('What the values are.', { enum: ['transit', 'eclipse'] }), unit: T('Unit of the value and error columns (default fraction).', { enum: ['fraction', 'percent', 'ppm'] }),
         free: { type: 'array', items: T('A parameter key.'), minItems: 1, description: 'Parameters to fit.' }, priors: { type: 'object', description: 'Key -> [low, high]. Optional.' },
         max_models: { type: 'integer', description: 'Budget of models (default 60000).' }, max_seconds: N('Time limit in seconds (default 600).') }, ['file', 'kind', 'free']),
       run: async ({ file, kind, unit = 'fraction', free, priors, max_models = 60000, max_seconds = 600 }, { files, onProgress }) => {
-        const k = { fraction: 1, percent: 1e-2, ppm: 1e-6 }[unit]; if (!k) throw new Error('unit must be fraction, percent or ppm');
-        const text = await files.readText(file), rows = text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && /^[-+.\d]/.test(l)).map((l) => l.split(/[,;\s]+/).filter((x) => x !== '').map(Number));
-        const ok = rows.filter((x) => (x.length === 3 || x.length >= 5) && x.slice(0, 5).every(Number.isFinite)), wide = ok.length > 0 && ok.every((x) => x.length >= 5);
-        if (ok.length < 3 || (!wide && !ok.every((x) => x.length === 3))) throw new Error(`${file}: needs at least 3 rows of "wavelength, value, error" or "wavelength, bin_low, bin_high, value, error" (${rows.length} rows of numbers read, ${ok.length} usable)`);
-        ok.sort((x, y) => x[0] - y[0]);
-        const data = [{ name: file, kind, wl: ok.map((x) => x[0]), ...(wide ? { lo: ok.map((x) => x[1]), hi: ok.map((x) => x[2]) } : {}), y: ok.map((x) => k * x[wide ? 3 : 1]), err: ok.map((x) => k * x[wide ? 4 : 2]) }];
-        const r = await fitSpectra({ data, free, priors, label: file, sampler: { nlive: 100, maxCalls: Math.max(200, max_models), maxSeconds: Math.max(5, max_seconds), seed: 42 } }, (t) => onProgress && onProgress({ message: t }));
+        const set = parseSpectrumText(await files.readText(file), { name: file, kind, unit }), data = [set], ok = set.wl;
+        let r; try { r = await fitSpectra({ data, free, priors, label: file, sampler: { nlive: 100, maxCalls: Math.max(200, max_models), maxSeconds: Math.max(5, max_seconds), seed: 42 } }, (t) => onProgress && onProgress({ message: t })); }
+        catch (err) { if (err.stopped) return { stopped: true, note: 'The user stopped the fit on the page; nothing was kept and the model is as it was.' }; throw err; }
         const sg = (v) => +v.toPrecision(5);
         return { converged: r.converged, ...(r.converged ? {} : { warning: 'NOT converged: the budget ran out before the sampler\'s stopping rule; these values are not a posterior. Run longer (max_models, max_seconds) or free fewer parameters.' }),
           parameters: Object.fromEntries(r.keys.map((key, i) => { const q = r.summary[key]; return [key, { label: r.labels[i], value: sg(q.median), plus: +(q.hi - q.median).toPrecision(2), minus: +(q.median - q.lo).toPrecision(2), prior: [r.priors[key].a, r.priors[key].b], prior_given: !!(priors && priors[key]) }]; })),
           ln_Z: r.converged ? { value: +r.logZ.toFixed(2), error: +r.logZerr.toFixed(2) } : null, chi2: +r.chi2.toFixed(1), data_points: r.ndata, models_computed: r.ncalls, seconds: +r.seconds.toFixed(1), warnings: r.warnings,
           page: !r.converged ? `The ${ok.length} points are drawn on the ${kind === 'eclipse' ? 'emission' : 'transmission'} spectrum; the model on the page was left as it was.` : `The model on the page is now the median of the fit and the ${ok.length} points are drawn on the ${kind === 'eclipse' ? 'emission' : 'transmission'} spectrum. The fit ran on 30 layers and opacity bins joined by ${r.merge}; the page's own spectrum is finer and can differ from the fitted one by a fraction of the errors.`,
-          model: summary() };
+          next: 'atmosphere_get gives the model as it now is.' };
       } },
   ];
   (window.__esl = window.__esl || {}).atmosphere = { tools, ready: () => M.ready === true && !!M.result,

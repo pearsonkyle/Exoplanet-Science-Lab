@@ -6,17 +6,13 @@
 //      { type: 'decades', id, layers: [index] }            the same at several layers, for the download
 //      { type: 'star', buffer }                            the stellar flux grid (optional; without it the star is a blackbody)
 //      { type: 'kernel', buffer }                          the WebAssembly mixing kernel (optional; without it the JavaScript loop runs)
-//      { type: 'retrieve', id, model, data, free, priors, sampler }   fit the model to spectra (src/core/retrieval.js); nothing else runs meanwhile
 // Out: { type: 'ready', species, grid } | { type: 'result', id, ... } | { type: 'part', id, name, depth, fpfs }
 //      | { type: 'done', id } | { type: 'error', id, message }
-//      | { type: 'retrieveProgress', id, ncalls, logZ, remFrac, elapsed } | { type: 'retrieved', id, result } | { type: 'retrieveError', id, message }
 import { parseTable, loadMixKernel } from '../core/opacity.js';
 import { parseChem } from '../core/chemistry.js';
 import { parseStellar } from '../core/stellarspec.js';
 import { dayNightModel, opacityByAbsorber, geometricAlbedo } from '../core/rtmodel.js';
 import { withConsistentProfile } from '../core/climate.js';
-import { runRetrieval } from '../core/retrieval.js';
-import { retrievalData, retrievalSetup, retrievalResult } from '../core/atmoapi.js';
 
 const tables = { lines: [], cia: [] }, cache = {}, memo = {}, climateCache = {};
 let latest = 0, kernel = null, lastShown = null;
@@ -44,16 +40,6 @@ self.onmessage = async (ev) => {
       self.postMessage({ type: 'decades', id: m.id, decades: lastShown ? m.layers.map((j) => opacityByAbsorber(lastShown, tables, j)) : [] });
     } else if (m.type === 'opacity') {
       if (lastShown) self.postMessage({ type: 'opacity', id: m.id, opacity: opacityByAbsorber(lastShown, tables, m.layer) });
-    } else if (m.type === 'retrieve') {
-      // the page's model fitted to spectra: the tables cut to the data, 30 layers, the sampler of the light-curve fits
-      try {
-        const lost = m.free.filter((k) => k.startsWith('logX_') && !tables.lines.some((t) => t.species === k.slice(5))).map((k) => k.slice(5));
-        if (lost.length) throw new Error('opacity tables not loaded: ' + lost.join(', '));
-        if (m.model.chemistry && !tables.chem) throw new Error('the chemistry table is not loaded');
-        const data = retrievalData(m.data), set = retrievalSetup(m.model, tables, data, m.free, { priors: m.priors });
-        const r = runRetrieval({ model: set.model, tables: set.tables, free: m.free, priors: set.priors, data, sampler: m.sampler }, { kernel, onProgress: (q) => self.postMessage({ type: 'retrieveProgress', id: m.id, ncalls: q.ncalls, logZ: q.logZ, remFrac: q.remFrac, elapsed: q.elapsed }) });
-        self.postMessage({ type: 'retrieved', id: m.id, result: retrievalResult(r, set.priors, set.merge) });
-      } catch (err) { self.postMessage({ type: 'retrieveError', id: m.id, message: String((err && err.message) || err) }); }
     } else if (m.type === 'run') {
       latest = m.id;
       // a temperature profile that follows from the gas is solved first (and kept while its inputs stay the same)

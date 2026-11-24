@@ -55,11 +55,15 @@ refers to. State as of 2026-11-16, end of the seventh working round.
   `mie.js` + `optical.js` (tholin haze), `worlds.js` (WASP-39 b, WASP-121 b's day side, Jupiter, Titan), `atmoapi.js`
   (one JSON call: `esl.atmosphere()` in Python, `atmosphere_spectrum` in the MCP server), the WebAssembly mixing
   kernel (`tools/wasm/`, `public/wasm/mix.wasm`); page `/analyze/atmosphere/` (`src/atmosphere/`, 3D helpers in `src/viz/atmoview.js`).
+- `retrieval.js`: the forward model fitted to spectra with MiniNest (`runRetrieval`, `posteriorBand`, `simulateSpectrum`);
+  one call for hosts in `atmoapi.js` (`retrieveAtmosphere`). Page `/analyze/retrieval/` (`src/retrieval/`: a worker
+  of its own that Stop ends, a client both this page and the Atmosphere page's fit use; walk-through
+  `docs/guide/retrieval.md`; browser check with scripted dialogues `test/retrieval_check.py`).
 - `rvsources.js`: radial velocities from VizieR (HIRES, HARPS RVBank, Lick).
 - `ephemeris.js`, `periodogram.js`, `ldest.js`, `ldspec.js`, `derive.js`, `catalog.js`, `sources/`, `relations.js`,
   `astro.js`, `observability.js`, `horizon.js`, `data.js` (with time-standard conversion), `pyentry.js`, `pyshim.js`.
 
-**Pages**: `/plan/`, `/observe/` (with WebXR), `/analyze/`, `/analyze/photometry/`, `/analyze/spectroscopy/`, `/analyze/atmosphere/`,
+**Pages**: `/plan/`, `/observe/` (with WebXR), `/analyze/`, `/analyze/photometry/`, `/analyze/spectroscopy/`, `/analyze/atmosphere/`, `/analyze/retrieval/`, `/analyze/star/`,
 `/search/`, `/methods/` (methods, validation, reproducibility, references, how to cite), and the landing page.
 Old `/observe/photometry/`, `/observe/spectroscopy/`, `/validation/` redirect. README "The site" describes each.
 
@@ -83,6 +87,10 @@ Next: a real ZWO run, plate solving in Run, mount and filter-wheel control (Alpa
 
 ## Not verified
 
+- Retrieval page: no conversation with a real language model on its tools (the dialogues in
+  `test/retrieval_check.py` are scripted), eclipse and night-side spectra were not driven through the page's
+  controls, no published spectrum was fitted, and at a phone's width it was only looked at once (375 px: nothing overflows the
+  page; the parameter table scrolls sideways in its card).
 - Observing: no real camera, mount, USB GPS or gpsd has been connected; the ZWO backend was tested against a fake
   SDK only. No Analyze fit of a Run light curve was run (the hand-off was).
 - Any real device: phones (layouts, pinch, AR), a WebXR headset (Quest checklist below), Safari and Firefox.

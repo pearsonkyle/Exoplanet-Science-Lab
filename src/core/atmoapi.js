@@ -138,6 +138,25 @@ export function retrievalResult(r, priors, merge) {
 }
 
 /**
+ * A spectrum from the text of a file: rows of "wavelength, value, error" or "wavelength, bin_low, bin_high, value,
+ * error" (micron; commas, semicolons or blanks; lines that do not start with a number are skipped), sorted by
+ * wavelength. unit: 'fraction' | 'percent' | 'ppm' of the value and error columns.
+ * Returns { name, kind, wl, y, err, lo?, hi? }. Throws when fewer than three rows can be read.
+ */
+export function parseSpectrumText(text, { kind = 'transit', unit = 'fraction', name = 'spectrum' } = {}) {
+  const k = { fraction: 1, percent: 1e-2, ppm: 1e-6 }[unit]; if (!k) throw new Error('unit must be fraction, percent or ppm');
+  if (!KINDS.includes(kind)) throw new Error(`kind must be one of ${KINDS.join(', ')}`);
+  const rows = String(text).split(/\r?\n/).map((l) => l.trim()).filter((l) => l && /^[-+.\d]/.test(l)).map((l) => l.split(/[,;\s]+/).filter((x) => x !== '').map(Number));
+  const ok = rows.filter((x) => (x.length === 3 || x.length >= 5) && x.slice(0, 5).every(Number.isFinite)), wide = ok.length > 0 && ok.every((x) => x.length >= 5);
+  if (ok.length < 3 || (!wide && !ok.every((x) => x.length === 3))) throw new Error(`${name}: needs at least 3 rows of "wavelength, value, error" or "wavelength, bin_low, bin_high, value, error" (${rows.length} rows of numbers read, ${ok.length} usable)`);
+  ok.sort((x, y) => x[0] - y[0]);
+  return { name, kind, wl: ok.map((x) => x[0]), ...(wide ? { lo: ok.map((x) => x[1]), hi: ok.map((x) => x[2]) } : {}), y: ok.map((x) => k * x[wide ? 3 : 1]), err: ok.map((x) => k * x[wide ? 4 : 2]) };
+}
+
+/** A retrieval's posterior as the corner plot takes it: { ndim, n, samples, weights, logl, ess } (typed arrays). */
+export const retrievalPosterior = (r) => ({ ndim: r.ndim, n: r.n, samples: r.samples, weights: r.weights, logl: r.logl, ess: r.ess });
+
+/**
  * Fit a model atmosphere to spectra (src/core/retrieval.js behind one plain-JSON call).
  *   { world, model, species: as runAtmosphere (the model is the starting description; what is not free stays as given),
  *     data: [{ kind: 'transit' | 'eclipse' | 'night', wl [micron], y (depth, or Fp/Fs for eclipse and night), err,

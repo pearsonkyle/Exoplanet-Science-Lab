@@ -1062,12 +1062,59 @@ the answer came back 3σ off), and are mended:
 
 The stored runs made before this (the forty noise draws, the 400-point and slice-sampling repeats) used the first
 binning for data and fit alike, so they are self-consistent and what they show about the sampler and the error bars
-stands; they were not rerun. The two end-to-end examples were (below). After the two changes the same fit in the
+stands. The 400-point and slice-sampling repeats were not rerun (3 to 4 hours each). The two end-to-end examples
+were (below), and so were the forty noise draws (2026-11-23, the same seeds, data and fit both binned the new way,
+40 fits of 84,076 to 130,845 models, all converged; `runsOverlap` in `tools/examples/ariel_retrieval_clear_seeds.json`):
+
+| Parameter | Scatter of (median − truth)/σ | 16 to 84% range holds the truth (27.2 ± 3.0 of 40) | Mean offset (σ, ±0.16) | Against the old binning: rms shift, largest shift (σ), ratio of error bars |
+| --- | --- | --- | --- | --- |
+| Teq | 0.81 ± 0.09 | 27 | 0.29 | 0.10, 0.17, 1.01 |
+| log κ_IR | 0.89 ± 0.10 | 28 | −0.31 | 0.09, 0.17, 1.00 |
+| log γ | 0.72 ± 0.08 | 28 | −0.50 | 0.09, 0.17, 1.02 |
+| [M/H] | 1.03 ± 0.12 | 27 | −0.40 | 0.08, 0.16, 0.99 |
+| C/O | 1.11 ± 0.13 | 27 | −0.40 | 0.07, 0.15, 1.00 |
+| Radius | 1.09 ± 0.12 | 26 | −0.06 | 0.09, 0.23, 1.01 |
+| Night-side contrast | 0.97 ± 0.11 | 29 | 0.16 | 0.08, 0.18, 1.00 |
+
+The error bars are the right size with the new binning as with the old, and no fit moved by more than a quarter of
+its error (worst run: C/O at 3.1σ from the truth, as before). The offsets of the medians are the same too, which is
+no second measurement of them: the noise seeds are the same forty, so the two sets share their chance. The shifts
+are not the binning's error alone, since the simulated spectra changed with the fit. After the two changes the same fit in the
 page returned Teq 1090 +7 −6 K (1100), [M/H] 0.35 ± 0.09 (0.48), C/O 0.48 ± 0.04 (0.5) and radius 1.2806 ± 0.0007
 (1.279; 2.4σ, the furthest), χ² 44 for 60 points, in 17,186 models and 6 minutes (30 layers, bins joined by 2,
-against data from 80 layers and no joining). Not automated: the page's tool was run by hand in a browser (also isothermal, three
-parameters: 8 s, T 1282 +13 −15 K for 1300); there is no scripted dialogue for it yet. The fit in the page blocks the
-page's worker until it ends and cannot be cancelled before its time limit.
+against data from 80 layers and no joining). The page's tool was first run by hand in a browser (also isothermal, three
+parameters: 8 s, T 1282 +13 −15 K for 1300).
+
+The Retrieval page (2026-11-23, `analyze/retrieval/`). The page adds no science: it calls `retrievalSetup` and
+`runRetrieval` in a worker of its own (`src/retrieval/retrieval.worker.js`), which the Atmosphere page's fit now uses
+too, so a fit no longer blocks a page and Stop ends it by ending the worker. Two pieces of `src/core/retrieval.js`
+are new and checked in `test/retrieval.test.mjs`:
+
+| Check | Result |
+| --- | --- |
+| A simulated spectrum (`simulateSpectrum`) against the model's bins weighted by overlap, worked out again in the test | equal to 3e-18 on 64 bins at R = 40; (value − truth)/error has mean 0.11 and scatter 0.90 (0 ± 0.13 and 1 ± 0.09 expected); the same seed repeats, another differs; an upside-down range, zero noise and R = 1 are refused |
+| The posterior's band on the spectrum (`posteriorBand`, 60 draws) against the percentiles of 400 other draws taken in the test | mean half-width 0.97 of theirs (tolerance ±0.25), median within 0.15 of a half-width; the band is 0.22 of the data's errors wide (four parameters from 54 points: about 0.27 expected) |
+
+The page and the assistant's tools in a headless browser (`test/retrieval_check.py`, not part of `npm test`: it needs
+the dev server and runs real fits, about five minutes):
+
+| Check | Result |
+| --- | --- |
+| The page's first example fitted with the Fit button: 48 simulated points, 1 to 5 µm, 60 ppm; T, H2O, CO2 and radius free with the default limits | converged in 15,607 models (two minutes with eight other jobs on the machine), χ² 34.6 for 48 points; medians +1.5, +0.4, +0.7 and −0.6σ from what was put in (tolerance 3σ); table, corner plot and band drawn |
+| Stop pressed during a fit | the fit ends within a second, nothing is kept, and the next fit starts normally |
+| The same spectrum without CO2 in the model | Δ ln Z = −49.1 ± 0.5 (χ² 139 against 35): the table of fits says "strongly disfavoured" |
+| A three-column file in ppm; a file that is not a spectrum | read, with the note that its bins are taken to meet halfway; refused in words |
+| Samples and result saved | the weights sum to 1.00000 over 1718 rows; the JSON holds the limits, the data and the best fit |
+| Scripted dialogue, Retrieval page: `retrieval_load_spectrum`, `retrieval_set` (CO2 off, two limits), `retrieval_run`, an answer | four requests; the model is sent T 1450 +45 −41, log H2O −3.35 +0.47 −0.32, radius 1.3782 +0.0056 −0.0081, ln Z 342.72, χ² 139.2 (the same no-CO2 fit as above, with narrower limits); the page shows the file, the three free parameters and the corner plot |
+| Scripted dialogue, Atmosphere page: `atmosphere_set` (Guillot), `atmosphere_fit_spectrum` on 45 points at 60 ppm made from the page's own model | converged in 2822 models: Teq 1165.7 +6.4 −6.8 K (1166), radius 1.2793 ± 0.0003 (1.279; 1.1σ), χ² 54.6 for 45 points; the page's model is then the fit |
+
+In the dialogues the language model is played by the test (a fixed sequence of tool calls answered at the LM Studio
+preset's address), so they check the chat, the harness, the tools, what is sent back and what the page shows, and
+not whether a real model chooses these tools: that was not run. The first dialogue run found a fault: the Atmosphere
+tool's reply carried the whole model summary and the harness cut it in mid-JSON; the reply is now short. Not checked:
+the eclipse and night-side kinds through the page (the core handles them, `test/retrieval.test.mjs`; the page's
+controls for them were not driven), a fit of a published spectrum, and phones beyond one look at 375 px (nothing
+overflows the page; the parameter table scrolls sideways in its card).
 
 The cost is the limit: 38 and 85 minutes on one core, so models in parallel are the next step.
 What it is not: the spectra are the model's own, binned
@@ -1113,10 +1160,10 @@ returns numbers with their errors, never whole spectra or samples. Checked by ca
 browser: on the Atmosphere page a cloud deck at 1 mbar with ten times the metals was set (the spectrum's range fell
 from 2056 to 1502 ppm), Titan was loaded and its spectrum tabulated, and a negative temperature was refused; on the
 Star page a band was left out and refitted (6087 to 6093 K), the fits were listed for comparison and the LaTeX was
-written. Not checked: a conversation with a language model using these tools (the assistant's own test suite still
-passes, 130 checks, but holds no scripted dialogue for the two pages), and the Plan, Observe and Search pages'
-existing tools were not revisited. The MCP server has `atmosphere_spectrum`, `star_fit` and `star_match_spectrum`;
-a retrieval tool is not there yet.
+written. Not checked: a conversation with a real language model using these tools (a scripted dialogue for the Atmosphere
+page's fit and for the Retrieval page is in `test/retrieval_check.py`, see "Retrieval"; the Star page has none), and
+the Plan, Observe and Search pages' existing tools were not revisited. The MCP server has `atmosphere_spectrum`,
+`atmosphere_retrieve`, `star_fit` and `star_match_spectrum`.
 
 Speed, profiled (2026-11-20). SED fit: 30 to 55 thousand models in 2 to 4 s (0.08 ms each: an interpolation of
 eight spectra and 420 extinction factors); nothing to gain worth the complexity. Retrieval model: 4.8 ms

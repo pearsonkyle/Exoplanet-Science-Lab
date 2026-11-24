@@ -180,14 +180,16 @@ spectrum to a CSV file in the workspace and describes it.
 ## Fitting a spectrum (retrieval)
 
 The same model can be fitted to a measured spectrum with the site's nested sampler: free parameters with uniform
-priors, a posterior for each, and ln Z to compare two descriptions (with and without a gas or a cloud). There is no
-page for it yet; three ways reach it:
+priors, a posterior for each, and ln Z to compare two descriptions (with and without a gas or a cloud). The
+[Retrieval page](./retrieval) is made for it (the table, the corner plot, the spectrum with the posterior's band,
+fits compared); three other ways reach the same fit:
 
 - **The assistant on the Atmosphere page**: give it a spectrum file (rows of `wavelength, value, error`, micron) and
   ask it to fit, say, the temperature, [M/H], C/O and radius. Its tool `atmosphere_fit_spectrum` runs the fit in the
   page, draws the points on the spectrum and sets the model to the median, so every figure shows the fit. The
-  profile must be "Guillot" or "isothermal". A fit of four parameters takes one to five minutes; if it stops before
-  converging the assistant says so and the model is left as it was.
+  profile must be "Guillot" or "isothermal". A fit of four parameters takes one to five minutes and can be stopped
+  with the button under the status line; if it stops before converging the assistant says so and the model is left
+  as it was.
 - **Python**: `esl.retrieve_atmosphere([dict(kind="transit", wl=..., y=..., err=...)], ["t", "logX_H2O", "rplanet"], model=...)`.
 - **The MCP server**: `atmosphere_retrieve`, on CSV files in the workspace.
 
