@@ -74,3 +74,4 @@ html { scroll-padding-top: 54px; }
 .soft .softtable td:last-child { color: var(--dim); }
 .soft .softtable tr:last-child > * { border-bottom: 0; }
 .soft .softtable tbody tr:target { background: color-mix(in srgb, var(--model) 7.1%, transparent); }
+@media (pointer: coarse) { #citeTool select, #citeTool textarea { font-size: 16px; } }

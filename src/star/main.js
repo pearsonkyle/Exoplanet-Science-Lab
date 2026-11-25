@@ -150,7 +150,7 @@ $('app').append(h('div', { class: 'cols' },
     h('div', { id: 'runsTable' }),
     h('h2', {}, 'For a paper'),
     h('div', { class: 'bar' }, h('button', { class: 'btn sm', onclick: () => { const t = $('latex'); t.select(); navigator.clipboard && navigator.clipboard.writeText(t.value).catch(() => {}); } }, 'Copy LaTeX'), h('button', { class: 'btn sm', onclick: () => saveLatex() }, 'Save LaTeX')),
-    h('textarea', { id: 'latex', readonly: true, rows: 14, style: 'width:100%;font:12px ui-monospace,Menlo,monospace;background:transparent;color:inherit;border:1px solid var(--line2);border-radius:6px;padding:8px', 'aria-label': 'LaTeX tables of the result' }),
+    h('textarea', { id: 'latex', readonly: true, rows: 14, class: 'latexbox', 'aria-label': 'LaTeX tables of the result' }),
     h('details', { class: 'card how' }, h('summary', {}, 'How this is computed, and from what'),
       h('p', {}, 'For a temperature, a gravity and a metallicity, a grid of model atmospheres gives the light leaving each square metre of the star at every wavelength. A star of angular diameter θ sends the fraction (θ/2)² of that to us, dimmed by interstellar dust. The page computes the magnitude each catalogue would measure through its own passband and moves the parameters until the computed magnitudes match the measured ones. Temperature sets the shape of the curve, θ its height; with a parallax, θ becomes a radius, and the area under the curve a luminosity.'),
       h('p', {}, 'Models: PHOENIX-ACES (Husser et al. 2013), the spectra this site also uses for limb darkening, integrated over the disc; 2300 to 8000 K, log g 4 to 5.5, [Fe/H] −0.5 to +0.5, 0.1 to 5.5 µm, with a blackbody tail beyond. Extinction: Fitzpatrick (1999) with R_V = 3.1. Sampler: the nested sampler of the light-curve fits. One scatter term is fitted and added to every error bar, because zero points and models are good to a few hundredths of a magnitude, not to the catalogues\' quoted errors.'),
@@ -163,11 +163,11 @@ function buildPriors() {
 }
 function buildObs() {
   const host = $('obsRows'); host.innerHTML = '';
-  S.obs.forEach((o, i) => host.append(h('div', { style: 'display:grid;grid-template-columns:16px minmax(0,1.25fr) minmax(0,1.15fr) minmax(0,.95fr) 22px;gap:5px;align-items:center;margin:4px 0' },
+  S.obs.forEach((o, i) => host.append(h('div', { class: 'obsrow' },
     h('input', { type: 'checkbox', checked: o.use, 'aria-label': 'use ' + o.band, onchange: (e) => { o.use = e.target.checked; } }),
     h('select', { 'aria-label': 'band', onchange: (e) => { o.band = e.target.value; } }, bandOptions(o.band)),
-    h('input', { type: 'number', step: 'any', value: o.mag === '' ? '' : +Number(o.mag).toFixed(3), style: 'padding-left:4px;padding-right:2px', 'aria-label': 'magnitude', onchange: (e) => { o.mag = e.target.value; } }),
-    h('input', { type: 'number', step: 'any', min: 0, value: +Number(o.err).toFixed(3), style: 'padding-left:4px;padding-right:2px', 'aria-label': 'error', onchange: (e) => { o.err = e.target.value; } }),
+    h('input', { type: 'number', step: 'any', value: o.mag === '' ? '' : +Number(o.mag).toFixed(3), 'aria-label': 'magnitude', onchange: (e) => { o.mag = e.target.value; } }),
+    h('input', { type: 'number', step: 'any', min: 0, value: +Number(o.err).toFixed(3), 'aria-label': 'error', onchange: (e) => { o.err = e.target.value; } }),
     h('button', { class: 'btn sm', title: 'Remove', 'aria-label': 'remove ' + o.band, onclick: () => { S.obs.splice(i, 1); buildObs(); } }, '×'))));
 }
 function buildAll() { $('example').value = EXAMPLES[S.name] ? S.name : $('example').value; $('name').value = S.name; for (const id of ['samplerTable', 'runsTable']) if ($(id)) $(id).innerHTML = ''; if ($('latex')) $('latex').value = ''; setStatus('stEx', (EXAMPLES[S.name] && EXAMPLES[S.name].about) || ''); buildPriors(); buildObs(); draw(); showResult(); }

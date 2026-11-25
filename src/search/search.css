@@ -145,7 +145,10 @@
   .s-bar input[type=search] { grid-column: 1 / -1; min-width: 0; }
   .s-bar > .btn { grid-column: span 2; padding-left: 6px; padding-right: 6px; white-space: nowrap; }
   .s-bar > .s-unit { grid-column: span 3; flex-direction: column; align-items: stretch; gap: 2px; white-space: normal; } .s-unit select { width: 100%; }
-  .s-bar > .s-count { grid-column: 1 / -1; }
+  .s-bar > .s-count { grid-column: 1 / -1; order: 3; }
+  /* Filters, Columns and Export CSV share a row, the three menus the next: nothing leaves half a row empty */
+  .s-bar > .s-unit { grid-column: span 2; } .s-bar > .s-unit select { padding-left: 4px; padding-right: 0; text-overflow: ellipsis; }
+  .s-bar > .s-unit, .s-bar > .s-count { order: 2; }
   .f-range { grid-template-columns: 1fr 84px 8px 84px; }
   .d-table, .d-table tbody { display: block; }
   .d-table tr { display: grid; grid-template-columns: minmax(84px, 30%) minmax(0, 1fr); gap: 0 10px; border-bottom: 1px solid var(--rule); padding: 4px 0; }

@@ -209,7 +209,7 @@ pre.vcmd { background: var(--panel); border: 1px solid var(--line); border-radiu
   .vlegend button { min-height: 40px; padding: 3px 4px; }
   details.vd > summary { min-height: 44px; align-items: center; }
   .vdbody details.vd > summary { min-height: 40px; }
-  .vtoc li { margin: 0; } .vtoc a { display: inline-block; padding: 9px 0; }
+  .vtoc li { margin: 0; } .vtoc a { display: block; padding: 9px 0; line-height: 1.35; }
   .vt tr.pick td { padding-top: 11px; padding-bottom: 11px; }
   #val .vhonest .ev a, #val a.cite { padding: 6px 0; }
 }

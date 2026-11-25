@@ -32,6 +32,18 @@ export function mountSubnav(el, active) {
     el.append(a);
   }
   document.documentElement.classList.add('has-subnav');
+  // On a phone the six tabs do not fit: bring the current one into view (centred, so its neighbours show on both sides)
+  // and mark which side has more, for the fade in site.css.
+  const edges = () => {
+    const more = el.scrollWidth - el.clientWidth;
+    el.classList.toggle('more-l', more > 1 && el.scrollLeft > 4);
+    el.classList.toggle('more-r', more > 1 && el.scrollLeft < more - 4);
+  };
+  const on = el.querySelector('.subnavlink.on');
+  const centre = () => { if (on && el.scrollWidth > el.clientWidth) el.scrollLeft = on.offsetLeft - (el.clientWidth - on.offsetWidth) / 2; edges(); };
+  centre();
+  el.addEventListener('scroll', edges, { passive: true });
+  if (typeof window !== 'undefined') { window.addEventListener('resize', edges); if (document.fonts && document.fonts.ready) document.fonts.ready.then(centre); }
 }
 
 if (typeof document !== 'undefined') {

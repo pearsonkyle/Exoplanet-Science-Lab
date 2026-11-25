@@ -235,12 +235,12 @@ function buildParams() {
   for (const d of ROWS) {
     if (!d.when(R)) continue; const r = R.rows[d.key];
     if (d.group !== group) { group = d.group; body.append(h('tr', {}, h('td', { colspan: 5, style: 'color:var(--dim);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding-top:8px' }, group))); }
-    const inp = (field, dis) => h('input', { type: 'number', step: 'any', value: r[field] == null ? '' : +Number(r[field]).toPrecision(6), disabled: dis, style: 'width:78px', 'aria-label': `${shortLabel(d.key)} ${field === 'value' ? 'value' : field === 'a' ? 'lowest' : 'highest'}`, onchange: (e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { r[field] = v; if (d.key === 'rplanet' && field === 'value' && r.state !== 'free') resetPriors(['rplanet']); } changed(); } });
+    const inp = (field, dis) => h('input', { type: 'number', step: 'any', value: r[field] == null ? '' : +Number(r[field]).toPrecision(6), disabled: dis, class: 'pin', 'aria-label': `${shortLabel(d.key)} ${field === 'value' ? 'value' : field === 'a' ? 'lowest' : 'highest'}`, onchange: (e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { r[field] = v; if (d.key === 'rplanet' && field === 'value' && r.state !== 'free') resetPriors(['rplanet']); } changed(); } });
     body.append(h('tr', {}, h('td', { title: d.key }, longLabel(d.key)),
       h('td', {}, h('select', { 'aria-label': `${shortLabel(d.key)}: free, fixed or off`, 'data-key': d.key, onchange: (e) => { r.state = e.target.value; buildParams(); } }, d.states.map((s) => h('option', { value: s, selected: r.state === s }, s)))),
       h('td', {}, inp('value', r.state === 'off')), h('td', {}, inp('a', r.state !== 'free')), h('td', {}, inp('b', r.state !== 'free'))));
   }
-  host.append(h('table', { class: 'src' }, body));
+  host.append(h('table', { class: 'src ptable' }, body));
 }
 function buildAll() { $('preset').value = R.preset; buildPlanet(); buildSim(); buildSampler(); buildData(); buildParams(); showResult(); buttons(); }
 

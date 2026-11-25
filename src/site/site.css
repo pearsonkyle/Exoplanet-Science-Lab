@@ -138,6 +138,10 @@ a { color: var(--model); }
 .subnavlink.on { color: var(--on); border-bottom-color: var(--model); font-weight: 600; }
 .subnavlink:focus-visible { outline: 2px solid var(--model); outline-offset: -3px; border-radius: 4px; }
 @media (max-width: 420px) { .subnavlink { padding: 0 9px; font-size: 12px; } }
+/* more tabs than fit (a phone): the row scrolls sideways, and the side that has more fades out so the cut-off tab reads as "more this way" (classes set by subnav.js) */
+.subnav.more-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+.subnav.more-l { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 36px), transparent); }
+.subnav.more-l.more-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
 #app > #sitebar { align-self: start; }
 #app > .subnav { grid-area: site; align-self: end; }
 body.intro-open #app > #subnav.subnav { filter: none; pointer-events: auto; }
@@ -182,7 +186,8 @@ a.card .icon { width: 26px; height: 26px; fill: none; stroke: var(--model); stro
 .page a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .page .btn:disabled { opacity: .45; cursor: default; }
 button, input, select, textarea { font: inherit; color: inherit; }
-select, input[type=number], input[type=text], input[type=search], input[type=date], input[type=datetime-local], textarea { background: var(--panel2); border: 1px solid var(--line2); border-radius: 5px; padding: 4px 6px; outline: none; }
+/* an input without a type attribute is a text field too: [type=text] alone leaves it with the browser's own grey box */
+select, input:not([type]), input[type=number], input[type=text], input[type=search], input[type=date], input[type=datetime-local], input[type=time], input[type=url], input[type=email], input[type=password], textarea { background: var(--panel2); border: 1px solid var(--line2); border-radius: 5px; padding: 4px 6px; outline: none; }
 select:focus, input:focus, textarea:focus, button:focus-visible { border-color: var(--model); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--model) 20%, transparent); }
 .page ::placeholder { color: var(--dim); opacity: 1; }
 /* keyboard focus is always drawn: a ring on links, buttons, summaries and anything focusable that is not a text field */
@@ -226,7 +231,8 @@ footer.sitefoot { border-top: 1px solid var(--line); color: var(--faint); font-s
 /* ---- fingers and small screens: every control on the plain pages at least 40 px, 16 px text in fields (no zoom on focus in iOS) ---- */
 @media (pointer: coarse), (max-width: 760px) {
   .page .btn, .page .d-close { min-height: 40px; min-width: 40px; }
-  .page select, .page input[type=number], .page input[type=text], .page input[type=search], .page input[type=date] { min-height: 40px; font-size: 16px; padding: 6px 8px; }
+  .page select, .page input:not([type]), .page input[type=number], .page input[type=text], .page input[type=search], .page input[type=date], .page input[type=datetime-local], .page input[type=time], .page input[type=url], .page input[type=email], .page input[type=password] { min-height: 40px; font-size: 16px; padding: 6px 8px; }
+  .page textarea { font-size: 16px; }
   .page input[type=checkbox] { width: 18px; height: 18px; }
   .tabset > button { min-height: 40px; padding: 7px 12px; font-size: 13px; }
   .page .tag { font-size: 10.5px; padding: 2px 5px; }
@@ -290,3 +296,16 @@ footer.sitefoot { border-top: 1px solid var(--line); color: var(--faint); font-s
 .eslclock[data-state=unchecked] { color: var(--faint); border-style: dashed; }
 .eslclock[data-state=rough] { color: var(--warn); }
 .eslclock:hover, .eslclock:focus-visible { color: var(--text); border-color: var(--dim); }
+@media (pointer: coarse) { .eslclock { min-height: 36px; padding: 4px 12px; font-size: 12px; } }
+/* ---- iOS Safari ---- */
+/* On its side Safari enlarges the text of blocks it takes for body copy, and only those: labels then wrap and rows stop lining up. All text keeps the size it was given. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+/* A file field: the browser's own grey button did not belong to any theme. */
+input[type=file] { max-width: 100%; min-width: 0; color: var(--dim); font-size: 13px; }
+input[type=file]::file-selector-button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line2); border-radius: 6px; padding: 5px 12px; margin-right: 10px; cursor: pointer; }
+input[type=file]::file-selector-button:hover { border-color: var(--model); }
+@media (pointer: coarse) {
+  input[type=file]::file-selector-button { min-height: 40px; padding: 8px 14px; }
+  /* a menu or field under 16 px makes Safari zoom the whole page when it takes focus, and it does not zoom back */
+  select.chip, textarea { font-size: 16px; }
+}

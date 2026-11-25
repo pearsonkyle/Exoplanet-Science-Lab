@@ -36,3 +36,18 @@
 .r-rehearse { border-top: 1px dashed var(--line2); border-bottom: 1px dashed var(--line2); margin: 8px 0 4px; padding: 2px 0 8px; }
 .r-rehearse .btn { margin-top: 8px; width: 100%; }
 .r-priortoggle { margin-left: 10px; white-space: nowrap; }
+
+/* a phone: the page's own gutters, the three empty views no taller than they need to be before the first frame, and fields that line up */
+@media (max-width: 760px) {
+  .run-page main { padding: 12px max(12px, env(safe-area-inset-right)) calc(80px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  .r-top h1 { font-size: 20px; }
+  .r-sub .eslclock { display: flex; width: max-content; margin: 8px 0 0; }
+  .r-side .row2, .r-side .row3 { gap: 8px; }
+  .r-side input[type=datetime-local] { font-size: 14px; padding-left: 4px; padding-right: 2px; }
+  .r-controls .btn { flex: 1 1 auto; }
+  .r-controls .r-status { flex: 1 1 100%; }
+  .r-priortoggle { margin-left: 0; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
+}
+@media (pointer: coarse) { .r-logbox summary { min-height: 40px; display: flex; align-items: center; gap: 6px; } .r-side label.chk { min-height: 40px; } }
+@media (max-width: 480px) { .r-side .row2:has(input[type=datetime-local]) { grid-template-columns: 1fr; } .r-side input[type=datetime-local] { font-size: 16px; padding: 6px 8px; } }
+@media (pointer: coarse) { .r-logbox summary { list-style: none; } .r-logbox summary::-webkit-details-marker { display: none; } .r-logbox summary::before { content: "▸"; font-size: 10px; } .r-logbox[open] summary::before { content: "▾"; } }

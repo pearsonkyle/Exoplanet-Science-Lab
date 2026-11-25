@@ -295,12 +295,14 @@ function buildVmr() {
         h('label', { class: 'chk', style: 'align-self:end' }, h('input', { type: 'checkbox', id: 'quenchOn', checked: M.chem.quenchOn, onchange: (e) => { M.chem.quenchOn = e.target.checked; buildVmr(); run(); } }), 'Quench (mixing)')),
       M.chem.quenchOn ? logSlider('below (bar)', 'chemQ', M.chem.quench, 1e-4, 100, (v) => { M.chem.quench = v; run(); }) : '',
       h('div', { class: 'status' }, `Every gas follows from the temperature, the pressure and these two numbers${M.feh != null ? ` (the star's own metals are ${(10 ** M.feh).toFixed(2)} × the Sun's)` : ''}. Gas phase only: tick "Condense and rain out" below to take TiO, VO, Na, K, water and ammonia out where it is cool. Tick the gases whose absorption to include; the values are at 10 mbar.`));
+    host.classList.add('eq');
     for (const s of SPECIES) {
       const cb = h('input', { type: 'checkbox', checked: !M.off[s], 'aria-label': s + ' on or off', onchange: (e) => { M.off[s] = !e.target.checked; M.failed.delete(s); run(); } });
       host.append(h('div', { class: 'sl' }, h('span', { class: 'sw' }, cb, h('span', { class: 'dot', style: 'background:' + SPECIES_COLOURS[s] }), s), h('span', {}), h('span', { id: 'eq_' + s, style: 'text-align:right;font-variant-numeric:tabular-nums' }, '…')));
     }
     return;
   }
+  host.classList.remove('eq');
   const have = M.index ? new Set(M.index.tables.map((t) => t.species)) : null;
   for (const s of SPECIES) {
     if (have && !have.has(s)) { M.off[s] = true; continue; }   // no table for it in this build

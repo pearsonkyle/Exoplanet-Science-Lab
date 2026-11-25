@@ -24,6 +24,7 @@ Read `HANDOFF.md` first: it has the current state, what has never been run, and 
   New pages go in `vite.config.js` inputs. `observe/photometry/`, `observe/spectroscopy/` and `validation/` are redirect
   stubs; validation anchors on `methods/` are prefixed `val-` (`src/validation/anchors.js`).
 - Page code lives in `src/<page>/`; the analyzer is `src/main.js` + `src/ui/` + `src/viz/`.
+- UI audit at phone, tablet and desktop sizes (screenshots plus a report of sideways scroll, controls off the screen, fields that make iOS zoom, small tap targets): `node tools/uiaudit.mjs /tmp/ui [--sizes iphone,iphone-land,ipad] [--only analyze]` with the dev server running; `test/layout_check.py` stays the pass/fail check.
 - Check pages headlessly: `.venv/bin/python tools/shot.py 'analyze/?skipintro' /tmp/x.png --eval "<js>"`, then read the PNG.
 
 ## Rules for this repo
