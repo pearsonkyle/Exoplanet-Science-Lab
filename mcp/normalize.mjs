@@ -115,10 +115,12 @@ export function magnitudesOf(m) {
 }
 
 /** [value, sigma] from [value, sigma] or { value, error }; warns when the error exceeds the value (a swapped pair?). */
-export function pairArg(name, v, unit, warnings) {
+export function pairArg(name, v, unit, warnings, { prior = false } = {}) {
   if (v === undefined) return undefined;
   const p = pair(v);
   if (!p || !Number.isFinite(p[0]) || !(p[1] >= 0)) throw new Error(`${name} must be [value, error]${unit ? ` in ${unit}` : ''} (or { "value": ..., "error": ... }); got ${show(v)}`);
+  // A prior of zero width fixes the value: asked to determine [Fe/H], a model sent feh [0, 0] and reported 0.
+  if (prior && p[1] === 0) throw new Error(`${name} [${p[0]}, 0] has no width, so it would fix ${name} at ${p[0]} instead of fitting it. To fit ${name}, leave it out (or give a real uncertainty, e.g. [${p[0]}, ${name === 'feh' ? 0.3 : 0.2}]).`);
   if (name === 'parallax' && p[1] > p[0] && p[0] > 0) warnings.push(`parallax [${p[0]}, ${p[1]}]: the error is larger than the parallax. The order is [value, error]; if they were swapped, call again with { "value": ${p[1]}, "error": ${p[0]} }.`);
   return p;
 }
@@ -141,6 +143,17 @@ export function atmosphereRequest(args, worldNames, { name = 'atmosphere_spectru
       if (!(mb > 0)) throw new Error(`model.planet.pRef_mbar must be a positive number of millibar; got ${show(p.pRef_mbar)}`);
       if (p.pRef !== undefined && Math.abs(p.pRef - mb / 1000) > 1e-9 * (mb / 1000)) throw new Error(`model.planet gives both pRef ${p.pRef} bar and pRef_mbar ${mb} (= ${mb / 1000} bar): give one`);
       p.pRef = mb / 1000; delete p.pRef_mbar;
+    }
+    // pRef is in bar. "1.22 R_Jup at 10 mbar" sent as pRef 10 put the radius 1000 times deeper: the spectrum came back
+    // and the warning that went with it was not read (2026-11-26: 4 of 40 ESL v2 answers, one retrieval off by
+    // 1000 K). Above 1.5 bar the unit has to be said: pRef_bar (or pRef_mbar). Titan's 1.467 bar surface still passes.
+    if (p.pRef_bar !== undefined) {
+      const b = num(p.pRef_bar);
+      if (!(b > 0)) throw new Error(`model.planet.pRef_bar must be a positive number of bar; got ${show(p.pRef_bar)}`);
+      if (p.pRef !== undefined && Math.abs(p.pRef - b) > 1e-9 * b) throw new Error(`model.planet gives both pRef ${p.pRef} and pRef_bar ${b}: give one`);
+      p.pRef = b; delete p.pRef_bar;
+    } else if (typeof p.pRef === 'number' && p.pRef > 1.5) {
+      throw new Error(`model.planet.pRef is in bar, and ${p.pRef} bar is far deeper than transit radii are quoted (1 to 100 mbar). If the radius was given at ${p.pRef} mbar, pass "pRef_mbar": ${p.pRef} (or "pRef": ${p.pRef / 1000}); to really take it at ${p.pRef} bar, pass "pRef_bar": ${p.pRef}.`);
     }
     if (p.pRef > 1) warnings.push(`pRef = ${p.pRef} bar: the radius is taken at ${p.pRef} bar. Transit radii are usually quoted at 1 to 100 mbar; if this one was given at ${p.pRef} mbar, use pRef ${p.pRef / 1000} (bar) or pRef_mbar ${p.pRef}.`);
     m.planet = p;

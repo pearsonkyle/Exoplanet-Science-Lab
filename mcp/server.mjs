@@ -96,7 +96,7 @@ function workspaceStore(files) {
 // tool-calling models send numbers as numbers. Other keys of src/core/rtmodel.js DEFAULT_MODEL are still accepted.
 const N = (description) => ({ type: 'number', description }), PAIR = (description) => ({ type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description });
 const MODEL_SCHEMA = { type: 'object', description: 'A model description, or changes to the world\'s (merged one level deep). Every value is a number unless said otherwise.', properties: {
-  planet: { type: 'object', description: 'The planet. Without a world, give all three.', properties: { mplanet: N('Mass [M Jup].'), rplanet: N('Radius at the reference pressure [R Jup].'), pRef: N('Reference pressure of that radius [bar]: 10 mbar = 0.01 (default 0.01).'), pRef_mbar: N('The reference pressure in millibar instead of pRef (10 = 10 mbar).') } },
+  planet: { type: 'object', description: 'The planet. Without a world, give all three.', properties: { mplanet: N('Mass [M Jup].'), rplanet: N('Radius at the reference pressure [R Jup].'), pRef: N('Reference pressure of that radius [bar]: 10 mbar = 0.01 (default 0.01).'), pRef_mbar: N('The reference pressure in millibar instead of pRef (10 = 10 mbar).'), pRef_bar: N('The reference pressure in bar, said explicitly: needed above 1.5 bar.') } },
   star: { type: 'object', properties: { rstar: N('Radius [R Sun].'), teff: N('Effective temperature [K].'), ars: N('a/R*, the orbit\'s semi-major axis over the stellar radius.') } },
   tp: { type: 'object', description: 'Temperature profile.', properties: { kind: { type: 'string', enum: ['isothermal', 'guillot', 'consistent', 'ms09', 'table'] }, t: N('Temperature of an isothermal profile [K].'), teq: N('Equilibrium temperature [K] (guillot, consistent).'), tint: N('Internal temperature [K] (default 100).'), kappaIR: N('Infrared opacity [m^2/kg] (guillot; default 0.001).'), gamma: N('Visible over infrared opacity (guillot; default 0.4).'), f: N('Redistribution factor (consistent).') } },
   vmr: { type: 'object', description: 'Constant volume mixing ratios, gas -> number, e.g. {"H2O": 1e-3, "CO2": 1e-5}.', additionalProperties: { type: 'number' } },
@@ -230,7 +230,7 @@ const LIST_V1 = process.env.ESL_MCP_SCHEMA !== 'typed';
 let starGrid = null;
 async function starTool(name, args, files) {
   starGrid ??= (() => { const b = readFileSync(resolve(PUBLIC, 'stellar/phoenix.esls')); return parseStellar(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); })();
-  const logg = pairArg('logg', args.logg, '', []), feh = pairArg('feh', args.feh, 'dex', []);
+  const logg = pairArg('logg', args.logg, '', [], { prior: true }), feh = pairArg('feh', args.feh, 'dex', [], { prior: true });
   const priors = { ...(logg ? { logg } : {}), ...(feh ? { feh } : {}) };
   if (name === 'star_fit') {
     const obs = magnitudesOf(args.magnitudes), notes = [], plx = pairArg('parallax', args.parallax, 'mas', notes);

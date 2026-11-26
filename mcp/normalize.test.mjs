@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { normalizeArgs, cleanKey, bandOf, magnitudesOf, atmosphereRequest } from './normalize.mjs';
+import { normalizeArgs, cleanKey, bandOf, magnitudesOf, atmosphereRequest, pairArg } from './normalize.mjs';
 
 let ok = true; const check = (name, cond, info = '') => { console.log((cond ? 'ok   ' : 'FAIL ') + name + (info ? '   ' + info : '')); if (!cond) ok = false; };
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -35,8 +35,15 @@ check('magnitudes: fewer than three says how many were accepted', /at least thre
 const worlds = ['WASP-39 b', 'WASP-121 b, day side', 'Jupiter', 'Titan'];
 const pr = atmosphereRequest({ model: { planet: { mplanet: 1.19, rplanet: 1.23, pRef_mbar: 10 } } }, worlds);
 check('pRef_mbar is read as millibar', pr.args.model.planet.pRef === 0.01 && !('pRef_mbar' in pr.args.model.planet) && !pr.warnings.length);
-const p10 = atmosphereRequest({ model: { planet: { mplanet: 1.19, rplanet: 1.23, pRef: 10 } } }, worlds);
-check('pRef above 1 bar is taken as given, with a warning that names the millibar reading', p10.args.model.planet.pRef === 10 && /if this one was given at 10 mbar, use pRef 0.01/.test(p10.warnings[0] || ''));
+const p10 = throws(() => atmosphereRequest({ model: { planet: { mplanet: 1.19, rplanet: 1.23, pRef: 10 } } }, worlds));
+check('pRef above 1.5 bar without its unit said is refused, naming both readings', /"pRef_mbar": 10 \(or "pRef": 0.01\)/.test(p10) && /"pRef_bar": 10/.test(p10), p10);
+const pb = atmosphereRequest({ model: { planet: { mplanet: 1.19, rplanet: 1.23, pRef_bar: 10 } } }, worlds);
+check('pRef_bar says it: taken as given, with the warning', pb.args.model.planet.pRef === 10 && !('pRef_bar' in pb.args.model.planet) && /if this one was given at 10 mbar/.test(pb.warnings[0] || ''));
+const ti = atmosphereRequest({ model: { planet: { mplanet: 0.0225, rplanet: 0.0368, pRef: 1.467 } } }, worlds);
+check('pRef up to 1.5 bar (Titan\'s surface, 1.467) passes with the warning', ti.args.model.planet.pRef === 1.467 && ti.warnings.length === 1);
+check('pRef with pRef_bar that disagrees is refused', /give one/.test(throws(() => atmosphereRequest({ model: { planet: { mplanet: 1, rplanet: 1, pRef: 2, pRef_bar: 10 } } }, worlds))));
+check('a prior of zero width is refused: it would fix the value instead of fitting it', /would fix feh at 0 instead of fitting it/.test(throws(() => pairArg('feh', [0, 0], 'dex', [], { prior: true })))
+  && pairArg('feh', [0, 0.3], 'dex', [], { prior: true })[1] === 0.3 && pairArg('parallax', [1.2, 0], 'mas', [])[1] === 0);
 const wErr = throws(() => atmosphereRequest({ world: 'HATS-77 b' }, worlds));
 check('a planet name in world: the error lists the presets and shows how to model the planet', /world only takes a preset/.test(wErr) && /leave world out/.test(wErr) && /"planet": \{"mplanet"/.test(wErr), wErr.slice(0, 120));
 check('a preset named with other case is found', atmosphereRequest({ world: 'titan' }, worlds).args.world === 'Titan');
@@ -87,7 +94,8 @@ check('atmosphere_spectrum: pRef_mbar 10 is the same as pRef 0.01', !a3.isError 
 const named = await call('atmosphere_spectrum', { world: 'HATS-33 b', save_as: 'a4.csv' });
 check('atmosphere_spectrum: a planet name in world fails with the way to model it', named.isError && /leave world out/.test(named.text));
 const bar = await call('atmosphere_spectrum', { ...spec, model: { ...spec.model, planet: { mplanet: 1.19, rplanet: 1.23, pRef: 10 } }, save_as: 'a5.csv' });
-check('atmosphere_spectrum: pRef 10 runs as given and warns about millibar', !bar.isError && (bar.data.warnings || []).some((w) => /pRef_mbar 10/.test(w)));
+const barOk = await call('atmosphere_spectrum', { ...spec, model: { ...spec.model, planet: { mplanet: 1.19, rplanet: 1.23, pRef_bar: 10 } }, save_as: 'a5.csv' });
+check('atmosphere_spectrum: pRef 10 is refused with both readings; pRef_bar 10 runs and warns', bar.isError && /pRef_mbar/.test(bar.text) && !barOk.isError && (barOk.data.warnings || []).some((w) => /pRef_mbar 10/.test(w)), bar.text.slice(0, 160));
 
 await client.close();
 console.log(ok ? 'ALL OK' : 'SOME CHECKS FAILED');
