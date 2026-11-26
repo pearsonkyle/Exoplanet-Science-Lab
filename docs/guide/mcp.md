@@ -66,3 +66,19 @@ are not in the shared tool reference; `mcp/README.md` describes them):
   posteriors, ln Z, and the best-fit spectrum. Try: *"Fit transit.csv (ppm) with an isothermal atmosphere: the
   temperature, the water abundance and the radius. Then fit it again without water and tell me whether water is
   needed."* It can take minutes; the answer says whether the fit converged.
+
+Their arguments are typed in `tools/list` (version 0.2.0), and the server takes the shapes tool-calling models send
+when the meaning is unambiguous (`mcp/normalize.mjs`):
+- numbers sent as strings ("1.19") become numbers, and `null` in an optional field means "not given";
+- band names lose quotes, backticks and a model's string delimiter (`<|"|>Gaia G<|"|>`), match without case
+  and with `_` or `-` for a space, and a short name is taken when only one band ends in it (`Ks` is 2MASS Ks,
+  `G` is Gaia G; `V` could be Johnson or APASS and is refused, naming both);
+- a magnitude, parallax, log g or [Fe/H] can be `{ "value": ..., "error": ... }` as well as `[value, error]`;
+- the planet's reference pressure can be given in millibar (`pRef_mbar`), and a `pRef` above 1 bar is used as
+  given with a warning (a radius "at 10 mbar" is `pRef: 0.01`);
+- a retrieval prior can be `{ "low": ..., "high": ... }`; a reversed one is refused with the likely fix;
+- `planet_name` labels an atmosphere result; `world` takes only the presets, and naming another planet there is
+  refused with the way to model it.
+
+Anything else fails with what was received, what is expected and a call that works, so a model can correct
+itself instead of repeating the call. Every call shape that worked before gives the same result.

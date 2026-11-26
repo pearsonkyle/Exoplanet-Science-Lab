@@ -1,6 +1,6 @@
 {
   "name": "exoplanet-science-lab-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for Exoplanet Science Lab: build, fit and summarise transit, radial-velocity and timing analyses as ESL session documents, without a browser.",
   "type": "module",
   "private": true,

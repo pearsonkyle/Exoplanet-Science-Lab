@@ -164,6 +164,9 @@ subtracting ln Z.
 
 ## Test
 
+`node mcp/normalize.test.mjs` checks the argument repairs of the atmosphere and star tools and their error
+messages, on the call shapes a tool-calling model sent in an evaluation, against the documented calls.
+
 `node mcp/test.mjs` lists the tools, opens EXOTIC's three-planet example as a session (built as in
 `test/session.test.mjs`), runs the fit with progress notifications, writes the fitted session, a report, a
 results table and a model curve, reads them back, fits the WASP-12 b timing example, runs a queue of variants
