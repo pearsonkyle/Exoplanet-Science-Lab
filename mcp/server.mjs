@@ -26,6 +26,9 @@ import { parseStellar } from '../src/core/stellarspec.js';
 import { fitSed } from '../src/core/sed.js';
 import { matchSpectrum } from '../src/core/specmatch.js';
 import { PASSBANDS } from '../src/core/passbands.js';
+import { normalizeArgs, atmosphereRequest, magnitudesOf, pairArg } from './normalize.mjs';
+
+export const SCHEMA_VERSION = '0.2.0';  // 0.2.0: arguments of the atmosphere and star tools repaired (mcp/normalize.mjs); typed schemas with ESL_MCP_SCHEMA=typed
 
 const HERE = dirname(fileURLToPath(import.meta.url)), PUBLIC = resolve(HERE, '../public'), REPO = resolve(HERE, '..');
 const log = (...a) => process.stderr.write('[esl-mcp] ' + a.join(' ') + '\n');
@@ -89,13 +92,29 @@ function workspaceStore(files) {
   };
 }
 
+// The model description both atmosphere tools take, spelled out field by field (types and units) so clients and
+// tool-calling models send numbers as numbers. Other keys of src/core/rtmodel.js DEFAULT_MODEL are still accepted.
+const N = (description) => ({ type: 'number', description }), PAIR = (description) => ({ type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2, description });
+const MODEL_SCHEMA = { type: 'object', description: 'A model description, or changes to the world\'s (merged one level deep). Every value is a number unless said otherwise.', properties: {
+  planet: { type: 'object', description: 'The planet. Without a world, give all three.', properties: { mplanet: N('Mass [M Jup].'), rplanet: N('Radius at the reference pressure [R Jup].'), pRef: N('Reference pressure of that radius [bar]: 10 mbar = 0.01 (default 0.01).'), pRef_mbar: N('The reference pressure in millibar instead of pRef (10 = 10 mbar).') } },
+  star: { type: 'object', properties: { rstar: N('Radius [R Sun].'), teff: N('Effective temperature [K].'), ars: N('a/R*, the orbit\'s semi-major axis over the stellar radius.') } },
+  tp: { type: 'object', description: 'Temperature profile.', properties: { kind: { type: 'string', enum: ['isothermal', 'guillot', 'consistent', 'ms09', 'table'] }, t: N('Temperature of an isothermal profile [K].'), teq: N('Equilibrium temperature [K] (guillot, consistent).'), tint: N('Internal temperature [K] (default 100).'), kappaIR: N('Infrared opacity [m^2/kg] (guillot; default 0.001).'), gamma: N('Visible over infrared opacity (guillot; default 0.4).'), f: N('Redistribution factor (consistent).') } },
+  vmr: { type: 'object', description: 'Constant volume mixing ratios, gas -> number, e.g. {"H2O": 1e-3, "CO2": 1e-5}.', additionalProperties: { type: 'number' } },
+  chemistry: { type: 'object', description: 'Chemical equilibrium in place of vmr.', properties: { mh: N('Metallicity [M/H] in dex (0 = solar).'), co: N('C/O ratio.'), quench: N('Quench pressure [bar] (optional).') } },
+  condensation: { type: 'object', properties: { rainout: { type: 'boolean' } } },
+  cloudTop: N('Top of an opaque grey cloud deck [bar].'),
+  haze: { type: 'object', description: 'A power-law haze.', properties: { factor: N('Strength.'), slope: N('Spectral slope.') } },
+  cloud: { type: 'object', description: 'A particle layer.', properties: { top: N('Top [bar].'), base: N('Base [bar].'), tau: N('Vertical optical depth of the layer at 1 micron (default 1).'), radius: N('Particle radius [micron].'), material: { type: 'string', description: 'e.g. "tholin" (optional).' } } },
+  bulk: { type: 'string', description: 'The gas that takes the rest, e.g. "N2" or "CO2" (default H2 and He).' } } };
+
 // ---- the atmosphere model: a tool of this server alone (it needs the opacity tables on disk, which the page's assistant fetches differently)
 const ATMOSPHERE_TOOL = {
   name: 'atmosphere_spectrum', readOnly: false,
   description: `Compute the transmission and emission spectrum of a model atmosphere (the forward model of the Atmosphere page; independent of the session). Start from a preset world (${worlds().map((w) => w.name).join('; ')}) and/or give a model or changes to it: planet {mplanet [M Jup], rplanet [R Jup], pRef [bar]}, star {rstar, teff, ars}, tp {kind: "isothermal"|"guillot"|"consistent" (temperatures from the gases; teq, tint, f)}, vmr {H2O: 1e-3, ...}, chemistry {mh, co} (chemical equilibrium), condensation {rainout: true}, cloudTop [bar], haze {factor, slope}, cloud {top, base, tau, radius, material: "tholin"}, bulk "N2"|"CO2". The spectrum is written to a CSV file in the workspace (save_as); the result describes it: range, the largest and smallest transit depth, clouds, temperatures at a few pressures, and whether a self-consistent profile settled. Report those numbers as returned.`,
   parameters: { type: 'object', properties: {
-    world: { type: 'string', description: 'A preset world to start from (optional).' },
-    model: { type: 'object', description: 'A model description, or changes to the world\'s (merged one level deep).' },
+    world: { type: 'string', enum: worlds().map((w) => w.name), description: 'A preset world to start from (optional). Only these presets; any other planet goes in model.' },
+    planet_name: { type: 'string', description: 'The name of the planet being modelled (a label for the result; optional).' },
+    model: MODEL_SCHEMA,
     wl_min: { type: 'number', description: 'Shortest wavelength [micron] (default 0.3).' }, wl_max: { type: 'number', description: 'Longest wavelength [micron] (default 50).' },
     R: { type: 'number', description: 'Resolving power to bin the spectrum to (default 100).' },
     save_as: { type: 'string', description: 'CSV file name in the workspace (default atmosphere.csv).' } } },
@@ -124,11 +143,12 @@ const RETRIEVE_TOOL = {
   name: 'atmosphere_retrieve', readOnly: false,
   description: 'Fit a model atmosphere to measured spectra with nested sampling (an atmospheric retrieval; independent of the session). Data are CSV files in the workspace, one per spectrum, rows of numbers with header lines allowed: either "wavelength, value, error" or "wavelength, bin_low, bin_high, value, error" (wavelengths in micron); kind says what the value is: "transit" (transit depth), "eclipse" (eclipse depth Fp/Fs), "night" (the same for the night side). The model starts from a preset world and/or a model as in atmosphere_spectrum; the temperature profile must be "guillot" or "isothermal". free lists what is fitted: teq, tint, logKappaIR, logGamma (Guillot profile); t (isothermal); mh, co ([M/H] and C/O of chemical equilibrium, switched on when freed); logX_<gas> (log10 of a constant mixing ratio, e.g. logX_H2O); rplanet; logCloudTop, cloudFraction, logHaze, hazeSlope; nightDT; offset_<n> (a constant added to data set n; needs a prior). Priors are uniform, [low, high]; those not given are wide defaults, returned in the result. Takes from half a minute (four parameters, 50 points) to many minutes: each model costs 3 to 30 ms and a fit needs 2000 to 30000 models per free parameter. It stops at max_models or max_seconds; "converged": false then means the numbers are NOT a posterior: raise the budget or free fewer parameters. To compare two descriptions of the same data (with and without a gas or a cloud), run both and subtract ln Z: above 5 is strong, within 1 the data do not tell them apart. Writes the result (JSON) and the best-fit spectrum (CSV) to the workspace. Report the values exactly as returned, with their errors.',
   parameters: { type: 'object', required: ['data', 'free'], properties: {
-    world: { type: 'string', description: 'A preset world to start from (optional).' },
-    model: { type: 'object', description: 'A model description, or changes to the world\'s (merged one level deep), as in atmosphere_spectrum.' },
+    world: { type: 'string', enum: worlds().map((w) => w.name), description: 'A preset world to start from (optional). Only these presets; any other planet goes in model.' },
+    planet_name: { type: 'string', description: 'The name of the planet being fitted (a label for the result; optional).' },
+    model: { ...MODEL_SCHEMA, description: 'A model description, or changes to the world\'s (merged one level deep), as in atmosphere_spectrum.' },
     data: { type: 'array', minItems: 1, items: { type: 'object', required: ['file', 'kind'], properties: { file: { type: 'string', description: 'CSV file in the workspace.' }, kind: { type: 'string', enum: ['transit', 'eclipse', 'night'] }, unit: { type: 'string', enum: ['fraction', 'percent', 'ppm'], description: 'Unit of the value and error columns (default fraction).' } } }, description: 'The spectra to fit.' },
     free: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'Parameter keys to fit.' },
-    priors: { type: 'object', description: 'Key -> [low, high] (uniform). Optional except for offsets.' },
+    priors: { type: 'object', description: 'Key -> [low, high] (uniform, low < high), e.g. {"teq": [800, 1600]}. Optional except for offsets.', additionalProperties: PAIR('[low, high]') },
     gases: { type: 'array', items: { type: 'string' }, description: 'Gases whose opacity to include (default: the model\'s; a freed gas is always included).' },
     merge: { type: 'integer', description: 'Join this many opacity bins (1 to 8) for speed; default: chosen from the data\'s resolving power so that three model bins fall in one data bin. Larger is faster and less accurate.' },
     live_points: { type: 'integer', description: 'Live points of the sampler (default 100).' },
@@ -169,8 +189,8 @@ const STAR_TOOLS = [{
   name: 'star_fit', readOnly: true,
   description: `Fit a star's spectral energy distribution: catalogue magnitudes in, effective temperature and angular diameter out, and with a parallax the radius and luminosity (independent of the session). Bands: ${Object.keys(PASSBANDS).join(', ')}. Use each catalogue's own system (Vega for Gaia, Tycho, Johnson, 2MASS, WISE, APASS B/V; AB for SDSS, PS1, APASS g/r/i, GALEX). Leave out saturated or blended bands. Magnitudes hardly constrain log g and [Fe/H]: give them when a spectrum has measured them. av_max bounds the extinction searched; use 0 for stars within about 70 pc. Models: PHOENIX, main-sequence stars from 2300 to 8000 K. Report the numbers with the errors returned.`,
   parameters: { type: 'object', required: ['magnitudes'], properties: {
-    magnitudes: { type: 'object', description: 'Band name -> [magnitude, error], e.g. {"Gaia G": [7.521, 0.003], "2MASS J": [6.591, 0.02]}. At least three bands.' },
-    parallax: { type: 'array', items: { type: 'number' }, description: '[mas, error]' }, logg: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' }, feh: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' },
+    magnitudes: { type: 'object', description: 'Full band name (as listed above) -> [magnitude, error], e.g. {"Gaia G": [7.521, 0.003], "2MASS J": [6.591, 0.02], "2MASS Ks": [6.308, 0.026]}. At least three bands.', propertyNames: { enum: Object.keys(PASSBANDS) }, additionalProperties: PAIR('[magnitude, error]') },
+    parallax: PAIR('[parallax in mas, its error], value first'), logg: PAIR('[value, sigma] (optional prior)'), feh: PAIR('[value, sigma] (optional prior)'),
     av_max: { type: 'number', description: 'Largest extinction A_V considered [mag] (default 0.1; 0 fixes it at zero).' } } },
 }, {
   name: 'star_match_spectrum', readOnly: true,
@@ -178,13 +198,44 @@ const STAR_TOOLS = [{
   parameters: { type: 'object', required: ['file'], properties: { file: { type: 'string', description: 'CSV file in the workspace.' }, degree: { type: 'integer', description: 'Degree of the smooth factor (0 to 4; default 0: one scale factor).' },
     logg: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' }, feh: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' } } },
 }];
+
+// The argument schemas tools/list shows by default are those of 0.1.0: a fine-tuned model trained on that list did better
+// with it than with the typed schemas above (ESL v2 evaluation, 2026-11-26: clean 0.675 against 0.575; the main set
+// 0.899 against 0.873). ESL_MCP_SCHEMA=typed lists the typed ones (other clients; new training data). The arguments
+// are repaired (mcp/normalize.mjs) the same way under both, against the typed schemas.
+const SCHEMA_V1 = {
+  atmosphere_spectrum: { type: 'object', properties: {
+    world: { type: 'string', description: 'A preset world to start from (optional).' },
+    model: { type: 'object', description: 'A model description, or changes to the world\'s (merged one level deep).' },
+    wl_min: { type: 'number', description: 'Shortest wavelength [micron] (default 0.3).' }, wl_max: { type: 'number', description: 'Longest wavelength [micron] (default 50).' },
+    R: { type: 'number', description: 'Resolving power to bin the spectrum to (default 100).' },
+    save_as: { type: 'string', description: 'CSV file name in the workspace (default atmosphere.csv).' } } },
+  atmosphere_retrieve: { type: 'object', required: ['data', 'free'], properties: {
+    world: { type: 'string', description: 'A preset world to start from (optional).' },
+    model: { type: 'object', description: 'A model description, or changes to the world\'s (merged one level deep), as in atmosphere_spectrum.' },
+    data: { type: 'array', minItems: 1, items: { type: 'object', required: ['file', 'kind'], properties: { file: { type: 'string', description: 'CSV file in the workspace.' }, kind: { type: 'string', enum: ['transit', 'eclipse', 'night'] }, unit: { type: 'string', enum: ['fraction', 'percent', 'ppm'], description: 'Unit of the value and error columns (default fraction).' } } }, description: 'The spectra to fit.' },
+    free: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'Parameter keys to fit.' },
+    priors: { type: 'object', description: 'Key -> [low, high] (uniform). Optional except for offsets.' },
+    gases: { type: 'array', items: { type: 'string' }, description: 'Gases whose opacity to include (default: the model\'s; a freed gas is always included).' },
+    merge: { type: 'integer', description: 'Join this many opacity bins (1 to 8) for speed; default: chosen from the data\'s resolving power so that three model bins fall in one data bin. Larger is faster and less accurate.' },
+    live_points: { type: 'integer', description: 'Live points of the sampler (default 100).' },
+    max_models: { type: 'integer', description: 'Budget of forward models (default 20000).' }, max_seconds: { type: 'number', description: 'Time limit [s] (default 600).' },
+    save_as: { type: 'string', description: 'Base name of the files written (default "retrieval": retrieval.json and retrieval_best.csv).' } } },
+  star_fit: { type: 'object', required: ['magnitudes'], properties: {
+    magnitudes: { type: 'object', description: 'Band name -> [magnitude, error], e.g. {"Gaia G": [7.521, 0.003], "2MASS J": [6.591, 0.02]}. At least three bands.' },
+    parallax: { type: 'array', items: { type: 'number' }, description: '[mas, error]' }, logg: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' }, feh: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' },
+    av_max: { type: 'number', description: 'Largest extinction A_V considered [mag] (default 0.1; 0 fixes it at zero).' } } },
+};
+const LIST_V1 = process.env.ESL_MCP_SCHEMA !== 'typed';
 let starGrid = null;
 async function starTool(name, args, files) {
   starGrid ??= (() => { const b = readFileSync(resolve(PUBLIC, 'stellar/phoenix.esls')); return parseStellar(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); })();
-  const priors = { ...(args.logg ? { logg: args.logg } : {}), ...(args.feh ? { feh: args.feh } : {}) };
+  const logg = pairArg('logg', args.logg, '', []), feh = pairArg('feh', args.feh, 'dex', []);
+  const priors = { ...(logg ? { logg } : {}), ...(feh ? { feh } : {}) };
   if (name === 'star_fit') {
-    const obs = Object.entries(args.magnitudes || {}).map(([band, v]) => ({ band, mag: Number(v[0]), err: Number(v[1]) }));
-    const r = fitSed(starGrid, obs, { priors: { ...priors, ...(args.parallax ? { plx: args.parallax } : {}), avMax: args.av_max ?? 0.1 } }), p = r.parameters;
+    const obs = magnitudesOf(args.magnitudes), notes = [], plx = pairArg('parallax', args.parallax, 'mas', notes);
+    const r = fitSed(starGrid, obs, { priors: { ...priors, ...(plx ? { plx } : {}), avMax: args.av_max ?? 0.1 } }), p = r.parameters;
+    r.warnings.push(...notes);
     return { teff_K: pm(p.teff, 4), angular_diameter_mas: pm(p.theta_mas, 4), ...(p.rstar ? { radius_Rsun: pm(p.rstar, 4), luminosity_Lsun: pm(p.lum, 4), distance_pc: pm(p.dist_pc, 5) } : {}), bolometric_flux_W_m2: pm(p.fbol, 4), extinction_Av_mag: pm(p.av, 2), logg: pm(p.logg, 3), feh: pm(p.feh, 2), extra_scatter_mag: pm(p.scatter_mag, 2),
       bands: r.bands.map((b) => ({ band: b.band, observed: b.mag, model: +b.model.toFixed(3), residual_mag: +b.residual.toFixed(3) })), chi2: +r.chi2.toFixed(1), converged: r.converged, warnings: r.warnings.filter((x) => !/edge of its prior|not constrained by the data/.test(x)),
       note: `${args.logg ? '' : 'No prior on log g: its value is not a measurement. '}${args.feh ? '' : 'No prior on [Fe/H]: its value is not a measurement. '}${p.rstar ? '' : 'No parallax: no radius or luminosity. '}One model grid (PHOENIX-ACES); limits in docs/guide/validation.md, "SED fitting".` };
@@ -218,9 +269,9 @@ export function createEslServer({ workspace, session } = {}) {
   // read_source: the files of this checkout (the browser reads the published copy on GitHub)
   const readSource = async (f) => { const p = resolve(REPO, f); if (!p.startsWith(REPO + sep)) throw new Error('bad path'); return readFileSync(p, 'utf8'); };
   const tools = createTools({ api, files, fetchJson, where: 'mcp', blankSession, readSource });
-  const server = new Server({ name: 'exoplanet-science-lab', version: '0.1.0' }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
+  const server = new Server({ name: 'exoplanet-science-lab', version: SCHEMA_VERSION + (LIST_V1 ? '' : '+typed') }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [...tools.specs, ATMOSPHERE_TOOL, RETRIEVE_TOOL, ...STAR_TOOLS].map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters, annotations: { readOnlyHint: !!t.readOnly, destructiveHint: !!t.confirm, openWorldHint: false, title: t.name.replace(/_/g, ' ') } })),
+    tools: [...tools.specs, ATMOSPHERE_TOOL, RETRIEVE_TOOL, ...STAR_TOOLS].map((t) => ({ name: t.name, description: t.description, inputSchema: (LIST_V1 && SCHEMA_V1[t.name]) || t.parameters, annotations: { readOnlyHint: !!t.readOnly, destructiveHint: !!t.confirm, openWorldHint: false, title: t.name.replace(/_/g, ' ') } })),
   }));
   server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
     const { name, arguments: args } = req.params, token = req.params._meta && req.params._meta.progressToken;
@@ -230,16 +281,23 @@ export function createEslServer({ workspace, session } = {}) {
       const fr = (api.state().sampler.fracRemain) || 0.01, done = Math.min(0.99, Math.max(0, 1 - Math.log(Math.max(p.remFrac, fr) / fr) / Math.log(1 / fr)));
       extra.sendNotification({ method: 'notifications/progress', params: { progressToken: token, progress: Math.round(done * 100), total: 100, message: `${p.variant ? p.variant + ': ' : ''}iteration ${p.it}, ${p.ncalls} likelihood calls, ln Z ${Number(p.logZ).toFixed(2)}, ${(p.elapsed || 0).toFixed(0)} s` } }).catch(() => {});
     };
+    const own = [...STAR_TOOLS, RETRIEVE_TOOL, ATMOSPHERE_TOOL].find((t) => t.name === name);
+    const fix = async (fn) => {  // repaired arguments (mcp/normalize.mjs), then the tool; warnings and the planet's name go with the result
+      let a = normalizeArgs(args || {}, own.parameters), warn = [];
+      if (name !== 'star_fit' && name !== 'star_match_spectrum') ({ args: a, warnings: warn } = atmosphereRequest(a, worlds().map((w) => w.name), { name }));
+      const r = await fn(a);
+      return { ...(a.planet_name ? { planet_name: a.planet_name } : {}), ...r, ...(warn.length ? { warnings: [...(r.warnings || []), ...warn] } : {}) };
+    };
     if (STAR_TOOLS.some((t) => t.name === name)) {
-      try { return { content: [{ type: 'text', text: JSON.stringify(await starTool(name, args || {}, files)) }] }; }
+      try { return { content: [{ type: 'text', text: JSON.stringify(await fix((a) => starTool(name, a, files))) }] }; }
       catch (err) { return { content: [{ type: 'text', text: JSON.stringify({ error: String((err && err.message) || err) }) }], isError: true }; }
     }
     if (name === RETRIEVE_TOOL.name) {
-      try { return { content: [{ type: 'text', text: JSON.stringify(await atmosphereRetrieve(args || {}, files)) }] }; }
+      try { return { content: [{ type: 'text', text: JSON.stringify(await fix((a) => atmosphereRetrieve(a, files))) }] }; }
       catch (err) { return { content: [{ type: 'text', text: JSON.stringify({ error: String((err && err.message) || err) }) }], isError: true }; }
     }
     if (name === ATMOSPHERE_TOOL.name) {
-      try { return { content: [{ type: 'text', text: JSON.stringify(await atmosphereSpectrum(args || {}, files)) }] }; }
+      try { return { content: [{ type: 'text', text: JSON.stringify(await fix((a) => atmosphereSpectrum(a, files))) }] }; }
       catch (err) { return { content: [{ type: 'text', text: JSON.stringify({ error: String((err && err.message) || err) }) }], isError: true }; }
     }
     const r = await tools.call(name, args || {}, { signal: extra.signal, onProgress });
