@@ -65,6 +65,7 @@ export default defineConfig({
           { text: 'Assistant and your own LLM', link: '/guide/assistant' },
           { text: 'Hosting and custom domain', link: '/guide/hosting' },
           { text: 'Development and tests', link: '/guide/development' },
+          { text: 'Style guide: interface and figures', link: '/guide/style' },
         ] },
         { text: 'Reference', items: [
           { text: 'Browser API', link: '/reference/browser-api' },

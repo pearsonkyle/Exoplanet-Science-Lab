@@ -51,5 +51,6 @@ Read `HANDOFF.md` first: it has the current state, what has never been run, and 
 - After changing a test's printed numbers: `node tools/validation/project_reference.mjs <topic>` (the Validation tab of Methods quotes them).
 - Never write into the EXOTIC repository or the `exotic` conda environment. No API key ships in the repo. The assistant's only built-in endpoint is the LM Studio preset (localhost:1234) in `src/assistant/presets.js`; the owner removed the VPN preset before going public, so other servers are entered as Custom.
 - "Now" is `clock.now()` (`src/site/clock.js`), never `Date.now()`, wherever the present is shown or stamped; time scales and leap seconds only from `src/core/timescale.js`. Frames we write get `frameHeader` (`src/core/fitsheader.js`).
+- Interface and figures follow `docs/guide/style.md` (screen sizes, touch, forms, tokens; a saved figure is on white, titled with the object, axes as "Quantity (unit)" through `axisLabel` in `src/ui/figstyle.js`, with a legend, at 1800 px or more, and its numbers as CSV beside it). A new page goes through its checklist.
 - Conventions: sky plane X, Y in stellar radii, +Z toward the observer; mid-transit = inferior conjunction;
   Claret law `I = 1 - sum a_n (1 - mu^(n/2))`; times stored relative to `data.tRef`.

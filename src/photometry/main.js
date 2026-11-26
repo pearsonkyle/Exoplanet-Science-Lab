@@ -13,7 +13,8 @@ import { ImageViewer } from './viewer.js';
 import { createInspector } from './inspect.js';
 import { createFieldTools } from './wcs.js';
 import { rankComparisons, saturationLevel, psfShape } from '../core/imexam.js';
-import { renderPanel, fitCanvas, PHOT_THEME, PHOT_DARK, renderFov } from './plots.js';   // PHOT_DARK: marks on the image
+import { renderPanel, fitCanvas, PHOT_THEME, PHOT_DARK, PHOT_PRINT, renderFov } from './plots.js';
+import { EXPORT_SCALE } from '../ui/figstyle.js';   // PHOT_DARK: marks on the image
 import { renderPsd, renderRmsBin, renderPixelMap, renderPixelResponse, durationLabel } from './diagnostics.js';
 import { BUCKET, tessProducts, keplerProducts, k2Products, chooseProducts, fetchBytes, resolveTarget } from './mast.js';
 import { expandZips, ZIP_NAME } from '../core/zip.js';
@@ -688,6 +689,7 @@ function renderResults() {
   el.append(h('div', { class: 'out' },
     h('button', { class: 'btn primary', onclick: openInAnalyze }, 'Open in Analyze'),
     h('button', { class: 'btn', onclick: saveCsv }, 'Save light curve (CSV)'),
+    h('button', { class: 'btn', title: 'The light curve and its residuals as a PNG on white, 1800 px wide, for a paper or a report', onclick: saveFigure }, 'Save figure (PNG)'),
     h('button', { class: 'btn', onclick: saveJson, title: 'Everything needed to repeat this reduction: software version, star positions, apertures, the row chosen, the table of what was tried, the frames and their times.' }, 'Save reduction settings (JSON)'),
     R.kind === 'stack' && lc.fit && lc.fit.params ? h('button', { class: 'btn', onclick: () => { const d = $('aavsoBox'); d.hidden = !d.hidden; }, title: "The AAVSO Exoplanet Watch report EXOTIC writes (the same format, character for character), for submission to the AAVSO Exoplanet Database." }, 'AAVSO report…') : null,
     h('label', { class: 'dim', style: 'font-size:12px' }, h('input', { type: 'checkbox', id: 'useGp', disabled: !P.gp }), ' export the detrended flux')),
@@ -707,11 +709,24 @@ function renderResults() {
     } else {
       const t = P.tpf, im = P.tpfMedian; renderFov(g.ctx, g.W, g.H, { data: im, width: t.nx, height: t.ny, stars: [], rA: 0, rIn: 0, rOut: 0, lo: 0, hi: 100, title: `Median image, ${t.nx} × ${t.ny} px (aperture outlined in the viewer above)` }, th);
     }
-    const s = [{ y: lc.norm, color: th.data, kind: 'dots', mask: lc.keep, label: 'relative flux', err: lc.kind === 'stack' ? lc.err[0] : null }];
-    if (lc.model) s.push({ y: lc.model, color: th.model, kind: 'line', label: R.fitter ? 'transit model × airmass' : 'quick fit' });
-    if (P.gp) s.unshift({ y: P.gp.detrended, color: th.post, kind: 'dots', label: 'detrended', alpha: 0.9 }), s[1].alpha = 0.35;
-    g = fitCanvas(cLc, R.kind === 'stack' ? 330 : 474); renderPanel(g.ctx, g.W, g.H, { x, series: s, yLabel: 'relative flux', xOffset: off, title: `${P.name}: ${R.kind === 'stack' ? (METHOD_LABEL[row.method] || row.method) : row.name}`, xLabel: R.kind === 'stack' ? null : xl }, th);
-    if (R.kind === 'stack') { g = fitCanvas(cRes, 144); renderPanel(g.ctx, g.W, g.H, { x, series: [{ y: lc.resid.map((v) => 100 * v), color: th.data, kind: 'dots', mask: lc.keep }, { y: lc.resid.map(() => 0), color: th.model, kind: 'line', size: 1 }], yLabel: 'residual [%]', xOffset: off, xLabel: xl }, th); } else cRes.style.display = 'none';
+    // the light curve and its residuals as panel descriptions of a theme: the screen draws them, and so does "Save figure" on white
+    const lcPanels = (th) => {
+      const s = [{ y: lc.norm, color: th.data, kind: 'dots', mask: lc.keep, label: 'relative flux', err: lc.kind === 'stack' ? lc.err[0] : null }];
+      if (lc.model) s.push({ y: lc.model, color: th.model, kind: 'line', label: R.fitter ? 'transit model × airmass' : 'quick fit' });
+      if (P.gp) s.unshift({ y: P.gp.detrended, color: th.post, kind: 'dots', label: 'detrended', alpha: 0.9 }), s[1].alpha = 0.35;
+      const stack = R.kind === 'stack';
+      return { top: { x, series: s, yLabel: 'relative flux', xOffset: off, title: `${P.name}: ${stack ? (METHOD_LABEL[row.method] || row.method) : row.name}`, xLabel: stack ? null : xl },
+        res: stack ? { x, series: [{ y: lc.resid.map((v) => 100 * v), color: th.data, kind: 'dots', mask: lc.keep }, { y: lc.resid.map(() => 0), color: th.model, kind: 'line', size: 1 }], yLabel: 'residual [%]', xOffset: off, xLabel: xl } : null };
+    };
+    P.figure = () => {
+      const pn = lcPanels(PHOT_PRINT), W = 900, hTop = pn.res ? 400 : 520, hRes = pn.res ? 180 : 0, cv = document.createElement('canvas'); cv.width = W * EXPORT_SCALE; cv.height = (hTop + hRes) * EXPORT_SCALE;
+      const ctx = cv.getContext('2d'); ctx.scale(EXPORT_SCALE, EXPORT_SCALE); renderPanel(ctx, W, hTop, pn.top, PHOT_PRINT);
+      if (pn.res) { ctx.translate(0, hTop); renderPanel(ctx, W, hRes, pn.res, PHOT_PRINT); }
+      return cv;
+    };
+    const { top: pTop, res: pRes } = lcPanels(th);
+    g = fitCanvas(cLc, R.kind === 'stack' ? 330 : 474); renderPanel(g.ctx, g.W, g.H, pTop, th);
+    if (R.kind === 'stack') { g = fitCanvas(cRes, 144); renderPanel(g.ctx, g.W, g.H, pRes, th); } else cRes.style.display = 'none';
     const mx = medianOf(lc.x), my = medianOf(lc.y);
     g = fitCanvas(cXY, 150); renderPanel(g.ctx, g.W, g.H, { x, series: [{ y: lc.x.map((v) => v - mx), color: th.star, kind: 'dots', label: 'x' }, { y: lc.y.map((v) => v - my), color: th.model, kind: 'dots', label: 'y' }], yLabel: 'centroid [px]', xOffset: off, title: 'Centroid − median' }, th);
     g = fitCanvas(cBg, 150); renderPanel(g.ctx, g.W, g.H, { x, series: [{ y: lc.bg, color: th.warn, kind: 'dots' }], yLabel: lc.kind === 'stack' ? 'counts / px' : 'e⁻/s / px', xOffset: off, title: 'Sky background' }, th);
@@ -863,6 +878,7 @@ function handoffRecord() {
 const download = (text, type, name) => { const a = h('a', { href: URL.createObjectURL(new Blob([text], { type })), download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); };
 const fileStem = () => P.name.replace(/[^\w.\-]+/g, '_');
 function saveCsv() { download(lcCsv(), 'text/csv', fileStem() + '_lightcurve.csv'); }
+function saveFigure() { if (!P.figure) return; P.figure().toBlob((b) => { if (b) download(b, 'image/png', fileStem() + '_lightcurve.png'); }, 'image/png'); }
 
 /** What a reader needs to repeat or audit the reduction. */
 // The table of candidates is one tab stop (the shown row): arrows move along it, Enter or space shows a row.

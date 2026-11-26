@@ -86,7 +86,7 @@
 }
 @media (max-width: 980px) {
   /* one column: "Calculating" leaves the corner of the first card (where it covered a heading) for the foot of the screen, clear of the assistant's button */
-  .atmpage .busytag { position: fixed; top: auto; float: none; margin: 0; left: max(10px, env(safe-area-inset-left)); bottom: calc(12px + env(safe-area-inset-bottom)); box-shadow: 0 6px 20px var(--shadow, #0008); }
+  .atmpage .busytag { position: fixed; top: auto; float: none; margin: 0; left: max(10px, env(safe-area-inset-left)); bottom: calc(12px + env(safe-area-inset-bottom)); pointer-events: none; box-shadow: 0 6px 20px var(--shadow, #0008); }
 }
 @media (max-width: 560px) {
   /* the fit table on a phone: five columns share the width instead of running off the card */

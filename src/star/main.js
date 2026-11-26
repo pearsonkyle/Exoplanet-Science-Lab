@@ -215,7 +215,11 @@ async function saveCsv() {
 }
 async function savePng() { const cv = document.createElement('canvas'); cv.width = 1800; cv.height = 1000; const ctx = cv.getContext('2d'); ctx.scale(2, 2); renderSed(ctx, 900, 500, sedData(), PRINT_THEME); await saveFile(`${stem()}_sed.png`, await canvasToPNG(cv)); }
 async function saveLatex() { if (S.result) await saveFile(`${stem()}_sed.tex`, $('latex').value); }
-async function saveCorner() { if (S.result) await saveFile(`${stem()}_sed_corner.png`, await canvasToPNG($('cvCorner'))); }
+async function saveCorner() {
+  if (!S.result) return; const r = S.result, cv = document.createElement('canvas');
+  drawCorner(cv, { ...r.posterior, logl: null }, r.posterior.labels, null, { theme: 'light', width: Math.max(700, 170 * r.posterior.labels.length), scale: 2, title: `${S.name}: spectral energy distribution fit` });
+  await saveFile(`${stem()}_sed_corner.png`, await canvasToPNG(cv));
+}
 async function saveSamples() {
   const r = S.result; if (!r) return; const p = r.posterior, rows = [];
   for (let i = 0; i < p.n; i++) if (p.weights[i] > 0) rows.push([p.weights[i].toExponential(5), ...Array.from(p.samples.subarray(i * p.ndim, (i + 1) * p.ndim), (v) => v.toPrecision(7))].join(','));

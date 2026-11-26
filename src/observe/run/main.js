@@ -211,7 +211,8 @@ function ready() {
 }
 const sleep = (ms, signal) => new Promise((res) => { const t = setTimeout(res, ms); signal?.addEventListener('abort', () => { clearTimeout(t); res(); }, { once: true }); });
 
-$('r-start-btn').addEventListener('click', () => run());
+$('r-start-btn').addEventListener('click', () => { document.querySelector('.r-main').classList.remove('idle'); run(); });
+document.querySelector('.r-main').classList.add('idle');   // run.css: on a phone the empty views fold to their captions until a sequence starts
 $('r-pause').addEventListener('click', () => {
   if (!R.st) return;
   if (R.st.paused) { R.st = resume(R.st); log('resumed'); $('r-pause').textContent = 'Pause'; }

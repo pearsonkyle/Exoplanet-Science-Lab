@@ -51,3 +51,10 @@
 @media (pointer: coarse) { .r-logbox summary { min-height: 40px; display: flex; align-items: center; gap: 6px; } .r-side label.chk { min-height: 40px; } }
 @media (max-width: 480px) { .r-side .row2:has(input[type=datetime-local]) { grid-template-columns: 1fr; } .r-side input[type=datetime-local] { font-size: 16px; padding: 6px 8px; } }
 @media (pointer: coarse) { .r-logbox summary { list-style: none; } .r-logbox summary::-webkit-details-marker { display: none; } .r-logbox summary::before { content: "▸"; font-size: 10px; } .r-logbox[open] summary::before { content: "▾"; } }
+/* one column, nothing running yet: three empty plots were two screens of dark boxes; their captions say what will appear */
+@media (max-width: 960px) {
+  .r-main.idle .r-views canvas, .r-main.idle .r-telem canvas, .r-main.idle .r-priortoggle { display: none; }
+  .r-main.idle .r-views { gap: 0; }
+  .r-main.idle .r-views figcaption, .r-main.idle .r-telem figcaption { margin: 0; padding: 10px 12px; border: 1px dashed var(--line2); border-radius: 8px; }
+  .r-main.idle .r-views figure, .r-main.idle .r-telem { margin: 8px 0 0; }
+}

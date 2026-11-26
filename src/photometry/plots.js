@@ -1,8 +1,12 @@
 // Plots of the photometry page: pure render functions taking a theme, so screen and export can share them.
 
 import { tokens } from '../site/theme.js';
+import { axisLabel } from '../ui/figstyle.js';
 
 export const PHOT_THEME = { bg: '#0b0f18', frame: '#2b3550', grid: '#1e2638', text: '#8491ad', strong: '#dfe6f3', data: '#c9d3e6', model: '#5fd4ff', star: '#ffc56b', ok: '#6fe3a5', warn: '#ffb454', bad: '#ff6b7a', post: '#b48cff', font: '11px ui-monospace, "SF Mono", Menlo, Consolas, monospace' };
+
+/** Saved figures: white background, dark ink (the same palette as the other pages' print theme). */
+export const PHOT_PRINT = Object.freeze({ bg: '#ffffff', frame: '#444b5c', grid: '#e3e6ee', text: '#3a4152', strong: '#10131a', data: '#30384c', model: '#0b6fb8', star: '#b36b00', ok: '#16794a', warn: '#a85a00', bad: '#c0293b', post: '#6a3fc4', font: '11px ui-monospace, "SF Mono", Menlo, Consolas, monospace' });
 
 /** The Dark screen theme, unchanged whatever the site theme (exports that ask for a dark figure use this). */
 export const PHOT_DARK = Object.freeze({ ...PHOT_THEME });
@@ -26,6 +30,8 @@ const fmt = (v, step) => { const d = Math.max(0, Math.min(8, Math.ceil(-Math.log
  * @param p { x, series: [{ y, color, kind: 'dots' | 'line' | 'err', size, err, mask (Uint8Array: 0 = draw faint), label }],
  *            xLabel, yLabel, title, xOffset (subtracted from x for the labels), yPad }
  */
+/** A legend entry: the series' mark before its name, so the legend does not rest on colour alone. */
+const key = (s) => (s.kind === 'line' ? '— ' : '■ ') + s.label;
 export function renderPanel(ctx, W, H, p, th = PHOT_THEME) {
   ctx.fillStyle = th.bg; ctx.fillRect(0, 0, W, H);
   const mL = 62, mR = 10, mT = p.title ? 20 : 8, mB = p.xLabel ? 30 : 18, pw = W - mL - mR, ph = H - mT - mB;
@@ -59,17 +65,17 @@ export function renderPanel(ctx, W, H, p, th = PHOT_THEME) {
   }
   ctx.restore();
   ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  if (p.xLabel) ctx.fillText(p.xLabel, mL + pw / 2, H - 2);
-  if (p.yLabel) { ctx.save(); ctx.translate(11, mT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(p.yLabel, 0, 0); ctx.restore(); }
+  if (p.xLabel) ctx.fillText(axisLabel(p.xLabel), mL + pw / 2, H - 2);
+  if (p.yLabel) { ctx.save(); ctx.translate(11, mT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(axisLabel(p.yLabel), 0, 0); ctx.restore(); }
   if (p.title) {
     // the series labels share the title's line: on a narrow plot the title is cut so that the two never overlap
-    const labW = p.series.reduce((a, q) => a + (q.label ? ctx.measureText(q.label).width + 14 : 0), 0), room = pw - labW - 6;
+    const labW = p.series.reduce((a, q) => a + (q.label ? ctx.measureText(key(q)).width + 14 : 0), 0), room = pw - labW - 6;
     let t = p.title; if (ctx.measureText(t).width > room) { while (t.length > 4 && ctx.measureText(t + '…').width > room) t = t.slice(0, -1); t = t.trimEnd() + '…'; }
     ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = th.strong; ctx.fillText(t, mL, 4);
   }
   // legend
   let lx = mL + pw - 6; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
-  for (const s of p.series.slice().reverse()) { if (!s.label) continue; ctx.fillStyle = s.color; ctx.fillText(s.label, lx, p.title ? 4 : mT + 4); lx -= ctx.measureText(s.label).width + 14; }
+  for (const s of p.series.slice().reverse()) { if (!s.label) continue; ctx.fillStyle = s.color; ctx.fillText(key(s), lx, p.title ? 4 : mT + 4); lx -= ctx.measureText(key(s)).width + 14; }
 }
 
 /** Size a canvas for the device pixel ratio and return a context scaled to CSS pixels. */

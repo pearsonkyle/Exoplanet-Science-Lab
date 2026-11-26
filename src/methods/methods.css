@@ -75,3 +75,5 @@ html { scroll-padding-top: 54px; }
 .soft .softtable tr:last-child > * { border-bottom: 0; }
 .soft .softtable tbody tr:target { background: color-mix(in srgb, var(--model) 7.1%, transparent); }
 @media (pointer: coarse) { #citeTool select, #citeTool textarea { font-size: 16px; } }
+/* an inline formula wider than a small phone scrolls inside its own box instead of widening the page */
+@media (max-width: 480px) { .page p > math, .page li > math { display: inline-block; max-width: 100%; overflow-x: auto; overflow-y: hidden; vertical-align: middle; } }

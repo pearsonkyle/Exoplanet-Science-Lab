@@ -164,6 +164,10 @@
   .d-eph .n, .d-eph .pm { white-space: normal; overflow-wrap: anywhere; }
   .d-eph td { font-size: 11px; } .d-eph td.ref { min-width: 70px; }
   .d-cmp td.c { font-size: 11.5px; } .d-cmp td.c .pm { font-size: 10.5px; }
+  /* a number is never broken across lines (2457103.2836 / 50 read as two values): it is set a little smaller, and the table scrolls sideways if a row still does not fit */
+  .d-cmp td.c .n, .d-eph .n { white-space: nowrap; overflow-wrap: normal; font-size: 11px; letter-spacing: -.02em; }
+  .d-cmp td.u { font-size: 10.5px; padding-left: 0; padding-right: 2px; }
+  .d-cmpwrap { overflow-x: auto; }
 }
 @media (pointer: coarse), (max-width: 760px) {
   .s-src { min-height: 40px; } .s-src a { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; min-height: 40px; padding: 0; margin: -4px -8px -4px -6px; }

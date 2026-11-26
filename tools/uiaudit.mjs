@@ -22,14 +22,17 @@ const only = opt('--only'), sizesArg = opt('--sizes'), full = flag('--full'), sc
 const out = args[0] || 'uiaudit'; mkdirSync(out, { recursive: true });
 
 export const SIZES = {
-  'iphone-se': { w: 375, h: 667, mobile: true }, // the narrowest phone still in use
+  'phone-small': { w: 360, h: 640, mobile: true }, // a small Android phone
+  'iphone-se': { w: 375, h: 667, mobile: true }, // the narrowest iPhone still in use
   iphone: { w: 393, h: 852, mobile: true }, // iPhone 15 / 16
   'iphone-max': { w: 430, h: 932, mobile: true },
   'iphone-land': { w: 852, h: 393, mobile: true },
   'ipad': { w: 820, h: 1180, mobile: true },
   'ipad-land': { w: 1180, h: 820, mobile: true },
   laptop: { w: 1366, h: 768 },
+  'laptop-small': { w: 1024, h: 768 },
   desktop: { w: 1920, h: 1080 },
+  'desktop-wide': { w: 2560, h: 1440 },
 };
 const planReady = 'window.__plan && !!window.__plan.A.info';
 const searchReady = 'window.__search && window.__search.S.rows.length > 0';
@@ -62,7 +65,7 @@ export const PAGES = [
   ['methods-repro', 'methods/#reproducibility', "document.documentElement.dataset.validation === 'ready'", []],
   ['methods-refs', 'methods/#references', "document.documentElement.dataset.methods === 'ready'", []],
   ['methods-cite', 'methods/#cite', "!!document.querySelector('#citeTool[data-ready]')", []],
-  ['menu-open', 'plan/', planReady, ["(document.querySelector('#sitebar .sitemenu, #sitebar .menu, #sitebar button') || document.body).click()"]],
+  ['menu-open', 'plan/', planReady, ["document.querySelector('#sitebar .sitemenu').click()"]],
   ['project-panel', 'plan/', "!!document.querySelector('.siteproject')", ["document.querySelector('.siteproject').click()", "(document.getElementById('pj-start') || document.body).click()"]],
   ['assistant', 'analyze/?skipintro', "!!document.getElementById('esl-ai-launch')", ["document.getElementById('esl-ai-launch').click()", 'void 0']],
 ];
@@ -128,6 +131,20 @@ const MEASURE = `((W, H, mobile) => {
   const zoom = [];
   if (mobile) for (const e of document.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=hidden]):not([type=color]):not([type=button]), select, textarea')) { if (vis(e) && parseFloat(getComputedStyle(e).fontSize) < 16) zoom.push(name(e) + ' ' + parseFloat(getComputedStyle(e).fontSize)); }
   res.zoom = top(zoom, 4);
+  // 9 floating things (position: fixed, smaller than a quarter of the screen, not the site bar) lying over a control
+  //   or a figure while the page is at rest
+  const cov = [];
+  for (const f of all) {
+    const cs = getComputedStyle(f); if (cs.position !== 'fixed' || f.closest('#sitebar, .sitebar, .subnav, [role=dialog], .ai-panel, .projpanel')) continue;
+    const r = f.getBoundingClientRect(); if (r.width * r.height > W * H * 0.25 || r.width < 8 || cs.pointerEvents === 'none') continue;
+    if ([...all].some((p) => p !== f && p.contains(f) && getComputedStyle(p).position === 'fixed')) continue;
+    for (const e of document.querySelectorAll('canvas, button, a[href], select, input, textarea, summary')) {
+      if (!vis(e) || f.contains(e) || e.contains(f)) continue; const q = e.getBoundingClientRect();
+      const ox = Math.min(q.right, r.right) - Math.max(q.left, r.left), oy = Math.min(q.bottom, r.bottom) - Math.max(q.top, r.top);
+      if (ox > 6 && oy > 6 && document.elementFromPoint(Math.max(q.left, r.left) + ox / 2, Math.max(q.top, r.top) + oy / 2)?.closest('*') && (f.contains(document.elementFromPoint(Math.max(q.left, r.left) + ox / 2, Math.max(q.top, r.top) + oy / 2)))) cov.push(name(f).slice(0, 40) + ' over ' + name(e));
+    }
+  }
+  res.covered = top(cov, 6);
   return res;
 })`;
 
@@ -151,7 +168,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         const m = await pg.evaluate(`${MEASURE}(${s.w}, ${s.h}, ${!!s.mobile})`);
         m.errors = errs; report[`${name}@${sname}`] = m;
         await pg.screenshot({ path: join(out, `${name}@${sname}.png`), fullPage: full });
-        const bad = ['overflow', 'off', 'narrow', 'cut', 'hscroll', 'taps', 'small', 'zoom', 'empty'].filter((k) => m[k].n).map((k) => `${k} ${m[k].n}`);
+        const bad = ['overflow', 'off', 'covered', 'narrow', 'cut', 'hscroll', 'taps', 'small', 'zoom', 'empty'].filter((k) => m[k].n).map((k) => `${k} ${m[k].n}`);
         console.log(`${name}@${sname}  h=${m.pageHeight}  ${bad.join(', ') || 'clean'}${errs.length ? '  ERRORS ' + errs.length : ''}`);
       } catch (e) { console.log(`${name}@${sname}  FAILED ${e.message.slice(0, 200)}`); report[`${name}@${sname}`] = { failed: e.message }; }
       await pg.close();
