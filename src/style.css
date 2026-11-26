@@ -383,6 +383,33 @@ table.res tr:focus-visible { outline-offset: -2px; }
   #topbar { min-height: 38px; padding: 0 8px; }
   .brand-sub, .hud-tr { display: none; }
   .inset-frame { width: 96px; height: 96px; bottom: 56px; }
+  /* A phone on its side has about 260 px under the bars. Stacked, the 3D view and the plot got 100 px and 150 px of it
+     and the top bar took three rows. Here the three parts stand side by side, each with the full height, and the top
+     bar is one row that scrolls sideways. */
+  #app { min-height: 0; --c-stage: minmax(0, .85fr); --c-lc: minmax(0, 1.15fr); --right: min(var(--panelw, 340px), 40vw);
+    grid-template-columns: var(--c-stage) var(--c-lc) var(--right); grid-template-rows: var(--sitebar-h, 44px) auto minmax(0, 1fr);
+    grid-template-areas: "site site site" "top top top" "stage lc panel"; }
+  #app.no-stage { --c-stage: 0px; } #app.no-lc { --c-lc: 0px; } #app.no-panel { --right: 0px; }
+  #app.no-stage.no-lc { --right: minmax(0, 1fr); }
+  #lcgrip { display: none; }
+  #lc { border-left: 1px solid var(--line); }
+  .brand.apptitle, .topright #flash { display: none; }
+  #topbar { flex-wrap: nowrap; padding: 3px 8px; }
+  .topright { width: 100%; flex-wrap: nowrap; gap: 5px; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .topright::-webkit-scrollbar { display: none; }
+  .topright > * { flex: none; }
+  .wide { display: none; }
+  .preset { flex: 1 1 160px; min-width: 150px; } .preset span { display: none; } .preset select { width: 100%; max-width: none; }
+  /* the 3D view is narrow here: camera buttons wrap along the top, the transport is one strip that scrolls sideways */
+  .hud-tl { left: 6px; top: 6px; right: 6px; flex-wrap: wrap; gap: 4px; }
+  .hud-tl .seg { flex-wrap: nowrap; } .hud-tl .seg button { white-space: nowrap; padding-left: 7px; padding-right: 7px; font-size: 12px; }
+  .hud-b { left: 0; right: 0; bottom: 0; padding: 12px 6px 5px; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; background: linear-gradient(transparent, #000c 55%); }
+  .hud-b > * { flex: none; }
+  .speed input { width: 84px; }
+  #clock { min-width: 0; }
+  .inset-frame { display: none; }
+  .viz-note { max-width: none; right: 6px; left: 6px; top: 52px; }
+  #lookpanel { position: fixed; left: 8px; right: 8px; top: auto; bottom: calc(8px + env(safe-area-inset-bottom)); width: auto; max-height: 80dvh; overflow: auto; z-index: 60; box-shadow: 0 -8px 40px var(--shadow2); }
 }
 
 /* ---- stacked ---- */
@@ -539,3 +566,5 @@ table.res tr:focus-visible { outline-offset: -2px; }
 @container lc (max-width: 820px) { .lcrow { justify-content: flex-start; } }
 /* a prior argument that would make the prior impossible (σ ≤ 0, max ≤ min): refused, and shown while typing */
 .args input.bad { border-color: var(--bad); box-shadow: 0 0 0 1px color-mix(in srgb, var(--bad) 60%, transparent); }
+/* touch: 16 px in the menus of the transport strip, so iOS Safari does not zoom the page when one opens */
+@media (pointer: coarse) { #app select.chip.small { font-size: 16px; } }

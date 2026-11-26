@@ -75,6 +75,7 @@ export function mountNav(el, active) {
   sync();
   nav.append(trow);
   el.append(menu, nav, tbtn, tmenu);   // the theme at the far right, after the links (Docs)
+  placeAssistant();   // before the bar is measured: the button is part of the row
   compactNav(el, menu, nav);
   if (window.__eslNet) mountNet();   // a rebuilt bar keeps its network indicator
 }
@@ -103,25 +104,37 @@ function compactNav(el, menu, nav) {
 }
 
 /**
- * The assistant's bubble, bottom right of every page. Only this button is part of the page: the assistant itself
+ * The assistant's button, in the site bar of every page. Only this button is part of the page: the assistant itself
  * (src/assistant/main.js) is fetched the first time the bubble is pressed, or at once when a conversation is
  * waiting to continue on this page (the assistant changed page mid-request) or its panel was left open.
  */
+let assistantButton = null;
+/**
+ * Where the assistant's button lives: in the site bar, after the section links (an icon on a wide bar, a row of the
+ * folded menu on a phone). It used to float over the bottom right corner of every page, where it lay over values,
+ * buttons and plots. A page without the bar keeps the floating button.
+ */
+function placeAssistant() {
+  const b = assistantButton; if (!b) return;
+  const nav = document.querySelector('.sitebar nav');
+  if (nav) { b.classList.remove('floating'); nav.insertBefore(b, nav.querySelector('.sitethemerow')); }
+  else if (b.parentNode !== document.body) { b.classList.add('floating'); document.body.append(b); }
+}
 export function mountAssistant() {
   if (document.getElementById('esl-ai-launch') || new URLSearchParams(location.search).has('noassistant')) return;
   const b = document.createElement('button');
   b.id = 'esl-ai-launch'; b.type = 'button'; b.title = 'Assistant: ask it to set this page up or run an experiment';
   b.setAttribute('aria-label', 'Open the assistant'); b.setAttribute('aria-haspopup', 'dialog'); b.setAttribute('aria-expanded', 'false');
-  const small = matchMedia('(max-width: 560px)').matches;   // on a phone: smaller and nearer the corner, so it covers less of the page
-  b.style.cssText = `position:fixed;right:${small ? 8 : 16}px;bottom:${small ? 8 : 16}px;z-index:70;width:${small ? 40 : 44}px;height:${small ? 40 : 44}px;border-radius:50%;border:1px solid color-mix(in srgb, var(--model) 53%, transparent);background:color-mix(in srgb, var(--pop) 90%, transparent);color:var(--on);cursor:pointer;display:grid;place-items:center;box-shadow:0 4px 18px var(--shadow);padding:0`;
-  b.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M8 10h8M8 13h5"/></svg>';
+  b.className = 'siteai';
+  b.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M8 10h8M8 13h5"/></svg><span class="sl-name">Assistant</span><small class="sl-hint">Ask it to set a page up, run a fit or write the report</small>';
   let mod = null;
   const open = async (auto) => {
     try { mod = mod || await import('../assistant/main.js'); mod.mountPanel({ root: siteRoot(), launcher: b, auto }); }
     catch (err) { b.title = 'The assistant could not be loaded: ' + ((err && err.message) || err); console.error(err); }
   };
-  b.addEventListener('click', () => open(false));
-  document.body.append(b);
+  b.addEventListener('click', () => { const bar = b.closest('.sitebar'); if (bar && bar.classList.contains('open')) bar.querySelector('.sitemenu')?.click(); open(false); });
+  assistantButton = b; placeAssistant();
+  window.dispatchEvent(new Event('resize'));   // the bar measures its row again, now with the button in it
   try { const c = JSON.parse(localStorage.getItem('esl.assistant.chat.v1') || 'null'); if (c && ((c.pending && Date.now() - c.pending.at < 180000) || c.open)) open(true); } catch { /* storage unavailable: the bubble still works */ }
 }
 

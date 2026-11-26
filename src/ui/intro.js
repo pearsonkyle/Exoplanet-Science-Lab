@@ -188,7 +188,7 @@ export function initIntro(app) {
   function render() {
     root.innerHTML = '';
     const body = st.step === 'home' ? home() : st.step === 'kinds' ? kinds() : system();
-    root.append(h('div', { class: 'ibox ' + st.step }, h('div', { class: 'ihead' }, h('span', { class: 'brand-mark' }), h('h2', {}, 'Exoplanet Science Lab'), h('button', { class: 'chip small iclose', 'aria-label': 'Close', onclick: close }, '✕')),
+    root.append(h('div', { class: 'ibox ' + st.step }, h('div', { class: 'ihead' }, h('h2', {}, 'Start an analysis'), h('button', { class: 'chip small iclose', 'aria-label': 'Close', onclick: close }, '✕')),
       h('p', { class: 'itag' }, 'Model and fit exoplanet observations in your browser. Nothing you load leaves your computer.'), ...body));
   }
   return { lookup(name) { st.step = 'kinds'; root.hidden = false; document.body.classList.add('intro-open'); lookup(name); },

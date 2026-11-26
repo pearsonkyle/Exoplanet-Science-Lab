@@ -28,6 +28,7 @@ export class ImageViewer {
   setImage(data, w, h, keepView = true) {
     const same = keepView && w === this.w && h === this.h;
     this.data = data; this.w = w; this.h = h;
+    if (!same && w > 0 && h > 0) this.cv.style.setProperty('--img-ar', String(w / h));   // photometry.css: on a phone the view takes the frame's shape
     this._levels(); this._paint();
     if (!same || !this.fitted) { this.fitted = false; this.resize(); if (!this.fitted) this.fit(); } else this.draw();
   }

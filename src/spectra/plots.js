@@ -50,7 +50,7 @@ export function renderCubeImage(ctx, W, H, d, th = SPEC_THEME) {
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   const nLab = Math.max(2, Math.min(8, Math.floor(ph / 36)));
   for (let k = 0; k <= nLab; k++) { const j = Math.min(nW - 1, Math.round((k / nLab) * (nW - 1))); ctx.fillText(d.wave[j].toFixed(2), mL - 6, mT + ph - ((j + 0.5) / nW) * ph); }
-  ctx.save(); ctx.translate(11, mT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('wavelength (micron)', 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(11, mT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('Wavelength (µm)', 0, 0); ctx.restore();
   // bin edges as ticks on the right of the image
   if (d.bins && d.bins.length <= 400) { ctx.strokeStyle = th.star; ctx.globalAlpha = 0.8; ctx.beginPath(); for (const b of d.bins) { const y = Math.round(mT + ph - (b.j0 / nW) * ph) + 0.5; ctx.moveTo(mL + pw, y); ctx.lineTo(mL + pw + 5, y); } ctx.stroke(); ctx.globalAlpha = 1; }
   // colour bar
@@ -94,8 +94,8 @@ export function renderSpectrum(ctx, W, H, d, th = SPEC_THEME) {
     ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(x, y, rows.length > 120 ? 1.6 : 2.6, 0, 6.2832); ctx.fill();
   }
   ctx.restore();
-  ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText('wavelength (micron)', mL + pw / 2, H - 2);
-  ctx.save(); ctx.translate(11, mT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(d.kind === 'eclipse' ? 'eclipse depth (ppm)' : 'transit depth (ppm)', 0, 0); ctx.restore();
+  ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText('Wavelength (µm)', mL + pw / 2, H - 2);
+  ctx.save(); ctx.translate(11, mT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(d.kind === 'eclipse' ? 'Eclipse depth (ppm)' : 'Transit depth (ppm)', 0, 0); ctx.restore();
   if (d.scale && d.scale.depthPerH > 0) {
     // right-hand axis: scale heights above the lowest point
     const per = d.scale.depthPerH * PPM, ref = Math.min(...rows.map((r) => r.depth)) * PPM, ts = niceTicks((y0 - ref) / per, (y1 - ref) / per, Math.max(2, Math.floor(ph / 40)));

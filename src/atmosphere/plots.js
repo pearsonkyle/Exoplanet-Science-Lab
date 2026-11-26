@@ -1,6 +1,7 @@
 // Plots of the Atmosphere page: pure render functions (ctx, W, H, data, theme), so the screen and the exported
 // PNG draw the same thing. Themes are those of the spectroscopy page.
 import { niceTicks } from '../photometry/plots.js';
+import { axisLabel } from '../ui/figstyle.js';
 import { SPEC_THEME, SPEC_DARK, PRINT_THEME } from '../spectra/plots.js';
 export { SPEC_THEME as ATM_THEME, SPEC_DARK as ATM_DARK, PRINT_THEME };
 
@@ -41,8 +42,8 @@ function axes(ctx, W, H, a, th) {
   ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   for (const [v, s] of ty) { const y = Math.round(Y(v)) + 0.5; if (y < mT - 1 || y > mT + ph + 1) continue; ctx.beginPath(); ctx.moveTo(mL, y); ctx.lineTo(mL + pw, y); ctx.stroke(); ctx.fillText(s, mL - 6, y); }
   ctx.strokeStyle = th.frame; ctx.strokeRect(mL + 0.5, mT + 0.5, pw, ph);
-  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; if (a.xLabel) ctx.fillText(a.xLabel, mL + pw / 2, H - 2);
-  if (a.yLabel) { ctx.save(); ctx.translate(11, mT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(a.yLabel, 0, 0); ctx.restore(); }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; if (a.xLabel) ctx.fillText(axisLabel(a.xLabel), mL + pw / 2, H - 2);
+  if (a.yLabel) { ctx.save(); ctx.translate(11, mT + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle'; ctx.fillText(axisLabel(a.yLabel), 0, 0); ctx.restore(); }
   return { X, Y, mL, mR, mT, mB, pw, ph };
 }
 

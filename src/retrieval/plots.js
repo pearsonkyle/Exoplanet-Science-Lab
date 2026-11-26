@@ -3,7 +3,7 @@
 // residuals in units of the errors underneath.
 import { SPEC_THEME } from '../spectra/plots.js';
 
-const KIND = { transit: 'transit depth (ppm)', eclipse: 'eclipse depth (ppm)', night: 'night side, planet / star (ppm)' };
+const KIND = { transit: 'Transit depth (ppm)', eclipse: 'Eclipse depth (ppm)', night: 'Night side, planet / star (ppm)' };
 const nice = (span, n = 5) => { const raw = span / n, p = 10 ** Math.floor(Math.log10(raw)), f = raw / p; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p; };
 const hexA = (c, a) => { const m = /^#([0-9a-f]{6})$/i.exec(c || ''); if (!m) return c; const v = parseInt(m[1], 16); return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${a})`; };
 
@@ -46,7 +46,8 @@ export function renderFit(ctx, W, H, d, th = SPEC_THEME) {
     // residuals in units of the errors
     const ry = top + ph + 6, RY = (z) => ry + (0.5 - Math.max(-4, Math.min(4, z)) / 8) * hRes;
     ctx.strokeStyle = th.star || th.text; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(mL, Math.round(RY(0)) + 0.5); ctx.lineTo(mL + pw, Math.round(RY(0)) + 0.5); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = th.text; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText('+3σ', mL - 6, RY(3)); ctx.fillText('−3σ', mL - 6, RY(-3));
+    ctx.fillStyle = th.text; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText('+3σ', mL - 6, RY(3)); ctx.fillText('0', mL - 6, RY(0)); ctx.fillText('−3σ', mL - 6, RY(-3));
+    ctx.save(); ctx.translate(11, ry + hRes / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText('Residual', 0, 0); ctx.restore();
     if (s.best) { ctx.fillStyle = th.data; for (let i = 0; i < n; i++) { ctx.beginPath(); ctx.arc(X(s.wl[i]), RY((s.y[i] - s.best[i]) / s.err[i]), 2, 0, 2 * Math.PI); ctx.fill(); } }
     ctx.save(); ctx.translate(13, top + ph / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = th.text; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(KIND[s.kind] || s.kind, 0, 0); ctx.restore();
     ctx.fillStyle = th.strong || th.text; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillText(`${s.name} · ${n} points`, mL + pw - 6, top + 5);

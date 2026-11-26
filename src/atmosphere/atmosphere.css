@@ -56,3 +56,55 @@
 .atmpage .busytag .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line2); border-top-color: var(--model); animation: atmspin .8s linear infinite; }
 @keyframes atmspin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .atmpage .busytag .spin { animation: none; } }
+
+/* ---- the side cards' forms ---- */
+/* a label sits over its field, as in the two-column grids: beside it the two do not fit on a phone, and the field's left edge moved from card to card */
+.atmpage .side .card > label:not(.chk) { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--dim); }
+.atmpage .side .card > label:not(.chk) > select, .atmpage .side .card > label:not(.chk) > input { width: 100%; min-width: 0; }
+/* a status line holds its room only once it says something (three empty ones left a blank band at the foot of a card) */
+.atmpage .side .status:empty, .atmpage .main .status:empty { display: none; }
+.atmpage .side .card > :last-child { margin-bottom: 0; }
+/* gases in chemical equilibrium: a tick, a name and a value each, so two fit side by side */
+.atmpage #vmrRows.eq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 18px; }
+.atmpage #vmrRows.eq .sl { grid-template-columns: minmax(0, 1fr) auto; margin: 0; }
+.atmpage #vmrRows.eq .sl > span:nth-child(2) { display: none; }
+/* retrieval: the table of what is fitted */
+.atmpage .ptable .pin { width: 78px; }
+/* star: one magnitude per row (tick, band, magnitude, error, remove) */
+.atmpage .obsrow { display: grid; grid-template-columns: 18px minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, .9fr) auto; gap: 5px; align-items: center; margin: 4px 0; }
+.atmpage .obsrow > select, .atmpage .obsrow > input[type=number] { width: 100%; min-width: 0; padding-left: 4px; padding-right: 2px; }
+.atmpage .obsrow > .btn { min-width: 0; padding-left: 0; padding-right: 0; width: 26px; }
+.atmpage .card.pad6 > table.src, .atmpage #resTable, .atmpage #samplerTable, .atmpage #runsTable, .atmpage #cmpTable { max-width: 100%; overflow-x: auto; }
+@media (pointer: coarse), (max-width: 760px) {
+  .atmpage .sl { min-height: 40px; }
+  .atmpage .sl input[type=range] { height: 40px; }
+  .atmpage .sl .sw input[type=checkbox] { margin: 0 4px 0 0; }
+  .atmpage .obsrow { grid-template-columns: 22px minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, .85fr) 36px; }
+  .atmpage .obsrow > .btn { width: 36px; min-width: 36px; }
+  .atmpage .bar { gap: 8px; }
+  .atmpage .bar > label { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
+}
+@media (max-width: 980px) {
+  /* one column: "Calculating" leaves the corner of the first card (where it covered a heading) for the foot of the screen, clear of the assistant's button */
+  .atmpage .busytag { position: fixed; top: auto; float: none; margin: 0; left: max(10px, env(safe-area-inset-left)); bottom: calc(12px + env(safe-area-inset-bottom)); pointer-events: none; box-shadow: 0 6px 20px var(--shadow, #0008); }
+}
+@media (max-width: 560px) {
+  /* the fit table on a phone: five columns share the width instead of running off the card */
+  .atmpage .ptable { width: 100%; table-layout: fixed; }
+  .atmpage .ptable th:first-child { width: 27%; } .atmpage .ptable th:nth-child(2) { width: 21%; }
+  .atmpage .ptable td, .atmpage .ptable th { padding: 2px 5px 2px 0; overflow-wrap: anywhere; }
+  .atmpage .ptable td:last-child, .atmpage .ptable th:last-child { padding-right: 0; }
+  .atmpage .ptable .pin, .atmpage .ptable select { width: 100%; min-width: 0; padding-left: 5px; padding-right: 2px; }
+  .atmpage .view3d { height: min(320px, 82vw); }
+  .atmpage .bar select, .atmpage .bar input[type=number] { max-width: 100%; }
+  .atmpage #segView, .atmpage #segKind { display: flex; width: 100%; } .atmpage #segView button, .atmpage #segKind button { flex: 1 1 0; }
+}
+/* a tablet upright or a phone on its side: one column of full-width cards left every field 700 px wide; the cards flow in two columns above the figures */
+@media (min-width: 640px) and (max-width: 980px) {
+  .atmpage .cols > .side { display: block; columns: 2; column-gap: 12px; }
+  .atmpage .cols > .side > .card { break-inside: avoid; }
+}
+.atmpage textarea.latexbox { width: 100%; font: 12px ui-monospace, Menlo, monospace; background: transparent; color: inherit; border: 1px solid var(--line2); border-radius: 6px; padding: 8px; white-space: pre; overflow: auto; }
+@media (pointer: coarse) { .atmpage textarea.latexbox { font-size: 16px; } }
+/* a wide screen: the card of the fit table is as wide as the table, not the column (it left two thirds of the card empty) */
+@media (min-width: 981px) { .atmpage .card.pad6:has(> #paramTable) { width: fit-content; max-width: 100%; padding: 10px 14px; } }

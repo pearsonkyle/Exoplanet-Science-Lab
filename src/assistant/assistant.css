@@ -186,3 +186,9 @@
 .ai-hlist .ai-hopen:disabled { color: var(--text); cursor: default; font-weight: 600; }
 .ai-hlist .ai-asum { grid-area: s; font-size: 11.5px; }
 .ai-hlist .ai-hx { grid-area: e; } .ai-hlist .ai-hd { grid-area: d; }
+/* any touch screen, also a tablet or a phone on its side (wider than the phone sheet above): 16 px in the fields so iOS Safari does not zoom the page on focus, and fields a finger can hit */
+@media (pointer: coarse) {
+  .ai-panel input, .ai-panel select, .ai-panel textarea { font-size: 16px; }
+  .ai-field input, .ai-field select { min-height: 40px; }
+  .ai-panel input[type=checkbox] { width: 20px; height: 20px; min-height: 0; }
+}
