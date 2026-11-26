@@ -75,9 +75,11 @@ The server takes the argument shapes tool-calling models send to these tools whe
   2MASS Ks, `G` is Gaia G); `B` and `V` alone are Johnson's (APASS B and V are calibrated onto that system);
   `g` could be SDSS, PS1 or APASS and is refused, naming them;
 - a magnitude, parallax, log g or [Fe/H] can be `{ "value": ..., "error": ... }` as well as `[value, error]`;
-- the planet's reference pressure can be given in millibar (`pRef_mbar`), and a `pRef` above 1 bar is used as
-  given with a warning (a radius "at 10 mbar" is `pRef: 0.01`); a parallax smaller than its error is used as
-  given with a warning that the order is [value, error];
+- the planet's reference pressure can be given in millibar (`pRef_mbar`) or, said explicitly, in bar
+  (`pRef_bar`); `pRef` is in bar, and above 1.5 bar it is refused unless the unit is said, with both readings
+  (a radius "at 10 mbar" is `pRef_mbar: 10` or `pRef: 0.01`); between 1 and 1.5 bar it runs with a warning; a
+  parallax smaller than its error is used as given with a warning that the order is [value, error];
+- a log g or [Fe/H] prior of zero width is refused: it would fix the value instead of fitting it;
 - a retrieval prior can be `{ "low": ..., "high": ... }`; a reversed or empty one is refused with the likely fix;
 - `planet_name` labels an atmosphere result; `world` takes only the presets, and naming another planet there is
   refused with the way to model it.
