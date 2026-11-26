@@ -28,7 +28,7 @@ import { matchSpectrum } from '../src/core/specmatch.js';
 import { PASSBANDS } from '../src/core/passbands.js';
 import { normalizeArgs, atmosphereRequest, magnitudesOf, pairArg } from './normalize.mjs';
 
-export const SCHEMA_VERSION = '0.2.0';  // tools/list version: 0.2.0 typed the atmosphere and star arguments (mcp/normalize.mjs)
+export const SCHEMA_VERSION = '0.2.0';  // 0.2.0: arguments of the atmosphere and star tools repaired (mcp/normalize.mjs); typed schemas with ESL_MCP_SCHEMA=typed
 
 const HERE = dirname(fileURLToPath(import.meta.url)), PUBLIC = resolve(HERE, '../public'), REPO = resolve(HERE, '..');
 const log = (...a) => process.stderr.write('[esl-mcp] ' + a.join(' ') + '\n');
@@ -198,6 +198,35 @@ const STAR_TOOLS = [{
   parameters: { type: 'object', required: ['file'], properties: { file: { type: 'string', description: 'CSV file in the workspace.' }, degree: { type: 'integer', description: 'Degree of the smooth factor (0 to 4; default 0: one scale factor).' },
     logg: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' }, feh: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' } } },
 }];
+
+// The argument schemas tools/list shows by default are those of 0.1.0: a fine-tuned model trained on that list did better
+// with it than with the typed schemas above (ESL v2 evaluation, 2026-11-26: clean 0.675 against 0.575; the main set
+// 0.899 against 0.873). ESL_MCP_SCHEMA=typed lists the typed ones (other clients; new training data). The arguments
+// are repaired (mcp/normalize.mjs) the same way under both, against the typed schemas.
+const SCHEMA_V1 = {
+  atmosphere_spectrum: { type: 'object', properties: {
+    world: { type: 'string', description: 'A preset world to start from (optional).' },
+    model: { type: 'object', description: 'A model description, or changes to the world\'s (merged one level deep).' },
+    wl_min: { type: 'number', description: 'Shortest wavelength [micron] (default 0.3).' }, wl_max: { type: 'number', description: 'Longest wavelength [micron] (default 50).' },
+    R: { type: 'number', description: 'Resolving power to bin the spectrum to (default 100).' },
+    save_as: { type: 'string', description: 'CSV file name in the workspace (default atmosphere.csv).' } } },
+  atmosphere_retrieve: { type: 'object', required: ['data', 'free'], properties: {
+    world: { type: 'string', description: 'A preset world to start from (optional).' },
+    model: { type: 'object', description: 'A model description, or changes to the world\'s (merged one level deep), as in atmosphere_spectrum.' },
+    data: { type: 'array', minItems: 1, items: { type: 'object', required: ['file', 'kind'], properties: { file: { type: 'string', description: 'CSV file in the workspace.' }, kind: { type: 'string', enum: ['transit', 'eclipse', 'night'] }, unit: { type: 'string', enum: ['fraction', 'percent', 'ppm'], description: 'Unit of the value and error columns (default fraction).' } } }, description: 'The spectra to fit.' },
+    free: { type: 'array', minItems: 1, items: { type: 'string' }, description: 'Parameter keys to fit.' },
+    priors: { type: 'object', description: 'Key -> [low, high] (uniform). Optional except for offsets.' },
+    gases: { type: 'array', items: { type: 'string' }, description: 'Gases whose opacity to include (default: the model\'s; a freed gas is always included).' },
+    merge: { type: 'integer', description: 'Join this many opacity bins (1 to 8) for speed; default: chosen from the data\'s resolving power so that three model bins fall in one data bin. Larger is faster and less accurate.' },
+    live_points: { type: 'integer', description: 'Live points of the sampler (default 100).' },
+    max_models: { type: 'integer', description: 'Budget of forward models (default 20000).' }, max_seconds: { type: 'number', description: 'Time limit [s] (default 600).' },
+    save_as: { type: 'string', description: 'Base name of the files written (default "retrieval": retrieval.json and retrieval_best.csv).' } } },
+  star_fit: { type: 'object', required: ['magnitudes'], properties: {
+    magnitudes: { type: 'object', description: 'Band name -> [magnitude, error], e.g. {"Gaia G": [7.521, 0.003], "2MASS J": [6.591, 0.02]}. At least three bands.' },
+    parallax: { type: 'array', items: { type: 'number' }, description: '[mas, error]' }, logg: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' }, feh: { type: 'array', items: { type: 'number' }, description: '[value, sigma] (optional prior)' },
+    av_max: { type: 'number', description: 'Largest extinction A_V considered [mag] (default 0.1; 0 fixes it at zero).' } } },
+};
+const LIST_V1 = process.env.ESL_MCP_SCHEMA !== 'typed';
 let starGrid = null;
 async function starTool(name, args, files) {
   starGrid ??= (() => { const b = readFileSync(resolve(PUBLIC, 'stellar/phoenix.esls')); return parseStellar(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)); })();
@@ -240,9 +269,9 @@ export function createEslServer({ workspace, session } = {}) {
   // read_source: the files of this checkout (the browser reads the published copy on GitHub)
   const readSource = async (f) => { const p = resolve(REPO, f); if (!p.startsWith(REPO + sep)) throw new Error('bad path'); return readFileSync(p, 'utf8'); };
   const tools = createTools({ api, files, fetchJson, where: 'mcp', blankSession, readSource });
-  const server = new Server({ name: 'exoplanet-science-lab', version: SCHEMA_VERSION }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
+  const server = new Server({ name: 'exoplanet-science-lab', version: SCHEMA_VERSION + (LIST_V1 ? '' : '+typed') }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [...tools.specs, ATMOSPHERE_TOOL, RETRIEVE_TOOL, ...STAR_TOOLS].map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters, annotations: { readOnlyHint: !!t.readOnly, destructiveHint: !!t.confirm, openWorldHint: false, title: t.name.replace(/_/g, ' ') } })),
+    tools: [...tools.specs, ATMOSPHERE_TOOL, RETRIEVE_TOOL, ...STAR_TOOLS].map((t) => ({ name: t.name, description: t.description, inputSchema: (LIST_V1 && SCHEMA_V1[t.name]) || t.parameters, annotations: { readOnlyHint: !!t.readOnly, destructiveHint: !!t.confirm, openWorldHint: false, title: t.name.replace(/_/g, ' ') } })),
   }));
   server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
     const { name, arguments: args } = req.params, token = req.params._meta && req.params._meta.progressToken;
